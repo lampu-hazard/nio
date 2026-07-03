@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# JavaScript/Next/Nest build output
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Rust build output
+target/
+
+# env/secrets
+.env
+.env.*
+!.env.example
+
+# logs/runtime
+logs/
+*.log
+
+# local databases
+*.db
+
+# local tooling / generated review files
+.claude/
+.superpowers/sdd/*.md
+docs/
+# OS/editor
+.DS_Store
+
+# superpowers local scratch
+.superpowers/

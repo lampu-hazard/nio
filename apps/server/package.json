@@ -1,0 +1,51 @@
+{
+  "name": "nio-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "prisma generate && nest start",
+    "dev": "prisma generate && nest start --watch",
+    "start:dev": "nest start --watch",
+    "build": "prisma generate && nest build",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "jest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "start:prod": "bun ./dist/main.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
+    "@nestjs/common": "latest",
+    "@nestjs/config": "latest",
+    "@nestjs/core": "latest",
+    "@nestjs/mapped-types": "latest",
+    "@nestjs/platform-express": "latest",
+    "@prisma/client": "^6.19.0",
+    "@quixo3/prisma-session-store": "^3.1.21",
+    "class-transformer": "latest",
+    "class-validator": "latest",
+    "cookie-parser": "latest",
+    "discord.js": "^14.26.4",
+    "express-session": "latest",
+    "nest-winston": "latest",
+    "reflect-metadata": "latest",
+    "rxjs": "latest",
+    "winston": "latest"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "latest",
+    "@nestjs/schematics": "latest",
+    "@nestjs/testing": "latest",
+    "@types/cookie-parser": "latest",
+    "@types/express-session": "latest",
+    "@types/jest": "latest",
+    "@types/node": "latest",
+    "jest": "latest",
+    "prisma": "^6.19.0",
+    "ts-jest": "latest",
+    "ts-node": "latest",
+    "typescript": "latest"
+  }
+}

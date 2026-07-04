@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { R2Module } from './r2/r2.module';
 import { SelfRolesModule } from './self-roles/self-roles.module';
 import { StickersModule } from './stickers/stickers.module';
+import { ModerationModule } from './moderation/moderation.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { StickersModule } from './stickers/stickers.module';
     PanelsModule,
     SelfRolesModule,
     StickersModule,
+    ModerationModule,
   ],
 })
 export class AppModule {}

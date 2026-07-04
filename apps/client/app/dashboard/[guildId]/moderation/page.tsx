@@ -4,6 +4,13 @@ import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
 import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
+type DiscordProfile = {
+  id: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
 type WarningLog = {
   id: string;
   userId: string;
@@ -11,6 +18,8 @@ type WarningLog = {
   reason: string;
   expiresAt: string | null;
   createdAt: string;
+  user?: DiscordProfile;
+  moderator?: DiscordProfile;
 };
 
 type ModerationSettings = {
@@ -103,6 +112,33 @@ export default function ModerationPage({ params }: PageProps) {
   const isExpired = (expiresAt: string | null) => {
     if (!expiresAt) return false;
     return new Date(expiresAt).getTime() < Date.now();
+  };
+
+  const renderProfile = (profile: DiscordProfile | undefined, fallbackId: string) => {
+    const displayName = profile?.displayName || profile?.username || 'Unknown user';
+    const username = profile?.username ? `@${profile.username}` : fallbackId;
+    const avatarInitial = displayName.charAt(0).toUpperCase();
+
+    return (
+      <div className="flex min-w-48 items-center gap-3">
+        {profile?.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            className="h-9 w-9 rounded-full border border-[var(--border)] bg-[var(--panel-strong)] object-cover"
+          />
+        ) : (
+          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-xs font-bold text-[var(--muted)]">
+            {avatarInitial}
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="truncate font-semibold text-[var(--text)]">{displayName}</div>
+          <div className="truncate text-xs text-[var(--muted)]">{username}</div>
+          <div className="truncate font-mono text-[11px] text-[var(--muted)]">{fallbackId}</div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -256,7 +292,7 @@ export default function ModerationPage({ params }: PageProps) {
                     <table className="w-full text-left border-collapse text-sm">
                       <thead>
                         <tr className="border-b border-[var(--border)] text-[var(--muted)] font-semibold">
-                          <th className="pb-3">Offender (User ID)</th>
+                          <th className="pb-3">Offender</th>
                           <th className="pb-3">Issued By</th>
                           <th className="pb-3">Reason</th>
                           <th className="pb-3">Date</th>
@@ -269,8 +305,8 @@ export default function ModerationPage({ params }: PageProps) {
                           const expired = isExpired(w.expiresAt);
                           return (
                             <tr key={w.id} className="text-[var(--text-secondary)]">
-                              <td className="py-4 font-mono">{w.userId}</td>
-                              <td className="py-4 font-mono">{w.moderatorId}</td>
+                              <td className="py-4">{renderProfile(w.user, w.userId)}</td>
+                              <td className="py-4">{renderProfile(w.moderator, w.moderatorId)}</td>
                               <td className="py-4 max-w-xs truncate" title={w.reason}>{w.reason}</td>
                               <td className="py-4">
                                 {new Date(w.createdAt).toLocaleDateString(undefined, {

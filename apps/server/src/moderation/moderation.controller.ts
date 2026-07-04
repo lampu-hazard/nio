@@ -30,7 +30,7 @@ export class ModerationController {
     @Query('status') status?: 'all' | 'active' | 'expired',
     @Query('sort') sort?: 'newest' | 'oldest',
   ) {
-    const warnings = await this.moderation.listWarnings(guildId, {
+    const warnings = await this.moderation.listWarningsWithProfiles(guildId, {
       search,
       moderator,
       status,

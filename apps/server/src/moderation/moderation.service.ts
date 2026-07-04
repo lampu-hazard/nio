@@ -2,6 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateModerationSettingsDto } from './dto/update-moderation-settings.dto';
 
+type WarningFilters = {
+  search?: string;
+  moderator?: string;
+  status?: 'all' | 'active' | 'expired';
+  sort?: 'newest' | 'oldest';
+};
+
+type DiscordProfile = {
+  id: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
 @Injectable()
 export class ModerationService {
   constructor(private readonly prisma: PrismaService) {}
@@ -39,12 +53,7 @@ export class ModerationService {
 
   async listWarnings(
     guildId: string,
-    filters: {
-      search?: string;
-      moderator?: string;
-      status?: 'all' | 'active' | 'expired';
-      sort?: 'newest' | 'oldest';
-    },
+    filters: WarningFilters,
   ) {
     const now = new Date();
     const where: any = { guildId };
@@ -73,6 +82,18 @@ export class ModerationService {
       where,
       orderBy: { createdAt: filters.sort === 'oldest' ? 'asc' : 'desc' },
     });
+  }
+
+  async listWarningsWithProfiles(guildId: string, filters: WarningFilters) {
+    const warnings = await this.listWarnings(guildId, filters);
+    const profileIds = Array.from(new Set(warnings.flatMap((warning) => [warning.userId, warning.moderatorId])));
+    const profiles = new Map(await Promise.all(profileIds.map(async (id) => [id, await this.fetchDiscordProfile(id)] as const)));
+
+    return warnings.map((warning) => ({
+      ...warning,
+      user: profiles.get(warning.userId) ?? this.fallbackProfile(warning.userId),
+      moderator: profiles.get(warning.moderatorId) ?? this.fallbackProfile(warning.moderatorId),
+    }));
   }
 
   async createWarning(guildId: string, userId: string, moderatorId: string, reason: string) {
@@ -111,5 +132,46 @@ export class ModerationService {
         ],
       },
     });
+  }
+
+  private async fetchDiscordProfile(id: string): Promise<DiscordProfile> {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token) return this.fallbackProfile(id);
+
+    try {
+      const response = await fetch(`https://discord.com/api/v10/users/${id}`, {
+        headers: { Authorization: `Bot ${token}` },
+      });
+      if (!response.ok) return this.fallbackProfile(id);
+
+      const user = await response.json() as {
+        username?: string;
+        global_name?: string | null;
+        avatar?: string | null;
+      };
+
+      return {
+        id,
+        username: user.username ?? null,
+        displayName: user.global_name ?? user.username ?? null,
+        avatarUrl: user.avatar ? this.avatarUrl(id, user.avatar) : null,
+      };
+    } catch {
+      return this.fallbackProfile(id);
+    }
+  }
+
+  private avatarUrl(id: string, avatar: string) {
+    const extension = avatar.startsWith('a_') ? 'gif' : 'png';
+    return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${extension}?size=64`;
+  }
+
+  private fallbackProfile(id: string): DiscordProfile {
+    return {
+      id,
+      username: null,
+      displayName: null,
+      avatarUrl: null,
+    };
   }
 }

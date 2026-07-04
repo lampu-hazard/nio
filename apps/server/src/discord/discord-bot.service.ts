@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Client, EmbedBuilder, Events, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, EmbedBuilder, Events, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { DiscordInteractionService } from './discord-interaction.service';
 import { StickersService } from '../stickers/stickers.service';
@@ -70,6 +70,26 @@ export class DiscordBotService implements OnModuleInit {
 
     const commands = [
       new SlashCommandBuilder().setName('dashboard').setDescription('Open the nio dashboard').toJSON(),
+      new SlashCommandBuilder()
+        .setName('warn')
+        .setDescription('Issue a warning to a member')
+        .addUserOption(option => option.setName('user').setDescription('The member to warn').setRequired(true))
+        .addStringOption(option => option.setName('reason').setDescription('The reason for warning').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers | PermissionFlagsBits.BanMembers | PermissionFlagsBits.Administrator)
+        .setDMPermission(false)
+        .toJSON(),
+      new SlashCommandBuilder()
+        .setName('warnings')
+        .setDescription('List warnings of a member')
+        .addUserOption(option => option.setName('user').setDescription('The member to check').setRequired(true))
+        .toJSON(),
+      new SlashCommandBuilder()
+        .setName('unwarn')
+        .setDescription('Revoke a warning by ID')
+        .addStringOption(option => option.setName('id').setDescription('The warning ID').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers | PermissionFlagsBits.BanMembers | PermissionFlagsBits.Administrator)
+        .setDMPermission(false)
+        .toJSON(),
     ];
     await new REST({ version: '10' }).setToken(token).put(Routes.applicationCommands(clientId), { body: commands });
     this.logger.log('Slash commands registered', 'DiscordBot');

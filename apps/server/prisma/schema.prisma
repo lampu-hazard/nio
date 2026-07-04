@@ -27,6 +27,7 @@ model Guild {
   settings  GuildSettings?
   panels    Panel[]
   stickers  Sticker[]
+  warnings  Warning[]
 }
 
 model GuildSettings {
@@ -47,6 +48,13 @@ model GuildSettings {
   userAnomalyEnabled          Boolean  @default(true)
   guildBaselineEnabled        Boolean  @default(true)
   anomalyEnforcementMode      String   @default("AUDIT_ONLY")
+
+  // New Moderation Settings
+  warnLimitEnabled       Boolean  @default(false)
+  warnLimitThreshold     Int      @default(3)
+  warnTimeoutDurationMin Int      @default(60)
+  warnExpiryDays         Int      @default(30) // 0 = Never Expire
+
   guild                  Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
 }
 
@@ -169,4 +177,20 @@ enum ButtonStyle {
 enum RoleAction {
   ADD
   REMOVE
+}
+
+model Warning {
+  id          String    @id @default(cuid())
+  guildId     String
+  userId      String
+  moderatorId String
+  reason      String
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  guild       Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+  @@index([userId])
 }

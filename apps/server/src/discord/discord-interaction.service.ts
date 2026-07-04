@@ -26,7 +26,10 @@ export class DiscordInteractionService {
         const reason = interaction.options.getString('reason', true);
 
         if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
-          await interaction.reply({ content: 'You do not have permission to run this command.', ephemeral: true });
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')],
+            ephemeral: true,
+          });
           return;
         }
 
@@ -54,9 +57,11 @@ export class DiscordInteractionService {
 
         const embed = new EmbedBuilder()
           .setColor(0x2b2d31)
-          .setTitle('Member Warned')
+          .setTitle('Warning Issued')
+          .setDescription(`A warning has been recorded for <@${user.id}>.`)
           .addFields(
             { name: 'Member', value: `<@${user.id}> (${user.username})`, inline: true },
+            { name: 'Moderator', value: `<@${interaction.user.id}>`, inline: true },
             { name: 'Active Warnings', value: `${activeCount}`, inline: true },
             { name: 'Reason', value: reason },
           )
@@ -111,7 +116,10 @@ export class DiscordInteractionService {
         const warnId = interaction.options.getString('id', true);
 
         if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
-          await interaction.reply({ content: 'You do not have permission to run this command.', ephemeral: true });
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')],
+            ephemeral: true,
+          });
           return;
         }
 
@@ -124,7 +132,10 @@ export class DiscordInteractionService {
             .setTimestamp();
           await interaction.reply({ embeds: [embed] });
         } catch (err) {
-          await interaction.reply({ content: 'Warning not found or could not be revoked.', ephemeral: true });
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Warning Not Found', 'That warning could not be found or has already been revoked.')],
+            ephemeral: true,
+          });
         }
         return;
       }
@@ -140,5 +151,13 @@ export class DiscordInteractionService {
       const [, panelId] = interaction.customId.split(':');
       await this.selfRoles.toggleFromInteraction(interaction, panelId, interaction.values[0]);
     }
+  }
+
+  private buildStatusEmbed(title: string, description: string) {
+    return new EmbedBuilder()
+      .setColor(0x2b2d31)
+      .setTitle(title)
+      .setDescription(description)
+      .setTimestamp();
   }
 }

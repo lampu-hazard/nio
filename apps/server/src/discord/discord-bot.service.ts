@@ -6,6 +6,7 @@ import { StickersService } from '../stickers/stickers.service';
 import { DiscordSlowmodeService } from './discord-slowmode.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
 import { BoosterRoleService } from '../booster-role/booster-role.service';
+import { TakoService } from '../tako/tako.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -27,11 +28,13 @@ export class DiscordBotService implements OnModuleInit {
     private readonly slowmode: DiscordSlowmodeService,
     private readonly anomaly: DiscordAnomalyService,
     private readonly boosterRoles: BoosterRoleService,
+    private readonly tako: TakoService,
   ) {}
 
   async onModuleInit() {
     this.slowmode.setClient(this.client);
     this.boosterRoles.setClient(this.client);
+    this.tako.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -76,6 +79,11 @@ export class DiscordBotService implements OnModuleInit {
       new SlashCommandBuilder()
         .setName('booster-role')
         .setDescription('Create or edit your custom booster role')
+        .setDMPermission(false)
+        .toJSON(),
+      new SlashCommandBuilder()
+        .setName('donate-role')
+        .setDescription('Get private checkout link to donate and receive your reward role')
         .setDMPermission(false)
         .toJSON(),
       new SlashCommandBuilder()

@@ -7,6 +7,7 @@ import { DiscordPermissionService } from './discord-permission.service';
 import { DiscordSlowmodeService } from './discord-slowmode.service';
 import { RustSlowmodeClientService } from './rust-slowmode-client.service';
 import { RustAnomalyClientService } from './rust-anomaly-client.service';
+import { DiscordAnomalyService } from './discord-anomaly.service';
 
 @Module({
   imports: [SelfRolesModule, StickersModule],
@@ -17,6 +18,7 @@ import { RustAnomalyClientService } from './rust-anomaly-client.service';
     DiscordSlowmodeService,
     RustSlowmodeClientService,
     RustAnomalyClientService,
+    DiscordAnomalyService,
   ],
   exports: [
     DiscordBotService,
@@ -24,6 +26,7 @@ import { RustAnomalyClientService } from './rust-anomaly-client.service';
     DiscordSlowmodeService,
     RustSlowmodeClientService,
     RustAnomalyClientService,
+    DiscordAnomalyService,
   ],
 })
 export class DiscordModule {}

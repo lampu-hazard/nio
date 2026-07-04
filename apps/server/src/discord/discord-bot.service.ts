@@ -4,6 +4,7 @@ import { AppLogger } from '../logger/logger.service';
 import { DiscordInteractionService } from './discord-interaction.service';
 import { StickersService } from '../stickers/stickers.service';
 import { DiscordSlowmodeService } from './discord-slowmode.service';
+import { DiscordAnomalyService } from './discord-anomaly.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -23,6 +24,7 @@ export class DiscordBotService implements OnModuleInit {
     private readonly stickers: StickersService,
     private readonly logger: AppLogger,
     private readonly slowmode: DiscordSlowmodeService,
+    private readonly anomaly: DiscordAnomalyService,
   ) {}
 
   async onModuleInit() {
@@ -43,6 +45,10 @@ export class DiscordBotService implements OnModuleInit {
     this.client.on('messageCreate', (message) => {
       this.slowmode.handleMessage(message).catch(
         (err) => this.logger.error(`Slowmode service error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+
+      this.anomaly.handleMessage(message).catch(
+        (err) => this.logger.error(`Anomaly service error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );
 
       if (message.author.bot || !message.guild) return;

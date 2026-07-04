@@ -3,6 +3,7 @@ import { GuildsService } from './guilds.service';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
+import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
 import { StickersService } from '../stickers/stickers.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
@@ -12,6 +13,7 @@ describe('GuildsService', () => {
   let prisma: any;
   let stickers: any;
   let slowmode: any;
+  let anomaly: any;
 
   beforeEach(() => {
     bot = {
@@ -40,11 +42,16 @@ describe('GuildsService', () => {
       updateGuildCache: jest.fn(),
     };
 
+    anomaly = {
+      updateGuildCache: jest.fn(),
+    };
+
     service = new GuildsService(
       bot as unknown as DiscordBotService,
       prisma as unknown as PrismaService,
       stickers as unknown as StickersService,
       slowmode as unknown as DiscordSlowmodeService,
+      anomaly as unknown as DiscordAnomalyService,
     );
   });
 
@@ -211,6 +218,14 @@ describe('GuildsService', () => {
         slowmodeIntervalNormal: 30,
         slowmodeIntervalBusy: 40,
       });
+      expect(anomaly.updateGuildCache).toHaveBeenCalledWith('guild-1', {
+        enabled: false,
+        phishingEnabled: true,
+        contentAnomalyEnabled: true,
+        userAnomalyEnabled: true,
+        guildBaselineEnabled: true,
+        enforcementMode: 'AUDIT_ONLY',
+      });
     });
 
     it('triggers stickers setEnabled if stickerEnabled is updated', async () => {
@@ -281,6 +296,14 @@ describe('GuildsService', () => {
         slowmodeIntervalQuiet: 0,
         slowmodeIntervalNormal: 5,
         slowmodeIntervalBusy: 10,
+      });
+      expect(anomaly.updateGuildCache).toHaveBeenCalledWith('guild-1', {
+        enabled: false,
+        phishingEnabled: true,
+        contentAnomalyEnabled: true,
+        userAnomalyEnabled: true,
+        guildBaselineEnabled: true,
+        enforcementMode: 'AUDIT_ONLY',
       });
     });
   });

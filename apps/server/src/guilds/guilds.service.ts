@@ -2,6 +2,7 @@ import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { PermissionsBitField } from 'discord.js';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
+import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StickersService } from '../stickers/stickers.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
@@ -18,6 +19,7 @@ export class GuildsService {
     @Inject(forwardRef(() => StickersService))
     private readonly stickers: StickersService,
     private readonly slowmode: DiscordSlowmodeService,
+    private readonly anomaly: DiscordAnomalyService,
   ) {}
 
   canManage(userGuild: any): boolean {
@@ -153,6 +155,15 @@ export class GuildsService {
       slowmodeIntervalQuiet: updated.slowmodeIntervalQuiet,
       slowmodeIntervalNormal: updated.slowmodeIntervalNormal,
       slowmodeIntervalBusy: updated.slowmodeIntervalBusy,
+    });
+
+    this.anomaly.updateGuildCache(guildId, {
+      enabled: updated.anomalyEnabled,
+      phishingEnabled: updated.phishingDetectionEnabled,
+      contentAnomalyEnabled: updated.contentAnomalyEnabled,
+      userAnomalyEnabled: updated.userAnomalyEnabled,
+      guildBaselineEnabled: updated.guildBaselineEnabled,
+      enforcementMode: updated.anomalyEnforcementMode as any || 'AUDIT_ONLY',
     });
 
     return updated;

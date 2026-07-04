@@ -14,6 +14,12 @@ type Settings = {
   slowmodeIntervalQuiet: number;
   slowmodeIntervalNormal: number;
   slowmodeIntervalBusy: number;
+  anomalyEnabled: boolean;
+  phishingDetectionEnabled: boolean;
+  contentAnomalyEnabled: boolean;
+  userAnomalyEnabled: boolean;
+  guildBaselineEnabled: boolean;
+  anomalyEnforcementMode: string;
 };
 
 type PageProps = {
@@ -31,6 +37,12 @@ export default function SettingsPage({ params }: PageProps) {
     slowmodeIntervalQuiet: 5,
     slowmodeIntervalNormal: 5,
     slowmodeIntervalBusy: 10,
+    anomalyEnabled: false,
+    phishingDetectionEnabled: true,
+    contentAnomalyEnabled: true,
+    userAnomalyEnabled: true,
+    guildBaselineEnabled: true,
+    anomalyEnforcementMode: 'AUDIT_ONLY',
   });
   const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,6 +135,12 @@ export default function SettingsPage({ params }: PageProps) {
           slowmodeIntervalQuiet: settings.slowmodeIntervalQuiet,
           slowmodeIntervalNormal: settings.slowmodeIntervalNormal,
           slowmodeIntervalBusy: settings.slowmodeIntervalBusy,
+          anomalyEnabled: settings.anomalyEnabled,
+          phishingDetectionEnabled: settings.phishingDetectionEnabled,
+          contentAnomalyEnabled: settings.contentAnomalyEnabled,
+          userAnomalyEnabled: settings.userAnomalyEnabled,
+          guildBaselineEnabled: settings.guildBaselineEnabled,
+          anomalyEnforcementMode: settings.anomalyEnforcementMode,
         }),
       });
 
@@ -345,6 +363,104 @@ export default function SettingsPage({ params }: PageProps) {
                 </div>
               </div>
             )}
+
+            {/* Anomaly Detection Settings */}
+            <div className="card p-6">
+              <h2 className="text-lg font-bold mb-4">Anomaly & Phishing Intelligence</h2>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-2 border-b border-white/5 pb-4">
+                  <div>
+                    <p className="text-sm font-semibold">Enable Anomaly Detection</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Analyze messages for malicious patterns, phishing, and sudden spam.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSettings(prev => ({ ...prev, anomalyEnabled: !prev.anomalyEnabled }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                      settings.anomalyEnabled ? 'bg-indigo-500' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        settings.anomalyEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {settings.anomalyEnabled && (
+                  <div className="space-y-4 pl-4 border-l-2 border-indigo-500/20">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-300">Phishing Link Blocker</p>
+                        <p className="text-[10px] text-slate-500">Block known malicious URLs and gifts.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.phishingDetectionEnabled}
+                        onChange={(e) => setSettings(prev => ({ ...prev, phishingDetectionEnabled: e.target.checked }))}
+                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-300">Content Abuse Shield</p>
+                        <p className="text-[10px] text-slate-500">Scan for excessive mentions or character floods.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.contentAnomalyEnabled}
+                        onChange={(e) => setSettings(prev => ({ ...prev, contentAnomalyEnabled: e.target.checked }))}
+                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-300">User Anomaly Shield</p>
+                        <p className="text-[10px] text-slate-500">Scan for high message volume and spam from users.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.userAnomalyEnabled}
+                        onChange={(e) => setSettings(prev => ({ ...prev, userAnomalyEnabled: e.target.checked }))}
+                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-300">Guild Baseline Monitor</p>
+                        <p className="text-[10px] text-slate-500">Detect sudden activity bursts across channels.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.guildBaselineEnabled}
+                        onChange={(e) => setSettings(prev => ({ ...prev, guildBaselineEnabled: e.target.checked }))}
+                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                        Enforcement Mode
+                      </label>
+                      <select
+                        value={settings.anomalyEnforcementMode}
+                        onChange={(e) => setSettings(prev => ({ ...prev, anomalyEnforcementMode: e.target.value }))}
+                        className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="AUDIT_ONLY">Log / Audit Only</option>
+                        <option value="DELETE_HIGH_CONFIDENCE">Auto-Delete messages</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Logging Settings */}
             <div className="card p-6">

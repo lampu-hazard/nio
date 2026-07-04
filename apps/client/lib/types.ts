@@ -57,4 +57,10 @@ export type Settings = {
   slowmodeIntervalQuiet: number;
   slowmodeIntervalNormal: number;
   slowmodeIntervalBusy: number;
+  anomalyEnabled: boolean;
+  phishingDetectionEnabled: boolean;
+  contentAnomalyEnabled: boolean;
+  userAnomalyEnabled: boolean;
+  guildBaselineEnabled: boolean;
+  anomalyEnforcementMode: string;
 };

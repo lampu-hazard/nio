@@ -1,13 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { Client, GuildMember, PermissionsBitField } from 'discord.js';
+import { Client, Constants, GuildMember, PermissionsBitField } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
+import { AppLogger } from '../logger/logger.service';
 
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 const MAX_ICON_BYTES = 256 * 1024;
 const ROLE_NAME_PATTERN = /^(?!.*@(?:everyone|here))[\p{L}\p{N} ._\-]+$/u;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const ICON_DATA_URL_PATTERN = /^data:image\/(png|jpe?g|webp);base64,/i;
+const HOLOGRAPHIC_HEX = {
+  primaryColor: '#a9ffff',
+  secondaryColor: '#ffcccc',
+  tertiaryColor: '#ffe0a0',
+};
 
 type RoleStyleInput = {
   primaryColor: string;
@@ -36,7 +42,10 @@ export type BoosterRoleTokenValidation = {
 export class BoosterRoleService {
   private client?: Client;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly logger?: AppLogger,
+  ) {}
 
   setClient(client: Client) {
     this.client = client;
@@ -275,6 +284,13 @@ export class BoosterRoleService {
         throw new BadRequestException('Role colors must be valid hex colors.');
       }
     }
+    if (style.tertiaryColor && (
+      style.primaryColor !== HOLOGRAPHIC_HEX.primaryColor ||
+      style.secondaryColor !== HOLOGRAPHIC_HEX.secondaryColor ||
+      style.tertiaryColor !== HOLOGRAPHIC_HEX.tertiaryColor
+    )) {
+      throw new BadRequestException('Discord only supports tertiary role colors for the official Holographic style.');
+    }
     if (style.iconDataUrl) {
       if (!ICON_DATA_URL_PATTERN.test(style.iconDataUrl)) {
         throw new BadRequestException('Role icon must be a PNG, JPG, or WebP image.');
@@ -288,6 +304,8 @@ export class BoosterRoleService {
   }
 
   private rethrowDiscordRoleError(err: any): never {
+    const raw = err?.rawError || err?.requestBody || err;
+    this.logger?.warn(`Discord role update rejected: ${JSON.stringify(raw)}`, 'BoosterRole');
     const message = String(err?.message || err || 'Discord rejected the custom role update.');
     if (message.toLowerCase().includes('icon')) {
       throw new BadRequestException('Discord rejected the role icon. Make sure this server has role icons unlocked and the image is valid.');
@@ -299,11 +317,17 @@ export class BoosterRoleService {
   }
 
   private toDiscordColors(style: ReturnType<BoosterRoleService['normalizeStyle']>) {
-    const secondaryColor = style.secondaryColor || (style.tertiaryColor ? style.primaryColor : null);
+    if (style.tertiaryColor) {
+      return {
+        primaryColor: Constants.HolographicStyle.Primary,
+        secondaryColor: Constants.HolographicStyle.Secondary,
+        tertiaryColor: Constants.HolographicStyle.Tertiary,
+      };
+    }
+
     return {
       primaryColor: Number.parseInt(style.primaryColor.slice(1), 16),
-      ...(secondaryColor ? { secondaryColor: Number.parseInt(secondaryColor.slice(1), 16) } : {}),
-      ...(style.tertiaryColor ? { tertiaryColor: Number.parseInt(style.tertiaryColor.slice(1), 16) } : {}),
+      ...(style.secondaryColor ? { secondaryColor: Number.parseInt(style.secondaryColor.slice(1), 16) } : {}),
     };
   }
 

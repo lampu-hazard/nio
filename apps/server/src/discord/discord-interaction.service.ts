@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Interaction, PermissionFlagsBits } from 'discord.js';
+import { Interaction, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
 import { ModerationService } from '../moderation/moderation.service';
 
@@ -26,15 +26,17 @@ export class DiscordInteractionService {
         const reason = interaction.options.getString('reason', true);
 
         if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
-          await interaction.reply({ content: '❌ You do not have permission to run this command.', ephemeral: true });
+          await interaction.reply({ content: 'You do not have permission to run this command.', ephemeral: true });
           return;
         }
 
         const settings = await this.moderation.getSettings(guildId);
-        await this.moderation.createWarning(guildId, user.id, interaction.user.id, reason);
+        const warning = await this.moderation.createWarning(guildId, user.id, interaction.user.id, reason);
         const activeCount = await this.moderation.countActiveWarnings(guildId, user.id);
 
-        let timeoutMsg = '';
+        let timeoutApplied = false;
+        let timeoutError = '';
+
         if (settings.warnLimitEnabled && activeCount >= settings.warnLimitThreshold) {
           try {
             const member = await interaction.guild?.members.fetch(user.id);
@@ -43,16 +45,31 @@ export class DiscordInteractionService {
                 settings.warnTimeoutDurationMin * 60 * 1000,
                 `Warnings threshold reached (${activeCount}/${settings.warnLimitThreshold})`,
               );
-              timeoutMsg = `\n⚠️ User has been timed out for ${settings.warnTimeoutDurationMin} minutes.`;
+              timeoutApplied = true;
             }
           } catch (err: any) {
-            timeoutMsg = `\n❌ Failed to issue auto-timeout: ${err.message}`;
+            timeoutError = err.message;
           }
         }
 
-        await interaction.reply({
-          content: `✅ Warned **${user.username}** (Active: ${activeCount}). Reason: ${reason}${timeoutMsg}`,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(0x2b2d31)
+          .setTitle('Member Warned')
+          .addFields(
+            { name: 'Member', value: `<@${user.id}> (${user.username})`, inline: true },
+            { name: 'Active Warnings', value: `${activeCount}`, inline: true },
+            { name: 'Reason', value: reason },
+          )
+          .setFooter({ text: `Warning ID: ${warning.id}` })
+          .setTimestamp();
+
+        if (timeoutApplied) {
+          embed.addFields({ name: 'Auto Penalty', value: `Muted (Timeout) for ${settings.warnTimeoutDurationMin} minutes.` });
+        } else if (timeoutError) {
+          embed.addFields({ name: 'Auto Penalty Status', value: `Failed to timeout: ${timeoutError}` });
+        }
+
+        await interaction.reply({ embeds: [embed] });
         return;
       }
 
@@ -61,9 +78,32 @@ export class DiscordInteractionService {
         const activeCount = await this.moderation.countActiveWarnings(guildId, user.id);
         const warnings = await this.moderation.listWarnings(guildId, { search: user.id });
 
-        await interaction.reply({
-          content: `👤 **${user.username}** has **${activeCount}** active warning(s) (${warnings.length} total warnings).`,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(0x2b2d31)
+          .setTitle(`Warnings Status: ${user.username}`)
+          .setThumbnail(user.displayAvatarURL())
+          .addFields(
+            { name: 'Active Warnings', value: `${activeCount}`, inline: true },
+            { name: 'Total Violations', value: `${warnings.length}`, inline: true },
+          );
+
+        if (warnings.length > 0) {
+          const warnList = warnings
+            .slice(0, 5)
+            .map((w) => {
+              const date = new Date(w.createdAt).toLocaleDateString(undefined, { dateStyle: 'short' });
+              return `\`${w.id}\` - ${w.reason} (Issued on ${date})`;
+            })
+            .join('\n');
+          embed.addFields({ name: 'Recent Warning Logs', value: warnList });
+          if (warnings.length > 5) {
+            embed.setFooter({ text: `Showing 5 of ${warnings.length} total warnings. Manage details via nio dashboard.` });
+          }
+        } else {
+          embed.setDescription('This member has a clean record on this server.');
+        }
+
+        await interaction.reply({ embeds: [embed] });
         return;
       }
 
@@ -71,15 +111,20 @@ export class DiscordInteractionService {
         const warnId = interaction.options.getString('id', true);
 
         if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
-          await interaction.reply({ content: '❌ You do not have permission to run this command.', ephemeral: true });
+          await interaction.reply({ content: 'You do not have permission to run this command.', ephemeral: true });
           return;
         }
 
         try {
           await this.moderation.revokeWarning(guildId, warnId);
-          await interaction.reply({ content: `✅ Successfully revoked warning **${warnId}**.` });
+          const embed = new EmbedBuilder()
+            .setColor(0x2b2d31)
+            .setTitle('Warning Revoked')
+            .setDescription(`Successfully removed warning record \`${warnId}\`.`)
+            .setTimestamp();
+          await interaction.reply({ embeds: [embed] });
         } catch (err) {
-          await interaction.reply({ content: `❌ Warning not found or could not be revoked.`, ephemeral: true });
+          await interaction.reply({ content: 'Warning not found or could not be revoked.', ephemeral: true });
         }
         return;
       }

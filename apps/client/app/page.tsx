@@ -31,10 +31,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <section className="container-wide grid min-h-[calc(100vh-80px)] items-center gap-12 py-10 xl:grid-cols-[1.05fr_.95fr]">
         <div>
           <div className="badge mb-6">Discord Panel Builder</div>
-          <h1 className="max-w-5xl text-5xl font-black leading-[0.95] tracking-tight text-zinc-950 dark:text-zinc-50 md:text-7xl">
+          <h1 className="max-w-5xl text-5xl font-black leading-[0.95] tracking-tight text-[var(--text)] md:text-7xl">
             Build clean Discord panels without commands.
           </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-500 dark:text-zinc-400">
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-[var(--text-secondary)]">
             nio helps server administrators create rules, announcements, and self-role panels with live previews, audit trails, and one-click Discord publishing.
           </p>
           {hasAuthError && (
@@ -48,10 +48,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
           <div id="features" className="mt-10 grid gap-4 md:grid-cols-3">
             {FEATURES.map((feature) => (
-              <div key={feature.title} className="card-flat p-5">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">{feature.label}</div>
-                <h3 className="mt-4 font-bold text-zinc-950 dark:text-zinc-50">{feature.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">{feature.description}</p>
+              <div key={feature.title} className="card-flat p-5 border border-[var(--border)] bg-[var(--panel-strong)]">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">{feature.label}</div>
+                <h3 className="mt-4 font-bold text-[var(--text)]">{feature.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -60,8 +60,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <div className="card p-5 md:p-7">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">Live Discord preview</div>
-              <h2 className="text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">Server Rules</h2>
+              <div className="text-sm font-semibold text-[var(--muted)]">Live Discord preview</div>
+              <h2 className="text-2xl font-bold tracking-tight text-[var(--text)]">Server Rules</h2>
             </div>
             <span className="badge badge-live">Ready</span>
           </div>

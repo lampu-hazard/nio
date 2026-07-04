@@ -122,21 +122,21 @@ export default function StickersPage({ params }: PageProps) {
     <main className="px-6 py-8">
       <div className="mx-auto max-w-7xl">
         <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Media</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">Sticker Keywords</h1>
-          <p className="mt-1 text-zinc-500 dark:text-zinc-400">Send sticker images when users type specific keyword triggers.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Media</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Sticker Keywords</h1>
+          <p className="mt-1 text-[var(--muted)]">Send sticker images when users type specific keyword triggers.</p>
         </div>
 
         <DashboardNav guildId={guildId} activeTab="stickers" />
         {error && <div className="notice notice-error mb-6">{error}</div>}
 
         {loading ? (
-          <div className="flex h-64 items-center justify-center text-zinc-500 dark:text-zinc-400">Loading stickers...</div>
+          <div className="flex h-64 items-center justify-center text-[var(--muted)]">Loading stickers...</div>
         ) : (
           <div className="grid gap-8 lg:grid-cols-3">
             <div className="lg:col-span-1">
               <div className="card p-6">
-                <h2 className="text-lg font-bold text-zinc-950 dark:text-zinc-50">Create Sticker</h2>
+                <h2 className="text-lg font-bold text-[var(--text)]">Create Sticker</h2>
                 <form onSubmit={handleUpload} className="mt-5 space-y-4">
                   <label className="block">
                     <span className="field-label">Keyword Trigger</span>
@@ -149,7 +149,7 @@ export default function StickersPage({ params }: PageProps) {
                       maxLength={32}
                       className="input"
                     />
-                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Lowercase letters, numbers, and dashes only. Exact message match.</p>
+                    <p className="mt-2 text-xs text-[var(--muted)]">Lowercase letters, numbers, and dashes only. Exact message match.</p>
                   </label>
 
                   <label className="block">
@@ -160,19 +160,19 @@ export default function StickersPage({ params }: PageProps) {
                       accept="image/png, image/jpeg, image/gif"
                       disabled={uploading}
                       onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      className="block w-full text-sm text-zinc-500 file:mr-4 file:rounded-md file:border file:border-zinc-200 file:bg-white file:px-4 file:py-2 file:text-sm file:font-semibold file:text-zinc-950 hover:file:bg-zinc-50 dark:text-zinc-400 dark:file:border-zinc-800 dark:file:bg-zinc-950 dark:file:text-zinc-50 dark:hover:file:bg-zinc-900"
+                      className="block w-full text-sm text-[var(--muted)] file:mr-4 file:rounded-md file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[var(--text)] hover:file:bg-[var(--surface-muted)] dark:hover:file:bg-[var(--surface-muted)]"
                     />
-                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Supports PNG, JPG, or GIF. Max 2MB.</p>
+                    <p className="mt-2 text-xs text-[var(--muted)]">Supports PNG, JPG, or GIF. Max 2MB.</p>
                   </label>
 
                   {uploading && (
                     <div className="space-y-2">
-                      <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                      <div className="flex justify-between text-xs text-[var(--muted)]">
                         <span>Uploading file...</span>
                         <span>{uploadProgress}%</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                        <div className="h-full bg-zinc-950 transition-all duration-300 dark:bg-zinc-50" style={{ width: `${uploadProgress}%` }} />
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-muted)]">
+                        <div className="h-full bg-indigo-600 transition-all duration-300 dark:bg-indigo-500" style={{ width: `${uploadProgress}%` }} />
                       </div>
                     </div>
                   )}
@@ -186,20 +186,20 @@ export default function StickersPage({ params }: PageProps) {
 
             <div className="lg:col-span-2">
               <div className="card p-6">
-                <h2 className="text-lg font-bold text-zinc-950 dark:text-zinc-50">Sticker Collection ({stickers.length})</h2>
+                <h2 className="text-lg font-bold text-[var(--text)]">Sticker Collection ({stickers.length})</h2>
                 {stickers.length === 0 ? (
-                  <div className="py-12 text-center text-sm text-zinc-500 dark:text-zinc-400">No stickers uploaded yet. Use the form to add one.</div>
+                  <div className="py-12 text-center text-sm text-[var(--muted)]">No stickers uploaded yet. Use the form to add one.</div>
                 ) : (
                   <div className="mt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                     {stickers.map((sticker) => (
-                      <div key={sticker.id} className="group flex flex-col rounded-xl border border-zinc-200 bg-white p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900">
-                        <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">
+                      <div key={sticker.id} className="group flex flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-colors hover:bg-[var(--surface-muted)]">
+                        <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-[var(--surface-muted)] p-2">
                           <img src={sticker.url} alt={sticker.name} className="max-h-full max-w-full object-contain" />
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50" title={sticker.name}>{sticker.name}</p>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{sticker.type.split('/')[1]?.toUpperCase() || 'IMAGE'}</p>
+                            <p className="truncate text-sm font-semibold text-[var(--text)]" title={sticker.name}>{sticker.name}</p>
+                            <p className="text-xs text-[var(--muted)]">{sticker.type.split('/')[1]?.toUpperCase() || 'IMAGE'}</p>
                           </div>
                           <button onClick={() => handleDelete(sticker.id)} className="btn btn-danger h-8 px-3 text-xs" title="Delete sticker">Delete</button>
                         </div>

@@ -1,6 +1,7 @@
 use crate::types::{AnalyzeRequest, AnalyzeResponse, SlowmodeLevel, TrafficMetrics};
 use crate::state::ChannelTraffic;
 
+
 pub fn analyze_channel(
     req: &AnalyzeRequest,
     traffic: &mut ChannelTraffic,

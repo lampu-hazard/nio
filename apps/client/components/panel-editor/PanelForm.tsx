@@ -42,7 +42,7 @@ const TEMPLATES: Record<string, Partial<Draft>> = {
     name: 'Self Roles',
     title: '✦ Self Roles',
     accentText: 'Customize your profile',
-    description: 'Pilih role di bawah untuk mengatur profil kamu.',
+    description: 'Select roles below to customize your profile.',
     color: '#5865F2',
     style: 'PREMIUM',
   },
@@ -62,7 +62,7 @@ function initialDraft(panel?: Panel | null): Draft {
     name: panel?.name || '',
     title: panel?.title || '✦ Self Roles',
     accentText: panel?.accentText || '',
-    description: panel?.description || 'Pilih role di bawah untuk mengatur profil kamu.',
+    description: panel?.description || 'Select roles below to customize your profile.',
     type: panel?.type || 'SELF_ROLE',
     mode: panel?.mode || 'BUTTONS',
     style: panel?.style || 'PREMIUM',
@@ -119,7 +119,7 @@ export function PanelForm({
     setState({ loading: false, uploading: kind });
 
     if (file.size > 5 * 1024 * 1024) {
-      setState({ loading: false, error: 'Ukuran gambar maksimal 5 MB' });
+      setState({ loading: false, error: 'Image size must be 5 MB or less.' });
       return;
     }
 
@@ -131,7 +131,7 @@ export function PanelForm({
         body: JSON.stringify({ fileName: file.name, contentType: file.type }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Gagal mendapatkan upload URL');
+      if (!res.ok) throw new Error(data.message || 'Failed to get upload URL');
 
       const { uploadUrl, url } = data;
 
@@ -153,16 +153,16 @@ export function PanelForm({
         }
       }
 
-      if (!uploadSuccess) throw new Error('Gagal mengupload file ke storage');
+      if (!uploadSuccess) throw new Error('Failed to upload file to storage');
 
       // 3. Update preview & state
       patchDraft(kind === 'banner' ? { imageUrl: url } : { thumbnailUrl: url });
       setState({
         loading: false,
-        success: `${kind === 'banner' ? 'Banner' : 'Thumbnail'} berhasil diupload. Jangan lupa Save Changes.`,
+        success: `${kind === 'banner' ? 'Banner' : 'Thumbnail'} uploaded successfully. Remember to save changes.`,
       });
     } catch (error) {
-      setState({ loading: false, error: error instanceof Error ? error.message : 'Gagal upload gambar' });
+      setState({ loading: false, error: error instanceof Error ? error.message : 'Failed to upload image' });
     }
   }
 
@@ -192,16 +192,16 @@ export function PanelForm({
         body: JSON.stringify(payload),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || 'Gagal menyimpan panel');
+      if (!response.ok) throw new Error(data.message || 'Failed to save panel');
 
       setState({
         loading: false,
-        success: isPublished ? 'Perubahan tersimpan. Klik Update Discord Message untuk sync ke Discord.' : panel ? 'Panel berhasil disimpan.' : 'Panel berhasil dibuat.',
+        success: isPublished ? 'Changes saved. Click Update Discord Message to sync with Discord.' : panel ? 'Panel berhasil disimpan.' : 'Panel berhasil dibuat.',
       });
       if (!panel && data.panel?.id) router.push(`/dashboard/${guildId}/panels/${data.panel.id}`);
       router.refresh();
     } catch (error) {
-      setState({ loading: false, error: error instanceof Error ? error.message : 'Gagal menyimpan panel' });
+      setState({ loading: false, error: error instanceof Error ? error.message : 'Failed to save panel' });
     }
   }
 

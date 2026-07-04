@@ -26,6 +26,42 @@ type PageProps = {
   params: Promise<{ guildId: string }>;
 };
 
+function Switch({ checked, onClick, label }: { checked: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onClick}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
+        checked ? 'border-zinc-950 bg-zinc-950 dark:border-zinc-50 dark:bg-zinc-50' : 'border-zinc-300 bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 rounded-full bg-white transition-transform dark:bg-zinc-950 ${checked ? 'translate-x-6' : 'translate-x-1'}`}
+      />
+    </button>
+  );
+}
+
+function CheckboxRow({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-start justify-between gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <span>
+        <span className="block text-sm font-semibold text-zinc-950 dark:text-zinc-50">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">{description}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:ring-zinc-50"
+      />
+    </label>
+  );
+}
+
 export default function SettingsPage({ params }: PageProps) {
   const { guildId } = use(params);
 
@@ -71,29 +107,7 @@ export default function SettingsPage({ params }: PageProps) {
     }
   };
 
-  const handleToggleSticker = () => {
-    setSettings((prev) => ({
-      ...prev,
-      stickerEnabled: !prev.stickerEnabled,
-    }));
-  };
-
-  const handleToggleSlowmode = () => {
-    setSettings((prev) => ({
-      ...prev,
-      slowmodeEnabled: !prev.slowmodeEnabled,
-    }));
-  };
-
-  const handleChannelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    setSettings((prev) => ({
-      ...prev,
-      logChannelId: val === 'none' ? null : val,
-    }));
-  };
-
-    const toggleSlowmodeChannel = (channelId: string) => {
+  const toggleSlowmodeChannel = (channelId: string) => {
     setSettings((prev) => {
       const selected = prev.slowmodeChannels.includes(channelId);
       return {
@@ -111,10 +125,7 @@ export default function SettingsPage({ params }: PageProps) {
   ) => {
     const num = parseInt(val, 10);
     if (!isNaN(num) && num >= 0) {
-      setSettings((prev) => ({
-        ...prev,
-        [field]: num,
-      }));
+      setSettings((prev) => ({ ...prev, [field]: num }));
     }
   };
 
@@ -127,25 +138,11 @@ export default function SettingsPage({ params }: PageProps) {
 
       const res = await api<{ ok: boolean; settings: Settings }>(`/guilds/${guildId}/settings`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          logChannelId: settings.logChannelId,
-          stickerEnabled: settings.stickerEnabled,
-          slowmodeEnabled: settings.slowmodeEnabled,
-          slowmodeChannels: settings.slowmodeChannels,
-          slowmodeIntervalQuiet: settings.slowmodeIntervalQuiet,
-          slowmodeIntervalNormal: settings.slowmodeIntervalNormal,
-          slowmodeIntervalBusy: settings.slowmodeIntervalBusy,
-          anomalyEnabled: settings.anomalyEnabled,
-          phishingDetectionEnabled: settings.phishingDetectionEnabled,
-          contentAnomalyEnabled: settings.contentAnomalyEnabled,
-          userAnomalyEnabled: settings.userAnomalyEnabled,
-          guildBaselineEnabled: settings.guildBaselineEnabled,
-          anomalyEnforcementMode: settings.anomalyEnforcementMode,
-        }),
+        body: JSON.stringify(settings),
       });
 
       setSettings(res.settings);
-      setSuccess('Settings updated successfully!');
+      setSuccess('Settings updated successfully.');
     } catch (err: any) {
       setError(err?.message || 'Failed to save settings');
     } finally {
@@ -154,347 +151,162 @@ export default function SettingsPage({ params }: PageProps) {
   };
 
   return (
-    <main className="min-h-screen px-6 py-10">
-      <div className="mx-auto max-w-7xl">
+    <main className="px-6 py-8">
+      <div className="mx-auto max-w-5xl">
         <div className="mb-6">
-          <h1 className="text-4xl font-black">Settings</h1>
-          <p className="mt-1 text-slate-400">Configure bot options and channel logging.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Configuration</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">Settings</h1>
+          <p className="mt-1 text-zinc-500 dark:text-zinc-400">Configure moderation, automation, and audit options for this server.</p>
         </div>
 
         <DashboardNav guildId={guildId} activeTab="settings" />
 
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-6 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-400">
-            {success}
-          </div>
-        )}
+        {error && <div className="notice notice-error mb-6">{error}</div>}
+        {success && <div className="notice notice-success mb-6">{success}</div>}
 
         {loading ? (
-          <div className="flex h-64 items-center justify-center text-slate-400">
-            Loading settings...
-          </div>
+          <div className="flex h-64 items-center justify-center text-zinc-500 dark:text-zinc-400">Loading settings...</div>
         ) : (
-          <form onSubmit={handleSave} className="max-w-3xl space-y-6">
-            {/* Features Settings */}
-            <div className="card p-6">
-              <h2 className="text-lg font-bold mb-4">Features Configuration</h2>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between py-2 border-b border-white/5 pb-4">
+          <form onSubmit={handleSave} className="space-y-6">
+            <section className="card p-6">
+              <h2 className="text-lg font-bold text-zinc-950 dark:text-zinc-50">Features</h2>
+              <div className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800">
+                <div className="flex items-center justify-between gap-4 pb-5">
                   <div>
-                    <p className="text-sm font-semibold">Sticker Keywords</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Toggle trigger sticker response when users type keywords in chat.
-                    </p>
+                    <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">Sticker Keywords</p>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Send configured sticker images when users type exact keywords.</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleToggleSticker}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      settings.stickerEnabled ? 'bg-indigo-500' : 'bg-slate-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.stickerEnabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                  <Switch checked={settings.stickerEnabled} label="Toggle sticker keywords" onClick={() => setSettings((prev) => ({ ...prev, stickerEnabled: !prev.stickerEnabled }))} />
                 </div>
-
-                <div className="flex items-center justify-between py-2">
+                <div className="flex items-center justify-between gap-4 py-5">
                   <div>
-                    <p className="text-sm font-semibold">Automatic Slowmode</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Dynamically adjusts channel slowmode (10s if busy, 5s if quiet).
-                    </p>
+                    <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">Automatic Slowmode</p>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Adjust channel slowmode automatically as activity changes.</p>
                   </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={settings.slowmodeEnabled}
-                    aria-label="Toggle automatic slowmode"
-                    onClick={handleToggleSlowmode}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      settings.slowmodeEnabled ? 'bg-indigo-500' : 'bg-slate-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.slowmodeEnabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                  <Switch checked={settings.slowmodeEnabled} label="Toggle automatic slowmode" onClick={() => setSettings((prev) => ({ ...prev, slowmodeEnabled: !prev.slowmodeEnabled }))} />
                 </div>
               </div>
-            </div>
+            </section>
 
-            {/* Slowmode Detailed Settings */}
             {settings.slowmodeEnabled && (
-              <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/30">
-                <div className="relative border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.92))] p-6">
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/70 to-transparent" />
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.28em] text-emerald-300/80">
-                        Traffic Guard
-                      </p>
-                      <h2 className="mt-2 text-2xl font-black tracking-tight text-white">
-                        Auto Slowmode
-                      </h2>
-                      <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
-                        Pilih channel yang mau dijaga. Bot akan naikin slowmode saat chat rame, lalu turunin lagi waktu suasana sepi.
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-right">
-                      <p className="text-2xl font-black text-emerald-200">{settings.slowmodeChannels.length}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-300/70">channels</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-5 p-6">
+              <section className="card p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-white">Protected channels</p>
-                        <p className="text-xs text-slate-500">Tap channel untuk masuk/keluar dari slowmode guard.</p>
-                      </div>
-                      <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-semibold text-slate-300">
-                        {settings.slowmodeChannels.length}/{channels.length}
-                      </span>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {channels.map((ch) => {
-                        const selected = settings.slowmodeChannels.includes(ch.id);
-                        return (
-                          <button
-                            key={ch.id}
-                            type="button"
-                            aria-pressed={selected}
-                            onClick={() => toggleSlowmodeChannel(ch.id)}
-                            className={`group flex min-h-14 items-center justify-between rounded-2xl border px-4 py-3 text-left transition duration-200 ${
-                              selected
-                                ? 'border-emerald-400/40 bg-emerald-400/10 shadow-lg shadow-emerald-950/40'
-                                : 'border-white/10 bg-white/[0.03] hover:border-slate-500/50 hover:bg-white/[0.06]'
-                            }`}
-                          >
-                            <span>
-                              <span className="block text-sm font-bold text-white">#{ch.name}</span>
-                              <span className="mt-0.5 block text-xs text-slate-500">channel guard</span>
-                            </span>
-                            <span
-                              className={`h-3 w-3 rounded-full ring-4 transition ${
-                                selected
-                                  ? 'bg-emerald-300 ring-emerald-400/20'
-                                  : 'bg-slate-700 ring-slate-700/20 group-hover:bg-slate-500'
-                              }`}
-                            />
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <h2 className="text-lg font-bold text-zinc-950 dark:text-zinc-50">Auto Slowmode</h2>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+                      Select channels to protect. The bot increases slowmode during high activity and restores it during quiet periods.
+                    </p>
                   </div>
+                  <span className="badge">{settings.slowmodeChannels.length}/{channels.length} channels</span>
+                </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <label className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                          Sepi
-                        </label>
-                        <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-400">idle</span>
-                      </div>
-                      <div className="flex items-end gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          value={settings.slowmodeIntervalQuiet}
-                          onChange={(e) => handleIntervalChange('slowmodeIntervalQuiet', e.target.value)}
-                          className="w-full bg-transparent text-4xl font-black tracking-tight text-white outline-none focus:text-emerald-200"
-                        />
-                        <span className="pb-2 text-sm font-bold text-slate-500">sec</span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <label className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                          Sedang
-                        </label>
-                        <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-400">normal</span>
-                      </div>
-                      <div className="flex items-end gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          value={settings.slowmodeIntervalNormal}
-                          onChange={(e) => handleIntervalChange('slowmodeIntervalNormal', e.target.value)}
-                          className="w-full bg-transparent text-4xl font-black tracking-tight text-white outline-none focus:text-emerald-200"
-                        />
-                        <span className="pb-2 text-sm font-bold text-slate-500">sec</span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-br from-emerald-400/10 to-cyan-400/5 p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <label className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200/80">
-                          Rame
-                        </label>
-                        <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200">busy</span>
-                      </div>
-                      <div className="flex items-end gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          value={settings.slowmodeIntervalBusy}
-                          onChange={(e) => handleIntervalChange('slowmodeIntervalBusy', e.target.value)}
-                          className="w-full bg-transparent text-4xl font-black tracking-tight text-white outline-none focus:text-emerald-200"
-                        />
-                        <span className="pb-2 text-sm font-bold text-emerald-200/70">sec</span>
-                      </div>
-                    </div>
+                <div className="mt-6">
+                  <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">Protected channels</p>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Click a channel to toggle slowmode protection.</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {channels.map((ch) => {
+                      const selected = settings.slowmodeChannels.includes(ch.id);
+                      return (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => toggleSlowmodeChannel(ch.id)}
+                          className={`flex min-h-14 items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors ${
+                            selected
+                              ? 'border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950'
+                              : 'border-zinc-200 bg-white text-zinc-950 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900'
+                          }`}
+                        >
+                          <span>
+                            <span className="block text-sm font-semibold">#{ch.name}</span>
+                            <span className={`mt-0.5 block text-xs ${selected ? 'opacity-70' : 'text-zinc-500 dark:text-zinc-400'}`}>slowmode guard</span>
+                          </span>
+                          <span className={`h-2.5 w-2.5 rounded-full ${selected ? 'bg-current' : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  {[
+                    ['Quiet', 'idle', 'slowmodeIntervalQuiet'],
+                    ['Moderate', 'normal', 'slowmodeIntervalNormal'],
+                    ['Busy', 'high traffic', 'slowmodeIntervalBusy'],
+                  ].map(([label, hint, field]) => (
+                    <label key={field} className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+                      <span className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+                        {label}
+                        <span className="normal-case tracking-normal">{hint}</span>
+                      </span>
+                      <div className="mt-3 flex items-end gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          value={settings[field as keyof Pick<Settings, 'slowmodeIntervalQuiet' | 'slowmodeIntervalNormal' | 'slowmodeIntervalBusy'>] as number}
+                          onChange={(e) => handleIntervalChange(field as 'slowmodeIntervalQuiet' | 'slowmodeIntervalNormal' | 'slowmodeIntervalBusy', e.target.value)}
+                          className="w-full bg-transparent text-3xl font-bold tracking-tight text-zinc-950 outline-none dark:text-zinc-50"
+                        />
+                        <span className="pb-1 text-sm font-medium text-zinc-500 dark:text-zinc-400">sec</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </section>
             )}
 
-            {/* Anomaly Detection Settings */}
-            <div className="card p-6">
-              <h2 className="text-lg font-bold mb-4">Anomaly & Phishing Intelligence</h2>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between py-2 border-b border-white/5 pb-4">
-                  <div>
-                    <p className="text-sm font-semibold">Enable Anomaly Detection</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Analyze messages for malicious patterns, phishing, and sudden spam.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSettings(prev => ({ ...prev, anomalyEnabled: !prev.anomalyEnabled }))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      settings.anomalyEnabled ? 'bg-indigo-500' : 'bg-slate-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.anomalyEnabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {settings.anomalyEnabled && (
-                  <div className="space-y-4 pl-4 border-l-2 border-indigo-500/20">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-300">Phishing Link Blocker</p>
-                        <p className="text-[10px] text-slate-500">Block known malicious URLs and gifts.</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.phishingDetectionEnabled}
-                        onChange={(e) => setSettings(prev => ({ ...prev, phishingDetectionEnabled: e.target.checked }))}
-                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-300">Content Abuse Shield</p>
-                        <p className="text-[10px] text-slate-500">Scan for excessive mentions or character floods.</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.contentAnomalyEnabled}
-                        onChange={(e) => setSettings(prev => ({ ...prev, contentAnomalyEnabled: e.target.checked }))}
-                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-300">User Anomaly Shield</p>
-                        <p className="text-[10px] text-slate-500">Scan for high message volume and spam from users.</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.userAnomalyEnabled}
-                        onChange={(e) => setSettings(prev => ({ ...prev, userAnomalyEnabled: e.target.checked }))}
-                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-300">Guild Baseline Monitor</p>
-                        <p className="text-[10px] text-slate-500">Detect sudden activity bursts across channels.</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.guildBaselineEnabled}
-                        onChange={(e) => setSettings(prev => ({ ...prev, guildBaselineEnabled: e.target.checked }))}
-                        className="rounded border-white/10 bg-black/20 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                        Enforcement Mode
-                      </label>
-                      <select
-                        value={settings.anomalyEnforcementMode}
-                        onChange={(e) => setSettings(prev => ({ ...prev, anomalyEnforcementMode: e.target.value }))}
-                        className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none"
-                      >
-                        <option value="AUDIT_ONLY">Log / Audit Only</option>
-                        <option value="DELETE_HIGH_CONFIDENCE">Auto-Delete messages</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Logging Settings */}
-            <div className="card p-6">
-              <h2 className="text-lg font-bold mb-4">Logging & Audits</h2>
-              <div className="space-y-4">
+            <section className="card p-6">
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
-                    Log Channel
-                  </label>
-                  <select
-                    value={settings.logChannelId || 'none'}
-                    onChange={handleChannelChange}
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="none">Disabled (No logs)</option>
-                    {channels.map((ch) => (
-                      <option key={ch.id} value={ch.id}>
-                        #{ch.name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Select a text channel where the bot will post moderation and panel event audit logs.
-                  </p>
+                  <h2 className="text-lg font-bold text-zinc-950 dark:text-zinc-50">Anomaly & Phishing Intelligence</h2>
+                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Analyze messages for malicious links, spam bursts, and unusual server activity.</p>
                 </div>
+                <Switch checked={settings.anomalyEnabled} label="Toggle anomaly detection" onClick={() => setSettings((prev) => ({ ...prev, anomalyEnabled: !prev.anomalyEnabled }))} />
               </div>
-            </div>
+
+              {settings.anomalyEnabled && (
+                <div className="mt-6 grid gap-3">
+                  <CheckboxRow title="Phishing Link Blocker" description="Block known malicious URLs and suspicious gift or claim links." checked={settings.phishingDetectionEnabled} onChange={(checked) => setSettings((prev) => ({ ...prev, phishingDetectionEnabled: checked }))} />
+                  <CheckboxRow title="Content Abuse Shield" description="Detect excessive mentions, floods, and repeated content patterns." checked={settings.contentAnomalyEnabled} onChange={(checked) => setSettings((prev) => ({ ...prev, contentAnomalyEnabled: checked }))} />
+                  <CheckboxRow title="User Anomaly Shield" description="Detect high message volume and unusual posting behavior from users." checked={settings.userAnomalyEnabled} onChange={(checked) => setSettings((prev) => ({ ...prev, userAnomalyEnabled: checked }))} />
+                  <CheckboxRow title="Guild Baseline Monitor" description="Detect sudden server-wide spikes in message and link activity." checked={settings.guildBaselineEnabled} onChange={(checked) => setSettings((prev) => ({ ...prev, guildBaselineEnabled: checked }))} />
+
+                  <label className="block">
+                    <span className="field-label">Enforcement Mode</span>
+                    <select
+                      value={settings.anomalyEnforcementMode}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, anomalyEnforcementMode: e.target.value }))}
+                      className="input"
+                    >
+                      <option value="AUDIT_ONLY">Audit only</option>
+                      <option value="DELETE_HIGH_CONFIDENCE">Auto-delete high-confidence messages</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+            </section>
+
+            <section className="card p-6">
+              <h2 className="text-lg font-bold text-zinc-950 dark:text-zinc-50">Logging & Audits</h2>
+              <label className="mt-5 block">
+                <span className="field-label">Log Channel</span>
+                <select
+                  value={settings.logChannelId || 'none'}
+                  onChange={(event) => setSettings((prev) => ({ ...prev, logChannelId: event.target.value === 'none' ? null : event.target.value }))}
+                  className="input"
+                >
+                  <option value="none">Disabled</option>
+                  {channels.map((ch) => (
+                    <option key={ch.id} value={ch.id}>#{ch.name}</option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Select a text channel where the bot will post moderation and panel audit events.</p>
+              </label>
+            </section>
 
             <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-xl bg-indigo-500 px-6 py-3 font-bold hover:bg-indigo-400 disabled:opacity-50 transition shadow-lg shadow-indigo-500/20"
-              >
+              <button type="submit" disabled={saving} className="btn btn-primary px-6 py-3">
                 {saving ? 'Saving...' : 'Save Settings'}
               </button>
             </div>

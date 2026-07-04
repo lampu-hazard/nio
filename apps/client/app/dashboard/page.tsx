@@ -7,11 +7,14 @@ export default async function DashboardPage() {
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto max-w-7xl">
-        <h1 className="text-4xl font-black">Select a server</h1>
-        <p className="mt-2 text-slate-400">Only manageable guilds are shown.</p>
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Workspace</p>
+          <h1 className="mt-2 text-4xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">Select a server</h1>
+          <p className="mt-2 text-zinc-500 dark:text-zinc-400">Only servers where you have management permissions are shown.</p>
+        </div>
         <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {data.guilds.map((guild) => <GuildCard key={guild.id} guild={guild} />)}
-          {!data.guilds.length && <div className="card p-8 text-slate-400">Login dulu atau belum ada guild yang bisa kamu manage.</div>}
+          {!data.guilds.length && <div className="card p-8 text-zinc-500 dark:text-zinc-400">Please log in first or connect a server you can manage.</div>}
         </div>
       </div>
     </main>

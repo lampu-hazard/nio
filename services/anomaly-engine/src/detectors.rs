@@ -7,7 +7,6 @@ pub fn analyze(req: &AnalyzeMessageRequest, state: &EngineState) -> AnalyzeMessa
     let mut metrics = HashMap::new();
     let now = req.timestamp_ms;
 
-    // Retrieve or insert channel state
     let key = format!("{}:{}", req.guild_id, req.channel_id);
     let mut channel_entry = state.entry(key).or_default();
     let channel_state = channel_entry.value_mut();

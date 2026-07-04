@@ -56,8 +56,14 @@ export class DiscordBotService implements OnModuleInit {
       if (!name || name.length > 32) return;
       const url = this.stickers.getCachedUrl(message.guild.id, name);
       if (!url) return;
-      const embed = new EmbedBuilder().setImage(url);
-      message.channel.send({ embeds: [embed] }).catch(
+
+      const ext = url.split('?')[0].split('.').pop() || 'png';
+      message.channel.send({
+        files: [{
+          attachment: url,
+          name: `${name}.${ext}`,
+        }],
+      }).catch(
         (err) => this.logger.error(`Sticker send error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );
     });

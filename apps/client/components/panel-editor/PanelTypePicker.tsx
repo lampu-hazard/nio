@@ -35,8 +35,8 @@ export function PanelTypePicker({ selected, onSelect }: { selected: PanelType; o
     <section className="card p-6 md:p-7">
       <div className="mb-5">
         <div className="badge mb-3">Step 1</div>
-        <h2 className="text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">What do you want to create?</h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Choose a panel type. The form, template, and preview will adapt automatically.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-[var(--text)]">What do you want to create?</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Choose a panel type. The form, template, and preview will adapt automatically.</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         {OPTIONS.map((option) => {
@@ -48,16 +48,16 @@ export function PanelTypePicker({ selected, onSelect }: { selected: PanelType; o
               onClick={() => onSelect(option.type)}
               className={`rounded-xl border p-5 text-left transition-colors ${
                 active
-                  ? 'border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950'
-                  : 'border-zinc-200 bg-white text-zinc-950 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900'
+                  ? 'border-transparent bg-indigo-600 text-white dark:bg-indigo-500'
+                  : 'border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--surface)]'
               }`}
             >
               <div className="flex items-start justify-between gap-4">
                 <span className={`badge ${active ? 'border-current bg-transparent text-current' : ''}`}>{active ? 'Selected' : option.type.replace('_', ' ')}</span>
               </div>
               <h3 className="mt-5 text-xl font-bold">{option.title}</h3>
-              <p className={`mt-2 min-h-12 text-sm leading-6 ${active ? 'opacity-70' : 'text-zinc-500 dark:text-zinc-400'}`}>{option.description}</p>
-              <ul className={`mt-4 space-y-2 text-sm ${active ? 'opacity-80' : 'text-zinc-600 dark:text-zinc-300'}`}>
+              <p className={`mt-2 min-h-12 text-sm leading-6 ${active ? 'opacity-70' : 'text-[var(--muted)]'}`}>{option.description}</p>
+              <ul className={`mt-4 space-y-2 text-sm ${active ? 'opacity-80' : 'text-[var(--text-secondary)]'}`}>
                 {option.bullets.map((bullet) => <li key={bullet}>• {bullet}</li>)}
               </ul>
             </button>

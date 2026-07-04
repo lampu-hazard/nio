@@ -9,11 +9,11 @@ type ButtonProps = PropsWithChildren<ButtonHTMLAttributes<HTMLButtonElement>> & 
 };
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'border-zinc-950 bg-zinc-950 text-white hover:bg-zinc-800 dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200',
-  secondary: 'border-zinc-200 bg-zinc-100 text-zinc-950 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800',
-  outline: 'border-zinc-200 bg-white text-zinc-950 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900',
-  ghost: 'border-transparent bg-transparent text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50',
-  destructive: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50',
+  primary: 'border-transparent bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500 shadow-sm shadow-indigo-500/10 dark:bg-indigo-500 dark:hover:bg-indigo-600',
+  secondary: 'border-[var(--border)] bg-[var(--panel)] text-[var(--text)] hover:bg-[var(--panel-strong)] backdrop-blur-sm',
+  outline: 'border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--panel)]',
+  ghost: 'border-transparent bg-transparent text-[var(--text-secondary)] hover:bg-[var(--panel)] hover:text-[var(--text)]',
+  destructive: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-950/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50',
 };
 
 const sizes: Record<ButtonSize, string> = {

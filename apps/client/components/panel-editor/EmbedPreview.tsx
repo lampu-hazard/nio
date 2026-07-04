@@ -20,11 +20,11 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="badge mb-3">Discord Preview</div>
-              <h2 className="text-2xl font-black tracking-tight">Live post</h2>
+              <h2 className="text-2xl font-black tracking-tight text-[var(--text)]">Live post</h2>
             </div>
             <span className={`badge ${isPublished ? 'badge-live' : ''}`}>{isPublished ? 'Live' : 'Draft'}</span>
           </div>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Preview follows the latest saved panel data.</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">Preview follows the latest saved panel data.</p>
         </div>
 
         <div className="bg-[var(--panel)] p-6">
@@ -98,17 +98,17 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
           </div>
 
           <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-            <div className="card-flat p-4">
-              <div className="text-zinc-500 dark:text-zinc-400">Mode</div>
-              <div className="mt-1 font-black">{panel?.mode || 'BUTTONS'}</div>
+            <div className="card-flat p-4 bg-[var(--surface-strong)]">
+              <div className="text-[var(--muted)]">Mode</div>
+              <div className="mt-1 font-black text-[var(--text)]">{panel?.mode || 'BUTTONS'}</div>
             </div>
-            <div className="card-flat p-4">
-              <div className="text-zinc-500 dark:text-zinc-400">Style</div>
-              <div className="mt-1 font-black">{STYLE_LABELS[panel?.style || 'PREMIUM']}</div>
+            <div className="card-flat p-4 bg-[var(--surface-strong)]">
+              <div className="text-[var(--muted)]">Style</div>
+              <div className="mt-1 font-black text-[var(--text)]">{STYLE_LABELS[panel?.style || 'PREMIUM']}</div>
             </div>
-            <div className="card-flat p-4 sm:col-span-2">
-              <div className="text-zinc-500 dark:text-zinc-400">Message ID</div>
-              <div className="mt-1 break-all font-mono text-xs text-zinc-500 dark:text-zinc-400">{panel?.messageId || 'Not published yet'}</div>
+            <div className="card-flat p-4 sm:col-span-2 bg-[var(--surface-strong)]">
+              <div className="text-[var(--muted)]">Message ID</div>
+              <div className="mt-1 break-all font-mono text-xs text-[var(--muted)]">{panel?.messageId || 'Not published yet'}</div>
             </div>
           </div>
         </div>

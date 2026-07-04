@@ -75,5 +75,5 @@ services:
       - BACKEND_URL=http://nio-server:3002
       - NODE_ENV=production
 
-volumes:
-  pgdata:
+# volumes:
+#   pgdata:

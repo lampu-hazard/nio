@@ -1,0 +1,22 @@
+FROM rust:1.75-slim AS builder
+
+WORKDIR /usr/src/slowmode-engine
+
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release
+RUN rm -rf src
+
+COPY src ./src
+RUN touch src/main.rs
+RUN cargo build --release
+
+FROM debian:bookworm-slim AS runner
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/src/slowmode-engine/target/release/nio-slowmode-engine /usr/local/bin/slowmode-engine
+
+EXPOSE 3003
+
+CMD ["slowmode-engine"]

@@ -5,6 +5,7 @@ import { DiscordInteractionService } from './discord-interaction.service';
 import { StickersService } from '../stickers/stickers.service';
 import { DiscordSlowmodeService } from './discord-slowmode.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
+import { BoosterRoleService } from '../booster-role/booster-role.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -25,10 +26,12 @@ export class DiscordBotService implements OnModuleInit {
     private readonly logger: AppLogger,
     private readonly slowmode: DiscordSlowmodeService,
     private readonly anomaly: DiscordAnomalyService,
+    private readonly boosterRoles: BoosterRoleService,
   ) {}
 
   async onModuleInit() {
     this.slowmode.setClient(this.client);
+    this.boosterRoles.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -70,6 +73,11 @@ export class DiscordBotService implements OnModuleInit {
 
     const commands = [
       new SlashCommandBuilder().setName('dashboard').setDescription('Open the nio dashboard').toJSON(),
+      new SlashCommandBuilder()
+        .setName('booster-role')
+        .setDescription('Create or edit your custom booster role')
+        .setDMPermission(false)
+        .toJSON(),
       new SlashCommandBuilder()
         .setName('warn')
         .setDescription('Issue a warning to a member')

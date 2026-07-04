@@ -1,4 +1,4 @@
-# nio — Discord Bot & Analytics Monorepo
+# nio — Discord Bot
 
 `nio` is a modern Discord server management ecosystem consisting of an administrative Next.js web dashboard, an orchestration NestJS bot controller, and high-performance Rust microservices communicating internally via low-latency gRPC APIs.
 

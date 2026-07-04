@@ -29,6 +29,7 @@ type ClaimResponse = {
 };
 
 type StyleMode = 'solid' | 'gradient' | 'holographic';
+type ColorHandle = 'primary' | 'secondary';
 
 const MAX_ICON_BYTES = 256 * 1024;
 const HOLOGRAPHIC = {
@@ -181,20 +182,24 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
         <div>
           <span className="field-label">Role style</span>
           <div className="grid gap-3 sm:grid-cols-3">
-            <StyleButton active={styleMode === 'solid'} label="Solid" description="One standard role color" onClick={() => setStyleMode('solid')} />
-            <StyleButton active={styleMode === 'gradient'} label="Gradient" description="Two-color Discord gradient" onClick={() => setStyleMode('gradient')} />
-            <StyleButton active={styleMode === 'holographic'} label="Holographic" description="Official Discord holographic style" onClick={() => setStyleMode('holographic')} />
+            <StyleButton active={styleMode === 'solid'} label="Default" description="Discord's standard single color" onClick={() => setStyleMode('solid')} />
+            <StyleButton active={styleMode === 'gradient'} label="Gradient" description="Discord's two-color role style" onClick={() => setStyleMode('gradient')} />
+            <StyleButton active={styleMode === 'holographic'} label="Holographic" description="Discord's official holographic preset" onClick={() => setStyleMode('holographic')} />
           </div>
         </div>
 
         {styleMode !== 'holographic' ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ColorField label="Primary color" value={primaryColor} onChange={setPrimaryColor} required />
-            {styleMode === 'gradient' && <ColorField label="Secondary color" value={secondaryColor} onChange={setSecondaryColor} required />}
-          </div>
+          <RoleColorSlider
+            mode={styleMode}
+            primaryColor={primaryColor}
+            secondaryColor={secondaryColor}
+            onPrimaryColor={setPrimaryColor}
+            onSecondaryColor={setSecondaryColor}
+          />
         ) : (
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
-            Holographic uses Discord's required color set: #a9ffff / #ffcccc / #ffe0a0. Discord rejects arbitrary third colors.
+            <div className="h-10 rounded-lg border border-[var(--border)]" style={{ background: `linear-gradient(135deg, ${HOLOGRAPHIC.primaryColor}, ${HOLOGRAPHIC.secondaryColor}, ${HOLOGRAPHIC.tertiaryColor})` }} />
+            <p className="mt-3">Holographic uses Discord's required color set: #a9ffff / #ffcccc / #ffe0a0. Discord rejects arbitrary third colors.</p>
           </div>
         )}
 
@@ -267,26 +272,127 @@ function StyleButton({ active, label, description, onClick }: { active: boolean;
   );
 }
 
-function ColorField({ label, value, onChange, required = false }: { label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
+function RoleColorSlider({
+  mode,
+  primaryColor,
+  secondaryColor,
+  onPrimaryColor,
+  onSecondaryColor,
+}: {
+  mode: 'solid' | 'gradient';
+  primaryColor: string;
+  secondaryColor: string;
+  onPrimaryColor: (value: string) => void;
+  onSecondaryColor: (value: string) => void;
+}) {
+  const [activeHandle, setActiveHandle] = useState<ColorHandle>('primary');
+  const primaryHue = hexToHue(primaryColor);
+  const secondaryHue = hexToHue(secondaryColor);
+
+  const updateFromPointer = (event: React.PointerEvent<HTMLDivElement>, handle: ColorHandle) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const percent = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+    const color = hueToHex(Math.round(percent * 360));
+    if (handle === 'primary') onPrimaryColor(color);
+    else onSecondaryColor(color);
+  };
+
+  const onTrackPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const handle = mode === 'gradient'
+      ? nearestHandle(event, event.currentTarget, primaryHue, secondaryHue)
+      : 'primary';
+    setActiveHandle(handle);
+    updateFromPointer(event, handle);
+  };
+
+  const onTrackPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    updateFromPointer(event, activeHandle);
+  };
+
   return (
-    <label className="block">
-      <span className="field-label">{label}</span>
-      <div className="flex gap-2">
-        <input
-          type="color"
-          value={value || '#ffffff'}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-14 rounded-md border border-[var(--border)] bg-[var(--surface)]"
-        />
-        <input
-          className="input min-w-0"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          pattern="#[0-9a-fA-F]{6}"
-          required={required}
-          placeholder="#ffffff"
-        />
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="field-label mb-0">Role color</span>
+        <span className="text-xs text-[var(--muted)]">Drag {mode === 'gradient' ? 'the handles' : 'the handle'} to pick color</span>
       </div>
-    </label>
+
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label="Role color hue slider"
+        className="relative mt-4 h-12 cursor-pointer rounded-xl border border-[var(--border)] shadow-sm"
+        style={{ background: 'linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)' }}
+        onPointerDown={onTrackPointerDown}
+        onPointerMove={onTrackPointerMove}
+      >
+        <ColorHandleMarker label="1" hue={primaryHue} color={primaryColor} />
+        {mode === 'gradient' && <ColorHandleMarker label="2" hue={secondaryHue} color={secondaryColor} />}
+      </div>
+
+      <div className="mt-4 rounded-lg border border-[var(--border)] p-3" style={{ background: mode === 'gradient' ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})` : primaryColor }}>
+        <div className="inline-flex rounded-full bg-black/45 px-2 py-1 font-mono text-xs font-semibold text-white backdrop-blur-sm">
+          {mode === 'gradient' ? `${primaryColor} → ${secondaryColor}` : primaryColor}
+        </div>
+      </div>
+    </div>
   );
+}
+
+function ColorHandleMarker({ label, hue, color }: { label: string; hue: number; color: string }) {
+  return (
+    <div
+      className="absolute top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white text-xs font-black text-white shadow-lg ring-2 ring-zinc-950/40"
+      style={{ left: `${(hue / 360) * 100}%`, background: color }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function nearestHandle(event: React.PointerEvent<HTMLDivElement>, element: HTMLDivElement, primaryHue: number, secondaryHue: number): ColorHandle {
+  const rect = element.getBoundingClientRect();
+  const hue = clamp((event.clientX - rect.left) / rect.width, 0, 1) * 360;
+  return Math.abs(hue - primaryHue) <= Math.abs(hue - secondaryHue) ? 'primary' : 'secondary';
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function hexToHue(hex: string) {
+  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex : '#ffffff';
+  const r = Number.parseInt(normalized.slice(1, 3), 16) / 255;
+  const g = Number.parseInt(normalized.slice(3, 5), 16) / 255;
+  const b = Number.parseInt(normalized.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  let hue = 0;
+  if (max === r) hue = ((g - b) / delta) % 6;
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+  return Math.round((hue * 60 + 360) % 360);
+}
+
+function hueToHex(hue: number) {
+  const c = 1;
+  const x = 1 - Math.abs(((hue / 60) % 2) - 1);
+  const m = 0;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) [r, g, b] = [c, x, 0];
+  else if (hue < 120) [r, g, b] = [x, c, 0];
+  else if (hue < 180) [r, g, b] = [0, c, x];
+  else if (hue < 240) [r, g, b] = [0, x, c];
+  else if (hue < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return `#${toHex((r + m) * 255)}${toHex((g + m) * 255)}${toHex((b + m) * 255)}`;
+}
+
+function toHex(value: number) {
+  return Math.round(value).toString(16).padStart(2, '0');
 }

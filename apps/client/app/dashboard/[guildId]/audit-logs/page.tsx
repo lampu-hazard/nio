@@ -70,9 +70,9 @@ export default async function AuditLogsPage({ params }: { params: Promise<{ guil
     <main className="px-6 py-8">
       <div className="mx-auto max-w-7xl">
         <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Audit</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">Audit Logs</h1>
-          <p className="mt-1 text-zinc-500 dark:text-zinc-400">Chronological history of dashboard updates and panel actions.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Audit</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Audit Logs</h1>
+          <p className="mt-1 text-[var(--muted)]">Chronological history of dashboard updates and panel actions.</p>
         </div>
 
         <DashboardNav guildId={guildId} activeTab="audit-logs" />
@@ -80,25 +80,25 @@ export default async function AuditLogsPage({ params }: { params: Promise<{ guil
         <div className="card overflow-hidden">
           <div className="p-6">
             {!data.auditLogs || data.auditLogs.length === 0 ? (
-              <div className="py-10 text-center text-zinc-500 dark:text-zinc-400">
+              <div className="py-10 text-center text-[var(--muted)]">
                 No activity recorded for this server yet.
               </div>
             ) : (
               <div className="flow-root">
-                <ul className="-my-6 divide-y divide-zinc-200 dark:divide-zinc-800">
+                <ul className="-my-6 divide-y divide-[var(--border)]">
                   {data.auditLogs.map((log) => (
                     <li key={log.id} className="py-5">
                       <div className="flex items-center gap-4">
-                        <img className="h-10 w-10 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-900" src={getUserAvatar(log.user)} alt="" />
+                        <img className="h-10 w-10 shrink-0 rounded-full bg-[var(--surface-muted)]" src={getUserAvatar(log.user)} alt="" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                          <p className="truncate text-sm font-semibold text-[var(--text)]">
                             {log.user.globalName || log.user.username}
-                            <span className="font-normal text-zinc-500 dark:text-zinc-400"> @{log.user.username}</span>
+                            <span className="font-normal text-[var(--muted)]"> @{log.user.username}</span>
                           </p>
-                          <p className="mt-0.5 text-sm text-zinc-700 dark:text-zinc-300">
+                          <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
                             {formatActionMessage(log.action, log.metadata, log.panel?.name)}
                           </p>
-                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                          <p className="mt-1 text-xs text-[var(--muted)]">
                             {new Date(log.createdAt).toLocaleString('en-US', {
                               dateStyle: 'medium',
                               timeStyle: 'short',

@@ -1,16 +1,144 @@
 import { Injectable } from '@nestjs/common';
-import { Interaction } from 'discord.js';
+import { Interaction, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
+import { ModerationService } from '../moderation/moderation.service';
 
 @Injectable()
 export class DiscordInteractionService {
-  constructor(private readonly selfRoles: SelfRolesService) {}
+  constructor(
+    private readonly selfRoles: SelfRolesService,
+    private readonly moderation: ModerationService,
+  ) {}
 
   async handle(interaction: Interaction) {
-    if (interaction.isChatInputCommand() && interaction.commandName === 'dashboard') {
-      const url = process.env.FRONTEND_URL || 'http://localhost:3000';
-      await interaction.reply({ content: `✦ Open nio dashboard: ${url}`, ephemeral: true });
-      return;
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'dashboard') {
+        const url = process.env.FRONTEND_URL || 'http://localhost:3000';
+        await interaction.reply({ content: `✦ Open nio dashboard: ${url}`, ephemeral: true });
+        return;
+      }
+
+      const guildId = interaction.guildId;
+      if (!guildId) return;
+
+      if (interaction.commandName === 'warn') {
+        const user = interaction.options.getUser('user', true);
+        const reason = interaction.options.getString('reason', true);
+
+        if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')],
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const settings = await this.moderation.getSettings(guildId);
+        const warning = await this.moderation.createWarning(guildId, user.id, interaction.user.id, reason);
+        const activeCount = await this.moderation.countActiveWarnings(guildId, user.id);
+
+        let timeoutApplied = false;
+        let timeoutError = '';
+
+        if (settings.warnLimitEnabled && activeCount >= settings.warnLimitThreshold) {
+          try {
+            const member = await interaction.guild?.members.fetch(user.id);
+            if (member) {
+              await member.timeout(
+                settings.warnTimeoutDurationMin * 60 * 1000,
+                `Warnings threshold reached (${activeCount}/${settings.warnLimitThreshold})`,
+              );
+              timeoutApplied = true;
+            }
+          } catch (err: any) {
+            timeoutError = err.message;
+          }
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2b2d31)
+          .setTitle('Warning Issued')
+          .setDescription(`A warning has been recorded for <@${user.id}>.`)
+          .addFields(
+            { name: 'Member', value: `<@${user.id}> (${user.username})`, inline: true },
+            { name: 'Moderator', value: `<@${interaction.user.id}>`, inline: true },
+            { name: 'Active Warnings', value: `${activeCount}`, inline: true },
+            { name: 'Reason', value: reason },
+          )
+          .setFooter({ text: `Warning ID: ${warning.id}` })
+          .setTimestamp();
+
+        if (timeoutApplied) {
+          embed.addFields({ name: 'Auto Penalty', value: `Muted (Timeout) for ${settings.warnTimeoutDurationMin} minutes.` });
+        } else if (timeoutError) {
+          embed.addFields({ name: 'Auto Penalty Status', value: `Failed to timeout: ${timeoutError}` });
+        }
+
+        await interaction.reply({ embeds: [embed] });
+        return;
+      }
+
+      if (interaction.commandName === 'warnings') {
+        const user = interaction.options.getUser('user', true);
+        const activeCount = await this.moderation.countActiveWarnings(guildId, user.id);
+        const warnings = await this.moderation.listWarnings(guildId, { search: user.id });
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2b2d31)
+          .setTitle(`Warnings Status: ${user.username}`)
+          .setThumbnail(user.displayAvatarURL())
+          .addFields(
+            { name: 'Active Warnings', value: `${activeCount}`, inline: true },
+            { name: 'Total Violations', value: `${warnings.length}`, inline: true },
+          );
+
+        if (warnings.length > 0) {
+          const warnList = warnings
+            .slice(0, 5)
+            .map((w) => {
+              const date = new Date(w.createdAt).toLocaleDateString(undefined, { dateStyle: 'short' });
+              return `\`${w.id}\` - ${w.reason} (Issued on ${date})`;
+            })
+            .join('\n');
+          embed.addFields({ name: 'Recent Warning Logs', value: warnList });
+          if (warnings.length > 5) {
+            embed.setFooter({ text: `Showing 5 of ${warnings.length} total warnings. Manage details via nio dashboard.` });
+          }
+        } else {
+          embed.setDescription('This member has a clean record on this server.');
+        }
+
+        await interaction.reply({ embeds: [embed] });
+        return;
+      }
+
+      if (interaction.commandName === 'unwarn') {
+        const warnId = interaction.options.getString('id', true);
+
+        if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')],
+            ephemeral: true,
+          });
+          return;
+        }
+
+        try {
+          await this.moderation.revokeWarning(guildId, warnId);
+          const embed = new EmbedBuilder()
+            .setColor(0x2b2d31)
+            .setTitle('Warning Revoked')
+            .setDescription(`Successfully removed warning record \`${warnId}\`.`)
+            .setTimestamp();
+          await interaction.reply({ embeds: [embed] });
+        } catch (err) {
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Warning Not Found', 'That warning could not be found or has already been revoked.')],
+            ephemeral: true,
+          });
+        }
+        return;
+      }
     }
 
     if (interaction.isButton() && interaction.customId.startsWith('sr:')) {
@@ -23,5 +151,13 @@ export class DiscordInteractionService {
       const [, panelId] = interaction.customId.split(':');
       await this.selfRoles.toggleFromInteraction(interaction, panelId, interaction.values[0]);
     }
+  }
+
+  private buildStatusEmbed(title: string, description: string) {
+    return new EmbedBuilder()
+      .setColor(0x2b2d31)
+      .setTitle(title)
+      .setDescription(description)
+      .setTimestamp();
   }
 }

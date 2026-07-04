@@ -20,7 +20,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.use(json({ limit: '1mb' }));
+  app.use(json({
+    limit: '1mb',
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf.toString();
+    },
+  }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
   app.use(cookieParser());
   app.getHttpAdapter().getInstance().set('trust proxy', 1);

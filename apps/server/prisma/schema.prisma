@@ -19,15 +19,17 @@ model User {
 }
 
 model Guild {
-  id        String         @id
-  name      String
-  icon      String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  settings  GuildSettings?
-  panels    Panel[]
-  stickers  Sticker[]
-  warnings  Warning[]
+  id              String            @id
+  name            String
+  icon            String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  settings        GuildSettings?
+  panels          Panel[]
+  stickers        Sticker[]
+  warnings        Warning[]
+  takoIntegration TakoIntegration?
+  takoDonations   TakoDonation[]
 }
 
 model GuildSettings {
@@ -220,4 +222,41 @@ model BoosterCustomRole {
   updatedAt     DateTime @updatedAt
 
   @@unique([guildId, userId])
+}
+
+model TakoIntegration {
+  guildId        String   @id
+  enabled        Boolean  @default(false)
+  creatorSlug    String?
+  apiKey         String?
+  webhookToken   String?
+  rewardRoleId   String?
+  minimumAmount  Int      @default(10000)
+  paymentMethods String[] @default(["qris"])
+  logChannelId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  guild          Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model TakoDonation {
+  id             String    @id @default(cuid())
+  guildId        String
+  discordUserId  String
+  transactionId  String?   @unique
+  amount         Int
+  paymentMethod  String
+  senderName     String
+  email          String
+  message        String?
+  status         String    @default("PENDING") // PENDING, PAID, ROLE_ASSIGNED, FAILED, IGNORED
+  failureReason  String?
+  roleAssignedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  guild          Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+  @@index([discordUserId])
+  @@index([status])
 }

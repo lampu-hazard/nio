@@ -3,6 +3,7 @@ import { Interaction, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { BoosterRoleService } from '../booster-role/booster-role.service';
+import { TakoService } from '../tako/tako.service';
 
 @Injectable()
 export class DiscordInteractionService {
@@ -10,6 +11,7 @@ export class DiscordInteractionService {
     private readonly selfRoles: SelfRolesService,
     private readonly moderation: ModerationService,
     private readonly boosterRoles: BoosterRoleService,
+    private readonly tako: TakoService,
   ) {}
 
   async handle(interaction: Interaction) {
@@ -34,6 +36,35 @@ export class DiscordInteractionService {
         } catch (err: any) {
           await interaction.reply({
             embeds: [this.buildStatusEmbed('Booster Role Unavailable', err?.message || 'Only active server boosters can use this feature.')],
+            ephemeral: true,
+          });
+        }
+        return;
+      }
+
+      if (interaction.commandName === 'donate-role') {
+        try {
+          const settings = await this.tako.getSettings(guildId);
+          if (!settings.enabled || !settings.rewardRoleId) {
+            await interaction.reply({
+              embeds: [this.buildStatusEmbed('Donation Unavailable', 'Tako donation rewards are not enabled on this server.')],
+              ephemeral: true,
+            });
+            return;
+          }
+
+          const url = process.env.FRONTEND_URL || 'http://localhost:3000';
+          const minFormatted = settings.minimumAmount.toLocaleString('id-ID');
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed(
+              'Tako Donation Reward',
+              `Donate minimal **Rp${minFormatted}** via Tako to automatically receive the <@&${settings.rewardRoleId}> role!\n\n✦ [Click here to open donation page](${url}/donate?guildId=${guildId})`
+            )],
+            ephemeral: true,
+          });
+        } catch (err: any) {
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Error', err?.message || 'Failed to process donation request.')],
             ephemeral: true,
           });
         }

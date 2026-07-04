@@ -11,6 +11,7 @@ import { SelfRolesModule } from './self-roles/self-roles.module';
 import { StickersModule } from './stickers/stickers.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { BoosterRoleModule } from './booster-role/booster-role.module';
+import { TakoModule } from './tako/tako.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { BoosterRoleModule } from './booster-role/booster-role.module';
     StickersModule,
     ModerationModule,
     BoosterRoleModule,
+    TakoModule,
   ],
 })
 export class AppModule {}

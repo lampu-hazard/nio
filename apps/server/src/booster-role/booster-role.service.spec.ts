@@ -102,15 +102,16 @@ describe('BoosterRoleService', () => {
       position: 3,
       edit: jest.fn(),
       setPosition: jest.fn(async () => role),
+      iconURL: jest.fn(() => null),
     };
     guild.roles.fetch.mockResolvedValue(role);
 
-    await service.claimRole('guild-1', 'claim-token', 'user-1', 'New Name', '#abcdef');
+    await service.claimRole('guild-1', 'claim-token', 'user-1', 'New Name', { primaryColor: '#abcdef' });
 
     expect(guild.roles.create).not.toHaveBeenCalled();
-    expect(role.edit).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Name', color: 0xabcdef }));
+    expect(role.edit).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Name', colors: { primaryColor: 0xabcdef } }));
     expect(prisma.boosterCustomRole.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: { roleId: 'role-1', name: 'New Name', color: '#abcdef' },
+      update: expect.objectContaining({ roleId: 'role-1', name: 'New Name', color: '#abcdef', primaryColor: '#abcdef' }),
     }));
   });
 });

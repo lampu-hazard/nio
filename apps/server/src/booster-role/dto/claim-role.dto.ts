@@ -1,4 +1,4 @@
-import { IsHexColor, IsString, Length, Matches } from 'class-validator';
+import { IsBoolean, IsHexColor, IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class ClaimRoleDto {
   @IsString()
@@ -11,6 +11,27 @@ export class ClaimRoleDto {
   })
   name!: string;
 
+  @IsOptional()
   @IsHexColor()
-  color!: string;
+  color?: string;
+
+  @IsOptional()
+  @IsHexColor()
+  primaryColor?: string;
+
+  @IsOptional()
+  @IsHexColor()
+  secondaryColor?: string;
+
+  @IsOptional()
+  @IsHexColor()
+  tertiaryColor?: string;
+
+  @IsOptional()
+  @IsString()
+  iconDataUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  removeIcon?: boolean;
 }

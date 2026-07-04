@@ -22,9 +22,15 @@ describe('BoosterRoleController', () => {
     };
     const controller = new BoosterRoleController(service as any);
 
-    const result = await controller.claimRole('guild-1', { token: 'claim-token', name: 'Booster', color: '#abcdef' }, { id: 'user-1', username: 'tester' });
+    const result = await controller.claimRole('guild-1', { token: 'claim-token', name: 'Booster', primaryColor: '#abcdef' }, { id: 'user-1', username: 'tester' });
 
-    expect(service.claimRole).toHaveBeenCalledWith('guild-1', 'claim-token', 'user-1', 'Booster', '#abcdef');
+    expect(service.claimRole).toHaveBeenCalledWith('guild-1', 'claim-token', 'user-1', 'Booster', {
+      primaryColor: '#abcdef',
+      secondaryColor: undefined,
+      tertiaryColor: undefined,
+      iconDataUrl: undefined,
+      removeIcon: undefined,
+    });
     expect(result.role.roleId).toBe('role-1');
   });
 });

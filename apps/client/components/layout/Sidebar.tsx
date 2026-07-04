@@ -13,6 +13,7 @@ export function Sidebar({ guildId }: SidebarProps) {
         { label: 'Panels', href: `/dashboard/${guildId}`, exact: true },
         { label: 'Stickers', href: `/dashboard/${guildId}/stickers` },
         { label: 'Moderation', href: `/dashboard/${guildId}/moderation` },
+        { label: 'Booster Roles', href: `/dashboard/${guildId}/booster-roles` },
         { label: 'Analytics', href: `/dashboard/${guildId}/analytics` },
         { label: 'Audit Logs', href: `/dashboard/${guildId}/audit-logs` },
         { label: 'Settings', href: `/dashboard/${guildId}/settings` },

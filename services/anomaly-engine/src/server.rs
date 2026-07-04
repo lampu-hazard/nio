@@ -13,9 +13,23 @@ pub struct MyAnomalyEngine {
 
 impl MyAnomalyEngine {
     pub fn new() -> Self {
-        Self {
-            state: Arc::new(DashMap::new()),
-        }
+        let state = Arc::new(DashMap::new());
+
+        let state_clone = Arc::clone(&state);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                state_clone.retain(|_, channel_state: &mut crate::state::ChannelState| {
+                    channel_state.history.iter().any(|r| r.timestamp_ms > now - 3600000)
+                });
+            }
+        });
+
+        Self { state }
     }
 }
 

@@ -82,8 +82,9 @@ jobs:
           script: |
             cd ${{ secrets.VPS_PROJECT_PATH || './nio-server' }}
             git pull origin main
+            docker comose down
             docker compose pull
-            docker compose up -d --force-recreate
+            docker compose up -d
             docker image prune -f
       
       - name: Notify Discord — Success

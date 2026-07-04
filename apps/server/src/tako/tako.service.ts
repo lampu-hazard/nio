@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException, Optional } from '@nestjs/common';
-import { Client, GuildMember, PermissionsBitField } from 'discord.js';
+import { Client, EmbedBuilder, GuildMember, PermissionsBitField } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../logger/logger.service';
 import * as crypto from 'node:crypto';
@@ -287,6 +287,14 @@ export class TakoService {
         data: { status: 'IGNORED', failureReason: `Amount Rp${amount} is below minimum Rp${integration.minimumAmount}` },
       });
       return { ok: true, status: 'ignored', reason: 'Below minimum amount' };
+    }
+
+    if (!integration.rewardRoleId) {
+      await this.prisma.takoDonation.update({
+        where: { id: donation.id },
+        data: { status: 'FAILED', failureReason: 'Reward role is not configured.' },
+      });
+      return { ok: false, status: 'failed', reason: 'Reward role is not configured.' };
     }
 
     // Berikan Role Discord

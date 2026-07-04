@@ -59,7 +59,7 @@ export class TakoController {
     @Param('id') id: string,
   ) {
     const result = await this.takoService.retryRoleAssignment(guildId, id);
-    return { ok: true, ...result };
+    return result;
   }
 
   @Post('webhook')

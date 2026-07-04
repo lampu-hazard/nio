@@ -1,4 +1,4 @@
-.PHONY: dev-client dev-server dev-slowmode test-client test-server test-slowmode build-server build-slowmode test
+.PHONY: dev-client dev-server dev-slowmode test-client test-server test-slowmode build-server build-slowmode test dev-anomaly test-anomaly build-anomaly
 
 dev-client:
 	cd apps/client && bun run dev
@@ -25,3 +25,12 @@ build-slowmode:
 	cd services/slowmode-engine && cargo build
 
 test: test-client test-server test-slowmode
+
+dev-anomaly:
+	cd services/anomaly-engine && make dev
+
+test-anomaly:
+	cd services/anomaly-engine && make test
+
+build-anomaly:
+	cd services/anomaly-engine && make build

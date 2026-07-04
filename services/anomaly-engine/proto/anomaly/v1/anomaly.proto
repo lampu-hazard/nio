@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package anomaly.v1;
+
+service AnomalyEngine {
+  rpc AnalyzeMessage(AnalyzeMessageRequest) returns (AnalyzeMessageResponse);
+}
+
+message AnalyzeMessageRequest {
+  string guild_id = 1;
+  string channel_id = 2;
+  string user_id = 3;
+  string message_id = 4;
+  string content = 5;
+  repeated string urls = 6;
+  int64 timestamp_ms = 7;
+  GuildAnomalyConfig config = 8;
+}
+
+message GuildAnomalyConfig {
+  bool phishing_enabled = 1;
+  bool content_anomaly_enabled = 2;
+  bool user_anomaly_enabled = 3;
+  bool guild_baseline_enabled = 4;
+  EnforcementMode enforcement_mode = 5;
+}
+
+enum EnforcementMode {
+  ENFORCEMENT_MODE_UNSPECIFIED = 0;
+  ENFORCEMENT_MODE_AUDIT_ONLY = 1;
+  ENFORCEMENT_MODE_DELETE_HIGH_CONFIDENCE = 2;
+  ENFORCEMENT_MODE_DELETE_AND_TIMEOUT_CRITICAL = 3;
+}
+
+message AnalyzeMessageResponse {
+  Decision decision = 1;
+  Severity severity = 2;
+  double confidence = 3;
+  string reason = 4;
+  repeated Finding findings = 5;
+  map<string, double> metrics = 6;
+}
+
+message Finding {
+  FindingKind kind = 1;
+  Severity severity = 2;
+  double confidence = 3;
+  string reason = 4;
+  map<string, string> evidence = 5;
+}
+
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_ALLOW = 1;
+  DECISION_AUDIT = 2;
+  DECISION_DELETE_MESSAGE = 3;
+  DECISION_TIMEOUT_USER = 4;
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_LOW = 1;
+  SEVERITY_MEDIUM = 2;
+  SEVERITY_HIGH = 3;
+  SEVERITY_CRITICAL = 4;
+}
+
+enum FindingKind {
+  FINDING_KIND_UNSPECIFIED = 0;
+  FINDING_KIND_PHISHING_LINK = 1;
+  FINDING_KIND_CONTENT_ANOMALY = 2;
+  FINDING_KIND_USER_ANOMALY = 3;
+  FINDING_KIND_GUILD_BASELINE_ANOMALY = 4;
+}

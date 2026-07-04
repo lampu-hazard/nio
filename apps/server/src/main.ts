@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
+import { json, urlencoded } from 'express';
 import session from 'express-session';
 import { PrismaSessionStore } from '@quixo3/prisma-session-store';
 import { AppModule } from './app.module';
@@ -10,7 +11,7 @@ import { AppLogger } from './logger/logger.service';
 import { PrismaService } from './prisma/prisma.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
   const logger = app.get(AppLogger);
   app.useLogger(logger);
 
@@ -19,6 +20,8 @@ async function bootstrap() {
     credentials: true,
   });
 
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
   app.use(cookieParser());
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 

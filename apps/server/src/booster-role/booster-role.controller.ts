@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser, SessionUser } from '../common/decorators/current-user.decorator';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
+import { GuildAccessGuard } from '../guilds/guards/guild-access.guard';
 import { BoosterRoleService } from './booster-role.service';
 import { ClaimRoleDto } from './dto/claim-role.dto';
 
@@ -26,14 +27,37 @@ export class BoosterRoleController {
     @Body() dto: ClaimRoleDto,
     @CurrentUser() user: SessionUser,
   ) {
-    const role = await this.boosterRoles.claimRole(guildId, dto.token, user.id, dto.name, dto.color);
+    const role = await this.boosterRoles.claimRole(guildId, dto.token, user.id, dto.name, {
+      primaryColor: dto.primaryColor || dto.color || '#ffffff',
+      secondaryColor: dto.secondaryColor,
+      tertiaryColor: dto.tertiaryColor,
+      iconDataUrl: dto.iconDataUrl,
+      removeIcon: dto.removeIcon,
+    });
     return {
       ok: true,
       role: {
         roleId: role.roleId,
         name: role.name,
         color: role.color,
+        primaryColor: role.primaryColor,
+        secondaryColor: role.secondaryColor,
+        tertiaryColor: role.tertiaryColor,
+        iconUrl: role.iconUrl,
       },
     };
+  }
+
+  @UseGuards(SessionAuthGuard, GuildAccessGuard)
+  @Get('roles')
+  async listRoles(@Param('guildId') guildId: string) {
+    return { ok: true, roles: await this.boosterRoles.listCustomRoles(guildId) };
+  }
+
+  @UseGuards(SessionAuthGuard, GuildAccessGuard)
+  @Delete('roles/:id')
+  async deleteRole(@Param('guildId') guildId: string, @Param('id') id: string) {
+    await this.boosterRoles.deleteCustomRole(guildId, id);
+    return { ok: true };
   }
 }

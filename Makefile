@@ -24,7 +24,7 @@ build-server:
 build-slowmode:
 	cd services/slowmode-engine && cargo build
 
-test: test-client test-server test-slowmode
+test: test-client test-server test-slowmode test-anomaly
 
 dev-anomaly:
 	cd services/anomaly-engine && make dev

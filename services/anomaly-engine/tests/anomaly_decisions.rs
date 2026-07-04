@@ -1,10 +1,22 @@
 use nio_anomaly_engine::proto::anomaly_engine_client::AnomalyEngineClient;
 use nio_anomaly_engine::proto::{AnalyzeMessageRequest, GuildAnomalyConfig, Decision, Severity, FindingKind};
+use nio_anomaly_engine::server;
+use std::net::SocketAddr;
 
 #[tokio::test]
 async fn test_detection_scenarios() {
+    let addr: SocketAddr = "127.0.0.1:50052".parse().unwrap();
+
+    // Spawn server in the background
+    tokio::spawn(async move {
+        let _ = server::run_server(addr).await;
+    });
+
+    // Give the server a small moment to start up
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     // Scaffold client
-    let mut client = AnomalyEngineClient::connect("http://127.0.0.1:50051")
+    let mut client = AnomalyEngineClient::connect("http://127.0.0.1:50052")
         .await
         .expect("gRPC server should be running locally");
 

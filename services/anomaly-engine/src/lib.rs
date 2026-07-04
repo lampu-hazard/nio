@@ -3,3 +3,4 @@ pub mod proto {
 }
 pub mod state;
 pub mod detectors;
+pub mod server;

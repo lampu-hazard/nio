@@ -1,15 +1,23 @@
-name: CI/CD Build and Push
+name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build-and-push:
+    name: Build and push service images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -17,45 +25,49 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 1. Build and push slowmode-engine
-      - name: Build and push Slowmode Engine
+      - name: Build and push slowmode engine
         uses: docker/build-push-action@v5
         with:
           context: ./services/slowmode-engine
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/nio-slowmode-engine:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-slowmode-engine:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-slowmode-engine:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 2. Build and push anomaly-engine
-      - name: Build and push Anomaly Engine
+      - name: Build and push anomaly engine
         uses: docker/build-push-action@v5
         with:
           context: ./services/anomaly-engine
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/nio-anomaly-engine:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-anomaly-engine:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-anomaly-engine:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 3. Build and push nio-server
-      - name: Build and push nio-server
+      - name: Build and push server
         uses: docker/build-push-action@v5
         with:
-          context: ./apps/server
+          context: .
+          file: ./apps/server/Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/nio-server:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-server:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-server:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 4. Build and push nio-client
-      - name: Build and push nio-client
+      - name: Build and push client
         uses: docker/build-push-action@v5
         with:
           context: ./apps/client
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/nio-client:latest
+          build-args: |
+            BACKEND_URL=http://nio-server:3002
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-client:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-client:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

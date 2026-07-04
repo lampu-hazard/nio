@@ -4,6 +4,7 @@ import { AppLogger } from '../logger/logger.service';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export interface AnomalyFinding {
   kind: number;
@@ -36,11 +37,10 @@ export class RustAnomalyClientService implements OnModuleInit {
 
   onModuleInit() {
     try {
-      const protoPath = path.resolve(__dirname, '../../../../services/anomaly-engine/proto/anomaly/v1/anomaly.proto');
+      const protoPath = this.resolveProtoPath();
       const packageDefinition = protoLoader.loadSync(protoPath, {
         keepCase: true,
-        longs: String,
-        enums: String,
+        longs: Number,
         defaults: true,
         oneofs: true,
       });
@@ -53,6 +53,23 @@ export class RustAnomalyClientService implements OnModuleInit {
     } catch (err: any) {
       this.logger.error(`Failed to load anomaly proto / client: ${err.message}`, err.stack, 'RustAnomalyClient');
     }
+  }
+
+  private resolveProtoPath(): string {
+    const configuredPath = this.config.get<string>('ANOMALY_PROTO_PATH');
+    const candidates = [
+      configuredPath,
+      path.resolve(process.cwd(), 'proto/anomaly/v1/anomaly.proto'),
+      path.resolve(process.cwd(), '../../services/anomaly-engine/proto/anomaly/v1/anomaly.proto'),
+      path.resolve(__dirname, '../../../../services/anomaly-engine/proto/anomaly/v1/anomaly.proto'),
+    ].filter(Boolean) as string[];
+
+    const protoPath = candidates.find((candidate) => fs.existsSync(candidate));
+    if (!protoPath) {
+      throw new Error(`Could not locate anomaly.proto. Checked: ${candidates.join(', ')}`);
+    }
+
+    return protoPath;
   }
 
   async analyze(request: {

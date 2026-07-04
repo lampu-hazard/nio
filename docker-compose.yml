@@ -1,23 +1,6 @@
 services:
-  # db:
-  #   image: postgres:15-alpine
-  #   container_name: nio-db
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: nio_password
-  #     POSTGRES_DB: nio_db
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - pgdata:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U postgres -d nio_db"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 5
-
   slowmode-engine:
+    image: ${DOCKERHUB_NAMESPACE:-local}/nio-slowmode-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/slowmode-engine
       dockerfile: Dockerfile
@@ -29,6 +12,7 @@ services:
       - RUST_LOG=info
 
   anomaly-engine:
+    image: ${DOCKERHUB_NAMESPACE:-local}/nio-anomaly-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/anomaly-engine
       dockerfile: Dockerfile
@@ -40,9 +24,10 @@ services:
       - RUST_LOG=info
 
   nio-server:
+    image: ${DOCKERHUB_NAMESPACE:-local}/nio-server:${IMAGE_TAG:-latest}
     build:
-      context: ./apps/server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/server/Dockerfile
     container_name: nio-server
     restart: unless-stopped
     ports:
@@ -60,6 +45,7 @@ services:
       - NODE_ENV=production
 
   nio-client:
+    image: ${DOCKERHUB_NAMESPACE:-local}/nio-client:${IMAGE_TAG:-latest}
     build:
       context: ./apps/client
       dockerfile: Dockerfile
@@ -74,6 +60,3 @@ services:
     environment:
       - BACKEND_URL=http://nio-server:3002
       - NODE_ENV=production
-
-# volumes:
-#   pgdata:

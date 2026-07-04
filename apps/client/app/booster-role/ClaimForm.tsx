@@ -28,14 +28,21 @@ type ClaimResponse = {
   role: ExistingRole;
 };
 
+type StyleMode = 'solid' | 'gradient' | 'holographic';
+
 const MAX_ICON_BYTES = 256 * 1024;
+const HOLOGRAPHIC = {
+  primaryColor: '#a9ffff',
+  secondaryColor: '#ffcccc',
+  tertiaryColor: '#ffe0a0',
+};
 
 export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string; token: string }) {
   const [guildId, setGuildId] = useState(initialGuildId);
   const [name, setName] = useState('');
+  const [styleMode, setStyleMode] = useState<StyleMode>('solid');
   const [primaryColor, setPrimaryColor] = useState('#ffffff');
-  const [secondaryColor, setSecondaryColor] = useState('');
-  const [tertiaryColor, setTertiaryColor] = useState('');
+  const [secondaryColor, setSecondaryColor] = useState('#a1a1aa');
   const [iconUrl, setIconUrl] = useState<string | null>(null);
   const [iconDataUrl, setIconDataUrl] = useState<string | null>(null);
   const [removeIcon, setRemoveIcon] = useState(false);
@@ -58,8 +65,8 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
       setGuildId(res.validation.guildId);
       setName(existing?.name || '');
       setPrimaryColor(existing?.primaryColor || existing?.color || '#ffffff');
-      setSecondaryColor(existing?.secondaryColor || '');
-      setTertiaryColor(existing?.tertiaryColor || '');
+      setSecondaryColor(existing?.secondaryColor || '#a1a1aa');
+      setStyleMode(existing?.tertiaryColor ? 'holographic' : existing?.secondaryColor ? 'gradient' : 'solid');
       setIconUrl(existing?.iconUrl || null);
     } catch (err: any) {
       const message = err?.message || 'This booster role link is invalid or expired.';
@@ -73,6 +80,14 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
     }
   };
 
+  const selectedColors = styleMode === 'holographic'
+    ? HOLOGRAPHIC
+    : {
+        primaryColor,
+        secondaryColor: styleMode === 'gradient' ? secondaryColor : undefined,
+        tertiaryColor: undefined,
+      };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
@@ -84,17 +99,15 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
         body: JSON.stringify({
           token,
           name,
-          primaryColor,
-          secondaryColor: secondaryColor || undefined,
-          tertiaryColor: tertiaryColor || undefined,
+          ...selectedColors,
           iconDataUrl: iconDataUrl || undefined,
           removeIcon,
         }),
       });
       setName(res.role.name);
       setPrimaryColor(res.role.primaryColor || res.role.color);
-      setSecondaryColor(res.role.secondaryColor || '');
-      setTertiaryColor(res.role.tertiaryColor || '');
+      setSecondaryColor(res.role.secondaryColor || '#a1a1aa');
+      setStyleMode(res.role.tertiaryColor ? 'holographic' : res.role.secondaryColor ? 'gradient' : 'solid');
       setIconUrl(res.role.iconUrl || null);
       setIconDataUrl(null);
       setRemoveIcon(false);
@@ -126,9 +139,9 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
     reader.readAsDataURL(file);
   };
 
-  const previewBackground = tertiaryColor
-    ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor || primaryColor}, ${tertiaryColor})`
-    : secondaryColor
+  const previewBackground = styleMode === 'holographic'
+    ? `linear-gradient(135deg, ${HOLOGRAPHIC.primaryColor}, ${HOLOGRAPHIC.secondaryColor}, ${HOLOGRAPHIC.tertiaryColor})`
+    : styleMode === 'gradient'
       ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`
       : primaryColor;
   const previewIcon = iconDataUrl || (!removeIcon ? iconUrl : null);
@@ -146,7 +159,7 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
       <section className="card p-6 space-y-5">
         <div>
           <h2 className="text-xl font-bold text-[var(--text)]">Custom Booster Role</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Choose a role name, gradient colors, and an optional icon. Your booster status is checked before every save.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Choose a role name, Discord-supported role style, and an optional icon.</p>
         </div>
 
         {error && <div className="notice notice-error">{error}</div>}
@@ -165,11 +178,25 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
           />
         </label>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <ColorField label="Primary color" value={primaryColor} onChange={setPrimaryColor} required />
-          <ColorField label="Secondary color" value={secondaryColor} onChange={setSecondaryColor} />
-          <ColorField label="Tertiary color" value={tertiaryColor} onChange={setTertiaryColor} />
+        <div>
+          <span className="field-label">Role style</span>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StyleButton active={styleMode === 'solid'} label="Solid" description="One standard role color" onClick={() => setStyleMode('solid')} />
+            <StyleButton active={styleMode === 'gradient'} label="Gradient" description="Two-color Discord gradient" onClick={() => setStyleMode('gradient')} />
+            <StyleButton active={styleMode === 'holographic'} label="Holographic" description="Official Discord holographic style" onClick={() => setStyleMode('holographic')} />
+          </div>
         </div>
+
+        {styleMode !== 'holographic' ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ColorField label="Primary color" value={primaryColor} onChange={setPrimaryColor} required />
+            {styleMode === 'gradient' && <ColorField label="Secondary color" value={secondaryColor} onChange={setSecondaryColor} required />}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
+            Holographic uses Discord's required color set: #a9ffff / #ffcccc / #ffe0a0. Discord rejects arbitrary third colors.
+          </div>
+        )}
 
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <label className="block">
@@ -222,6 +249,21 @@ export function ClaimForm({ guildId: initialGuildId, token }: { guildId: string;
         </div>
       </aside>
     </form>
+  );
+}
+
+function StyleButton({ active, label, description, onClick }: { active: boolean; label: string; description: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border p-4 text-left transition-colors ${
+        active ? 'border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--panel-strong)]'
+      }`}
+    >
+      <span className="block text-sm font-bold">{label}</span>
+      <span className={`mt-1 block text-xs ${active ? 'opacity-80' : 'text-[var(--muted)]'}`}>{description}</span>
+    </button>
   );
 }
 

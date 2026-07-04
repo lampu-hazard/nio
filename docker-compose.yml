@@ -1,6 +1,6 @@
 services:
   slowmode-engine:
-    image: ${DOCKERHUB_NAMESPACE:-local}/nio-slowmode-engine:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-slowmode-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/slowmode-engine
       dockerfile: Dockerfile
@@ -12,7 +12,7 @@ services:
       - RUST_LOG=info
 
   anomaly-engine:
-    image: ${DOCKERHUB_NAMESPACE:-local}/nio-anomaly-engine:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-anomaly-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/anomaly-engine
       dockerfile: Dockerfile
@@ -24,7 +24,7 @@ services:
       - RUST_LOG=info
 
   nio-server:
-    image: ${DOCKERHUB_NAMESPACE:-local}/nio-server:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -45,7 +45,7 @@ services:
       - NODE_ENV=production
 
   nio-client:
-    image: ${DOCKERHUB_NAMESPACE:-local}/nio-client:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-client:${IMAGE_TAG:-latest}
     build:
       context: ./apps/client
       dockerfile: Dockerfile
@@ -55,8 +55,6 @@ services:
       - "3000:3000"
     depends_on:
       - nio-server
-    env_file:
-      - ./apps/client/.env
     environment:
       - BACKEND_URL=http://nio-server:3002
       - NODE_ENV=production

@@ -126,6 +126,43 @@ A master `Makefile` at the repository root delegates actions to individual sub-p
 | `make test-anomaly` | Runs gRPC anomaly integration tests |
 | `make build-slowmode` | Compiles optimized release binary for the slowmode engine |
 | `make build-anomaly` | Compiles optimized release binary for the anomaly engine |
+| `make pull` | Pulls production images declared in `docker-compose.yml` |
+| `make up` | Starts the production compose stack in detached mode |
+| `make up-build` | Builds local images and starts the compose stack |
+| `make down` | Stops the compose stack |
+| `make restart` | Restarts the compose stack |
+| `make logs` | Streams compose logs |
+| `make ps` | Lists compose service status |
+
+---
+
+## Production Deployment
+
+Create a root `.env` file from `.env.example` and set your Docker Hub namespace:
+
+```bash
+cp .env.example .env
+```
+
+Example:
+
+```env
+DOCKERHUB_NAMESPACE=your-dockerhub-username
+IMAGE_TAG=latest
+```
+
+Then deploy the stack:
+
+```bash
+make pull
+make up
+```
+
+If you want to build images directly on the server instead of pulling Docker Hub images:
+
+```bash
+make up-build
+```
 
 ---
 

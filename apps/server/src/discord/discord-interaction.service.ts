@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Interaction, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
 import { ModerationService } from '../moderation/moderation.service';
+import { BoosterRoleService } from '../booster-role/booster-role.service';
 
 @Injectable()
 export class DiscordInteractionService {
   constructor(
     private readonly selfRoles: SelfRolesService,
     private readonly moderation: ModerationService,
+    private readonly boosterRoles: BoosterRoleService,
   ) {}
 
   async handle(interaction: Interaction) {
@@ -20,6 +22,23 @@ export class DiscordInteractionService {
 
       const guildId = interaction.guildId;
       if (!guildId) return;
+
+      if (interaction.commandName === 'booster-role') {
+        try {
+          const claim = await this.boosterRoles.generateToken(guildId, interaction.user.id);
+          const url = process.env.FRONTEND_URL || 'http://localhost:3000';
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Custom Booster Role', `Open this private link to create or edit your custom booster role:\n${url}/booster-role?guildId=${guildId}&token=${claim.token}`)],
+            ephemeral: true,
+          });
+        } catch (err: any) {
+          await interaction.reply({
+            embeds: [this.buildStatusEmbed('Booster Role Unavailable', err?.message || 'Only active server boosters can use this feature.')],
+            ephemeral: true,
+          });
+        }
+        return;
+      }
 
       if (interaction.commandName === 'warn') {
         const user = interaction.options.getUser('user', true);

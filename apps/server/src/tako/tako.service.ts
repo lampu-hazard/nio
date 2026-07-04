@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException, Optional } from '@nestjs/common';
-import { Client, EmbedBuilder, GuildMember, PermissionsBitField } from 'discord.js';
+import { Client, EmbedBuilder, PermissionsBitField } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../logger/logger.service';
 import * as crypto from 'node:crypto';
@@ -62,10 +62,6 @@ export class TakoService {
       logChannelId?: string | null;
     },
   ) {
-    const current = await this.prisma.takoIntegration.findUnique({
-      where: { guildId },
-    });
-
     const updateData: any = {};
     if (data.enabled !== undefined) updateData.enabled = data.enabled;
     if (data.creatorSlug !== undefined) updateData.creatorSlug = data.creatorSlug;

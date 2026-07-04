@@ -20,6 +20,7 @@ type TakoSettings = {
 
 type DonationLog = {
   id: string;
+  discordUserId: string;
   transactionId: string | null;
   amount: number;
   paymentMethod: string;

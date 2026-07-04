@@ -10,7 +10,7 @@ const STYLE_LABELS: Record<string, string> = {
 export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
   const roles = panel?.roles || [];
   const showRoleComponents = (panel?.type || 'SELF_ROLE') === 'SELF_ROLE';
-  const color = panel?.color || '#5865F2';
+  const color = panel?.color || '#18181B';
   const isPublished = panel?.status === 'PUBLISHED' && panel?.messageId;
 
   return (
@@ -24,13 +24,13 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
             </div>
             <span className={`badge ${isPublished ? 'badge-live' : ''}`}>{isPublished ? 'Live' : 'Draft'}</span>
           </div>
-          <p className="mt-2 text-sm text-slate-500">Preview ini mengikuti data panel terakhir yang tersimpan.</p>
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Preview follows the latest saved panel data.</p>
         </div>
 
-        <div className="bg-white p-6">
-          <div className="rounded-3xl border border-[#2b2d31] bg-[#313338] p-4 shadow-2xl shadow-black/30">
+        <div className="bg-[var(--panel)] p-6">
+          <div className="rounded-2xl border border-[#2b2d31] bg-[#313338] p-4 shadow-sm">
             <div className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-cyan-300 font-black text-slate-950">n</div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-black text-zinc-950">n</div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-white">nio</span>
@@ -39,30 +39,29 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
                 </div>
 
                 {panel?.imageUrl && (
-                  <div className="mt-3 overflow-hidden rounded-3xl border border-black/20 bg-[#2b2d31]">
+                  <div className="mt-3 overflow-hidden rounded-xl border border-black/20 bg-[#2b2d31]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={panel.imageUrl} alt="Panel banner" className="max-h-64 w-full object-cover" />
                   </div>
                 )}
 
-                {/* Simulated Discord Embed */}
                 <div className="mt-3 overflow-hidden rounded border border-black/20 bg-[#2b2d31]" style={{ borderLeft: `4px solid ${color}` }}>
                   <div className="p-4">
                     <div className="flex items-start gap-4">
                       <div className="min-w-0 flex-1">
-                        <div className="text-lg font-black text-white">{panel?.title || '✦ Self Roles'}</div>
+                        <div className="text-lg font-black text-white">{panel?.title || 'Self Roles'}</div>
                         {panel?.style !== 'MINIMAL' && panel?.accentText && (
                           <div className="mt-1 text-sm font-semibold" style={{ color }}>{panel.accentText}</div>
                         )}
                       </div>
                       {panel?.style !== 'MINIMAL' && panel?.thumbnailUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={panel.thumbnailUrl} alt="Panel thumbnail" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
+                        <img src={panel.thumbnailUrl} alt="Panel thumbnail" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
                       )}
                     </div>
 
                     <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#dbdee1]">
-                      {panel?.description || 'Pilih role di bawah untuk mengatur profil kamu.'}
+                      {panel?.description || 'Select roles below to customize your profile.'}
                     </p>
 
                     {showRoleComponents && roles.length > 0 && (
@@ -76,9 +75,8 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
                       </div>
                     )}
 
-                    {/* Footer and timestamp (hidden in MINIMAL style) */}
                     {panel?.style !== 'MINIMAL' && (
-                      <div className="mt-4 flex items-center gap-2 text-xs text-[#949ba4] border-t border-white/5 pt-3">
+                      <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3 text-xs text-[#949ba4]">
                         <span>{panel?.type === 'RULES' ? 'Rules panel' : panel?.type === 'ANNOUNCEMENT' ? 'Announcement panel' : 'Self-role panel'}</span>
                         <span>•</span>
                         <span>Today at 12:00</span>
@@ -100,17 +98,17 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
           </div>
 
           <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-            <div className="card-flat bg-white p-4">
-              <div className="text-slate-500">Mode</div>
+            <div className="card-flat p-4">
+              <div className="text-zinc-500 dark:text-zinc-400">Mode</div>
               <div className="mt-1 font-black">{panel?.mode || 'BUTTONS'}</div>
             </div>
-            <div className="card-flat bg-white p-4">
-              <div className="text-slate-500">Style</div>
+            <div className="card-flat p-4">
+              <div className="text-zinc-500 dark:text-zinc-400">Style</div>
               <div className="mt-1 font-black">{STYLE_LABELS[panel?.style || 'PREMIUM']}</div>
             </div>
             <div className="card-flat p-4 sm:col-span-2">
-              <div className="text-slate-500">Message ID</div>
-              <div className="mt-1 break-all font-mono text-xs text-slate-300">{panel?.messageId || 'Not published yet'}</div>
+              <div className="text-zinc-500 dark:text-zinc-400">Message ID</div>
+              <div className="mt-1 break-all font-mono text-xs text-zinc-500 dark:text-zinc-400">{panel?.messageId || 'Not published yet'}</div>
             </div>
           </div>
         </div>

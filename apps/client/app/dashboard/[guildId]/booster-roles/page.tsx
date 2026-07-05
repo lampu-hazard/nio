@@ -15,6 +15,8 @@ type BoosterRole = {
   tertiaryColor: string | null;
   iconUrl: string | null;
   roleExists: boolean;
+  active: boolean;
+  revokedAt: string | null;
   updatedAt: string;
   user: {
     id: string;
@@ -102,6 +104,7 @@ export default function BoosterRolesPage({ params }: PageProps) {
                     <th className="pb-3">Member</th>
                     <th className="pb-3">Role</th>
                     <th className="pb-3">Style</th>
+                    <th className="pb-3">Status</th>
                     <th className="pb-3">Updated</th>
                     <th className="pb-3 text-right">Actions</th>
                   </tr>
@@ -144,6 +147,12 @@ export default function BoosterRolesPage({ params }: PageProps) {
                             </div>
                           </div>
                         </div>
+                      </td>
+                      <td className="py-4">
+                        <span className={`badge ${role.active ? 'badge-live' : ''}`}>
+                          {role.active ? 'Active' : 'Revoked'}
+                        </span>
+                        {role.revokedAt && <div className="mt-1 text-xs text-[var(--muted)]">Revoked {new Date(role.revokedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</div>}
                       </td>
                       <td className="py-4 text-[var(--muted)]">{new Date(role.updatedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</td>
                       <td className="py-4 text-right">

@@ -153,6 +153,8 @@ export class BoosterRoleService {
         secondaryColor: normalizedStyle.secondaryColor,
         tertiaryColor: normalizedStyle.tertiaryColor,
         iconUrl,
+        active: true,
+        revokedAt: null,
       },
       create: {
         guildId,
@@ -164,6 +166,8 @@ export class BoosterRoleService {
         secondaryColor: normalizedStyle.secondaryColor,
         tertiaryColor: normalizedStyle.tertiaryColor,
         iconUrl,
+        active: true,
+        revokedAt: null,
       },
     });
     await this.prisma.boosterRoleClaimToken.delete({ where: { token } }).catch(() => null);
@@ -221,6 +225,38 @@ export class BoosterRoleService {
 
     await this.prisma.boosterCustomRole.delete({ where: { id: record.id } });
     return record;
+  }
+
+  async revokeExpiredBoosterRole(guildId: string, userId: string) {
+    const existing = await this.prisma.boosterCustomRole.findUnique({
+      where: { guildId_userId: { guildId, userId } },
+    });
+    if (!existing) return { revoked: false, reason: 'No custom booster role found.' };
+
+    const guild = await this.getClient().guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId).catch(() => null);
+    const premiumRoleId = guild.roles.premiumSubscriberRole?.id;
+    const stillBoosting = Boolean(member?.premiumSince || (premiumRoleId && member?.roles.cache.has(premiumRoleId)));
+    if (stillBoosting) return { revoked: false, reason: 'Member is still boosting.' };
+
+    if (member?.roles.cache.has(existing.roleId)) {
+      await member.roles.remove(existing.roleId, 'Removed custom booster role because member is no longer boosting.');
+    }
+
+    await this.prisma.boosterCustomRole.update({
+      where: { guildId_userId: { guildId, userId } },
+      data: { active: false, revokedAt: new Date() },
+    });
+
+    this.logger?.log(`Revoked custom booster role ${existing.roleId} from ${userId} in ${guildId}.`, 'BoosterRole');
+    return { revoked: true };
+  }
+
+  async handleBoosterStatusChange(guildId: string, userId: string, wasBoosting: boolean, isBoosting: boolean) {
+    if (wasBoosting && !isBoosting) {
+      return this.revokeExpiredBoosterRole(guildId, userId);
+    }
+    return { revoked: false, reason: 'Booster status did not expire.' };
   }
 
   async isActiveBooster(guildId: string, userId: string): Promise<boolean> {

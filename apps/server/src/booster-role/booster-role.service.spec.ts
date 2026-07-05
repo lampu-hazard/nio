@@ -11,6 +11,7 @@ function makeMember({ booster = true, hasRole = false } = {}) {
         has: jest.fn(() => hasRole),
       },
       add: jest.fn(),
+      remove: jest.fn(),
     },
   };
 }
@@ -54,6 +55,7 @@ describe('BoosterRoleService', () => {
       },
       boosterCustomRole: {
         findUnique: jest.fn(),
+        update: jest.fn(async ({ data }: any) => ({ id: 'mapping-1', ...data })),
         upsert: jest.fn(async ({ create, update }: any) => ({ id: 'mapping-1', ...create, ...update })),
       },
     };
@@ -78,6 +80,28 @@ describe('BoosterRoleService', () => {
     guild.members.fetch.mockResolvedValue(makeMember({ booster: false, hasRole: false }));
 
     await expect(service.generateToken('guild-1', 'user-1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('removes a custom booster role assignment when the member stops boosting', async () => {
+    const member = makeMember({ booster: false, hasRole: true });
+    guild.members.fetch.mockResolvedValue(member);
+    prisma.boosterCustomRole.findUnique.mockResolvedValue({
+      id: 'mapping-1',
+      guildId: 'guild-1',
+      userId: 'user-1',
+      roleId: 'role-1',
+      name: 'Expired Booster',
+      color: '#111111',
+    });
+
+    const result = await service.revokeExpiredBoosterRole('guild-1', 'user-1');
+
+    expect(member.roles.remove).toHaveBeenCalledWith('role-1', 'Removed custom booster role because member is no longer boosting.');
+    expect(prisma.boosterCustomRole.update).toHaveBeenCalledWith({
+      where: { guildId_userId: { guildId: 'guild-1', userId: 'user-1' } },
+      data: expect.objectContaining({ active: false }),
+    });
+    expect(result.revoked).toBe(true);
   });
 
   it('updates an existing custom role instead of creating another role', async () => {

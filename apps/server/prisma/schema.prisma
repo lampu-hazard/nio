@@ -208,18 +208,20 @@ model BoosterRoleClaimToken {
 }
 
 model BoosterCustomRole {
-  id            String   @id @default(cuid())
-  guildId       String
-  userId        String
-  roleId        String   @unique
-  name          String
-  color         String
-  primaryColor  String   @default("#ffffff")
+  id             String    @id @default(cuid())
+  guildId        String
+  userId         String
+  roleId         String    @unique
+  name           String
+  color          String
+  primaryColor   String    @default("#ffffff")
   secondaryColor String?
-  tertiaryColor String?
-  iconUrl       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  tertiaryColor  String?
+  iconUrl        String?
+  active         Boolean   @default(true)
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([guildId, userId])
 }

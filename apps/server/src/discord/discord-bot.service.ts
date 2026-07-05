@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Client, EmbedBuilder, Events, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, GuildMember, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { DiscordInteractionService } from './discord-interaction.service';
 import { StickersService } from '../stickers/stickers.service';
@@ -47,6 +47,18 @@ export class DiscordBotService implements OnModuleInit {
     this.client.on('interactionCreate', (interaction) => this.interactions.handle(interaction).catch(
       (err) => this.logger.error(`Interaction error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
     ));
+
+    this.client.on(Events.GuildMemberUpdate, (oldMember, newMember) => {
+      const oldGuildMember = oldMember as GuildMember;
+      const newGuildMember = newMember as GuildMember;
+      const wasBoosting = this.isBoosting(oldGuildMember);
+      const isBoosting = this.isBoosting(newGuildMember);
+      if (wasBoosting === isBoosting) return;
+
+      this.boosterRoles.handleBoosterStatusChange(newGuildMember.guild.id, newGuildMember.id, wasBoosting, isBoosting).catch(
+        (err) => this.logger.error(`Booster role status update error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
 
     this.client.on('messageCreate', (message) => {
       this.slowmode.handleMessage(message).catch(
@@ -110,5 +122,10 @@ export class DiscordBotService implements OnModuleInit {
     await new REST({ version: '10' }).setToken(token).put(Routes.applicationCommands(clientId), { body: commands });
     this.logger.log('Slash commands registered', 'DiscordBot');
     await this.client.login(token);
+  }
+
+  private isBoosting(member: GuildMember) {
+    const premiumRoleId = member.guild.roles.premiumSubscriberRole?.id;
+    return Boolean(member.premiumSince || (premiumRoleId && member.roles.cache.has(premiumRoleId)));
   }
 }

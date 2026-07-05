@@ -336,7 +336,47 @@ function RoleColorSlider({
           {mode === 'gradient' ? `${primaryColor} → ${secondaryColor}` : primaryColor}
         </div>
       </div>
+
+      <div className={`mt-4 grid gap-3 ${mode === 'gradient' ? 'sm:grid-cols-2' : ''}`}>
+        <HexColorInput label="Primary hex" value={primaryColor} onChange={onPrimaryColor} />
+        {mode === 'gradient' && <HexColorInput label="Secondary hex" value={secondaryColor} onChange={onSecondaryColor} />}
+      </div>
     </div>
+  );
+}
+
+function HexColorInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  return (
+    <label className="block">
+      <span className="field-label">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="h-9 w-9 rounded-md border border-[var(--border)]" style={{ background: /^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff' }} />
+        <input
+          className="input font-mono"
+          value={draft}
+          maxLength={7}
+          placeholder="#ffffff"
+          onChange={(event) => {
+            const next = event.target.value.startsWith('#') ? event.target.value : `#${event.target.value}`;
+            setDraft(next);
+            if (/^#[0-9a-f]{6}$/i.test(next)) {
+              onChange(next.toLowerCase());
+            }
+          }}
+          onBlur={() => {
+            if (!/^#[0-9a-f]{6}$/i.test(draft)) {
+              setDraft(value);
+            }
+          }}
+        />
+      </div>
+    </label>
   );
 }
 

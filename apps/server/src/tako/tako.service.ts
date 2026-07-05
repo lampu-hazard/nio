@@ -44,6 +44,9 @@ export class TakoService {
       minimumAmount: settings?.minimumAmount ?? 10000,
       paymentMethods: settings?.paymentMethods ?? ['qris'],
       logChannelId: settings?.logChannelId ?? null,
+      directNotificationsEnabled: settings?.directNotificationsEnabled ?? true,
+      directNotificationChannelId: settings?.directNotificationChannelId ?? null,
+      directNotifyMinimumAmount: settings?.directNotifyMinimumAmount ?? 0,
       hasApiKey: Boolean(settings?.apiKey),
       hasWebhookToken: Boolean(settings?.webhookToken),
     };
@@ -60,6 +63,9 @@ export class TakoService {
       minimumAmount?: number;
       paymentMethods?: string[];
       logChannelId?: string | null;
+      directNotificationsEnabled?: boolean;
+      directNotificationChannelId?: string | null;
+      directNotifyMinimumAmount?: number;
     },
   ) {
     const updateData: any = {};
@@ -71,6 +77,9 @@ export class TakoService {
     if (data.minimumAmount !== undefined) updateData.minimumAmount = data.minimumAmount;
     if (data.paymentMethods !== undefined) updateData.paymentMethods = data.paymentMethods;
     if (data.logChannelId !== undefined) updateData.logChannelId = data.logChannelId;
+    if (data.directNotificationsEnabled !== undefined) updateData.directNotificationsEnabled = data.directNotificationsEnabled;
+    if (data.directNotificationChannelId !== undefined) updateData.directNotificationChannelId = data.directNotificationChannelId;
+    if (data.directNotifyMinimumAmount !== undefined) updateData.directNotifyMinimumAmount = data.directNotifyMinimumAmount;
 
     const result = await this.prisma.takoIntegration.upsert({
       where: { guildId },
@@ -85,6 +94,9 @@ export class TakoService {
         minimumAmount: data.minimumAmount ?? 10000,
         paymentMethods: data.paymentMethods ?? ['qris'],
         logChannelId: data.logChannelId ?? null,
+        directNotificationsEnabled: data.directNotificationsEnabled ?? true,
+        directNotificationChannelId: data.directNotificationChannelId ?? null,
+        directNotifyMinimumAmount: data.directNotifyMinimumAmount ?? 0,
       },
     });
 
@@ -95,6 +107,9 @@ export class TakoService {
       minimumAmount: result.minimumAmount,
       paymentMethods: result.paymentMethods,
       logChannelId: result.logChannelId,
+      directNotificationsEnabled: result.directNotificationsEnabled,
+      directNotificationChannelId: result.directNotificationChannelId,
+      directNotifyMinimumAmount: result.directNotifyMinimumAmount,
       hasApiKey: Boolean(result.apiKey),
       hasWebhookToken: Boolean(result.webhookToken),
     };
@@ -216,16 +231,24 @@ export class TakoService {
 
     const payload = JSON.parse(rawBody) as {
       transactionId?: string;
-      amount?: number;
+      transaction_id?: string;
+      id?: string;
+      amount?: number | string;
       sender?: string;
+      name?: string;
       email?: string;
       message?: string;
       status?: string;
+      paymentMethod?: string;
+      payment_method?: string;
     };
 
-    const transactionId = payload.transactionId;
-    const amount = Number(payload.amount);
+    const transactionId = payload.transactionId || payload.transaction_id || payload.id;
+    const amount = Number(payload.amount || 0);
     const message = payload.message || '';
+    const senderName = payload.sender || payload.name || 'Anonymous';
+    const email = payload.email || 'unknown';
+    const paymentMethod = payload.paymentMethod || payload.payment_method || 'unknown';
 
     // Cek pattern nio:<donationId> di message
     const matchNio = message.match(/nio:([a-z0-9]+)/i);
@@ -241,22 +264,30 @@ export class TakoService {
     }
 
     if (!donation) {
-      // Tidak terdaftar di nio, abaikan tapi log ke DB
-      await this.prisma.takoDonation.create({
+      const directDonation = await this.prisma.takoDonation.create({
         data: {
           guildId,
           discordUserId: 'unknown',
           transactionId: transactionId || null,
           amount: amount || 0,
-          paymentMethod: 'unknown',
-          senderName: payload.sender || 'unknown',
-          email: payload.email || 'unknown',
-          message: message,
-          status: 'IGNORED',
-          failureReason: 'No matching nio checkout found in database.',
+          paymentMethod,
+          senderName,
+          email,
+          message,
+          status: 'DIRECT',
+          failureReason: 'Direct Tako donation. No matching nio checkout found; no Discord role assigned.',
         },
       });
-      return { ok: true, status: 'ignored', reason: 'No matching donation record' };
+
+      if (
+        integration.directNotificationsEnabled &&
+        integration.directNotificationChannelId &&
+        amount >= integration.directNotifyMinimumAmount
+      ) {
+        await this.sendDirectDonationNotification(guildId, directDonation, integration.directNotificationChannelId);
+      }
+
+      return { ok: true, status: 'direct_notified' };
     }
 
     // Jika sudah terproses/sukses sebelumnya, abaikan (idempotent)
@@ -270,8 +301,8 @@ export class TakoService {
       data: {
         transactionId: transactionId || donation.transactionId,
         amount: amount || donation.amount,
-        senderName: payload.sender || donation.senderName,
-        email: payload.email || donation.email,
+        senderName: senderName || donation.senderName,
+        email: email || donation.email,
         message: message || donation.message,
         status: 'PAID',
       },
@@ -326,6 +357,27 @@ export class TakoService {
         };
       }),
     );
+  }
+
+  private async sendDirectDonationNotification(guildId: string, donation: any, channelId: string) {
+    const guild = await this.getClient().guilds.fetch(guildId);
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+
+    const message = donation.message?.trim() || 'Tidak ada pesan dukungan.';
+    const embed = new EmbedBuilder()
+      .setColor(0xf59e0b)
+      .setTitle('💝 Dukungan Tako Baru')
+      .addFields(
+        { name: 'Pengirim', value: donation.senderName || 'Anonymous', inline: false },
+        { name: 'Pesan Dukungan', value: message.length > 1024 ? `${message.slice(0, 1021)}...` : message, inline: false },
+      )
+      .setFooter({ text: 'Tako Direct Support' })
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] }).catch((err) => {
+      this.logger?.warn(`Failed to send direct Tako donation notification: ${err?.message ?? err}`, 'TakoService');
+    });
   }
 
   async retryRoleAssignment(guildId: string, donationId: string) {

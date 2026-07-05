@@ -14,6 +14,9 @@ type TakoSettings = {
   minimumAmount: number;
   paymentMethods: string[];
   logChannelId: string | null;
+  directNotificationsEnabled: boolean;
+  directNotificationChannelId: string | null;
+  directNotifyMinimumAmount: number;
   hasApiKey: boolean;
   hasWebhookToken: boolean;
 };
@@ -73,6 +76,9 @@ export default function TakoDashboardPage({ params }: PageProps) {
     minimumAmount: 10000,
     paymentMethods: ['qris'],
     logChannelId: null,
+    directNotificationsEnabled: true,
+    directNotificationChannelId: null,
+    directNotifyMinimumAmount: 0,
     hasApiKey: false,
     hasWebhookToken: false,
   });
@@ -139,6 +145,9 @@ export default function TakoDashboardPage({ params }: PageProps) {
         minimumAmount: settings.minimumAmount,
         paymentMethods: settings.paymentMethods,
         logChannelId: settings.logChannelId || null,
+        directNotificationsEnabled: settings.directNotificationsEnabled,
+        directNotificationChannelId: settings.directNotificationChannelId || null,
+        directNotifyMinimumAmount: settings.directNotifyMinimumAmount,
       };
 
       if (apiKeyInput && apiKeyInput !== '__masked__') payload.apiKey = apiKeyInput;
@@ -365,10 +374,14 @@ export default function TakoDashboardPage({ params }: PageProps) {
                   </div>
                 </section>
 
-                <section className="card p-6">
-                  <h2 className="text-lg font-bold text-[var(--text)]">Notifications</h2>
-                  <label className="mt-4 block">
-                    <span className="field-label">Donation Logs Channel</span>
+                <section className="card p-6 space-y-5">
+                  <div>
+                    <h2 className="text-lg font-bold text-[var(--text)]">Notifications</h2>
+                    <p className="mt-1 text-sm text-[var(--muted)]">Configure internal reward logs and clean public notifications for direct Tako donations.</p>
+                  </div>
+
+                  <label className="block">
+                    <span className="field-label">Reward Logs Channel</span>
                     <select
                       value={settings.logChannelId || 'none'}
                       onChange={(e) => setSettings((prev) => ({ ...prev, logChannelId: e.target.value === 'none' ? null : e.target.value }))}
@@ -381,7 +394,53 @@ export default function TakoDashboardPage({ params }: PageProps) {
                         </option>
                       ))}
                     </select>
+                    <p className="mt-1.5 text-xs text-[var(--muted)]">Private/admin-style log when a checkout donation successfully assigns a role.</p>
                   </label>
+
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--text)]">Direct Donation Notifications</p>
+                        <p className="mt-1 text-xs text-[var(--muted)]">Send a clean Discord notification when someone donates directly from Tako without using /donate-role.</p>
+                      </div>
+                      <Switch
+                        checked={settings.directNotificationsEnabled}
+                        label="Toggle direct donation notifications"
+                        onClick={() => setSettings((prev) => ({ ...prev, directNotificationsEnabled: !prev.directNotificationsEnabled }))}
+                      />
+                    </div>
+
+                    {settings.directNotificationsEnabled && (
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="field-label">Notification Channel</span>
+                          <select
+                            value={settings.directNotificationChannelId || 'none'}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, directNotificationChannelId: e.target.value === 'none' ? null : e.target.value }))}
+                            className="input"
+                          >
+                            <option value="none">Disabled</option>
+                            {channels.map((ch) => (
+                              <option key={ch.id} value={ch.id}>
+                                #{ch.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="field-label">Minimum Notify Amount (Rp)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            className="input"
+                            value={settings.directNotifyMinimumAmount}
+                            onChange={(e) => setSettings((prev) => ({ ...prev, directNotifyMinimumAmount: parseInt(e.target.value) || 0 }))}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </section>
               </>
             )}

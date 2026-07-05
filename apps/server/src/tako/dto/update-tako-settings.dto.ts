@@ -34,4 +34,17 @@ export class UpdateTakoSettingsDto {
   @IsOptional()
   @IsString()
   logChannelId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  directNotificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  directNotificationChannelId?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  directNotifyMinimumAmount?: number;
 }

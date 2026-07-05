@@ -236,6 +236,9 @@ model TakoIntegration {
   minimumAmount  Int      @default(10000)
   paymentMethods String[] @default(["qris"])
   logChannelId   String?
+  directNotificationsEnabled Boolean @default(true)
+  directNotificationChannelId String?
+  directNotifyMinimumAmount Int @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   guild          Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)

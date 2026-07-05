@@ -87,8 +87,8 @@ export class DiscordPublisherService {
   }
 
   private validatePublishPayload(panel: any, payload: MessageCreateOptions) {
-    const firstEmbed = payload.embeds?.[0] as ({ toJSON?: () => APIEmbed } | APIEmbed | undefined);
-    const embed = typeof firstEmbed?.toJSON === 'function' ? firstEmbed.toJSON() : firstEmbed as APIEmbed | undefined;
+    const firstEmbed = payload.embeds?.[0] as any;
+    const embed = (typeof firstEmbed?.toJSON === 'function' ? firstEmbed.toJSON() : firstEmbed) as APIEmbed | undefined;
     const titleLength = embed?.title?.length ?? 0;
     const descriptionLength = embed?.description?.length ?? 0;
     const footerLength = embed?.footer?.text?.length ?? 0;

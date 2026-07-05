@@ -19,8 +19,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
     }
 
     if (exception instanceof HttpException) {
-      this.logger.warn(`HTTP ${exception.getStatus()}: ${exception.message} [${url}]`, 'ExceptionFilter');
-      return response.status(exception.getStatus()).json({ ok: false, code: 'HTTP_ERROR', message: exception.message, details: exception.getResponse() });
+      const details = exception.getResponse();
+      const detailMessage = typeof details === 'object' && details !== null && 'message' in details
+        ? (details as { message?: string | string[] }).message
+        : undefined;
+      const message = Array.isArray(detailMessage) ? detailMessage.join('; ') : detailMessage || exception.message;
+      this.logger.warn(`HTTP ${exception.getStatus()}: ${message} [${url}]`, 'ExceptionFilter');
+      return response.status(exception.getStatus()).json({ ok: false, code: 'HTTP_ERROR', message, details });
     }
 
     const err = exception instanceof Error ? exception : new Error(String(exception));

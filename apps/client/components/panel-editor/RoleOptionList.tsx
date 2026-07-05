@@ -85,8 +85,15 @@ export function RoleOptionList({
     const role = availableRoles.find((item) => item.id === roleId);
     const label = String(formData.get('label') || role?.name || '').trim();
 
+    const description = String(formData.get('description') || '').trim();
+
     if (!roleId || !label) {
       setState({ error: 'Select a role and enter a label first.' });
+      return;
+    }
+
+    if (label.length > 80 || description.length > 100) {
+      setState({ error: 'Role labels must be 80 characters or fewer, and descriptions must be 100 characters or fewer.' });
       return;
     }
 
@@ -99,7 +106,7 @@ export function RoleOptionList({
           roleId,
           label,
           emoji: String(formData.get('emoji') || '').trim() || undefined,
-          description: String(formData.get('description') || '').trim() || undefined,
+          description: description || undefined,
           buttonStyle: String(formData.get('buttonStyle') || 'SECONDARY'),
         }),
       });
@@ -152,8 +159,15 @@ export function RoleOptionList({
     if (!editDraft) return;
 
     const label = editDraft.label.trim();
+    const description = editDraft.description.trim();
+
     if (!label) {
       setState({ error: 'Role label is required.' });
+      return;
+    }
+
+    if (label.length > 80 || description.length > 100) {
+      setState({ error: 'Role labels must be 80 characters or fewer, and descriptions must be 100 characters or fewer.' });
       return;
     }
 
@@ -167,7 +181,7 @@ export function RoleOptionList({
         body: JSON.stringify({
           label,
           emoji: editDraft.emoji.trim() || undefined,
-          description: editDraft.description.trim() || undefined,
+          description: description || undefined,
           buttonStyle: editDraft.buttonStyle,
         }),
       });
@@ -303,7 +317,7 @@ export function RoleOptionList({
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="field-label">Label</span>
-                  <input key={selectedRoleId || 'empty-label'} name="label" defaultValue={selectedRole?.name || ''} placeholder="Gamer" className="input" required />
+                  <input key={selectedRoleId || 'empty-label'} name="label" defaultValue={selectedRole?.name || ''} placeholder="Gamer" className="input" maxLength={80} required />
                 </label>
                 <label className="block">
                   <span className="field-label">Emoji</span>
@@ -313,7 +327,7 @@ export function RoleOptionList({
 
               <label className="block">
                 <span className="field-label">Description</span>
-                <input name="description" placeholder="Optional" className="input" />
+                <input name="description" placeholder="Optional" className="input" maxLength={100} />
               </label>
 
               <label className="block">
@@ -370,7 +384,7 @@ export function RoleOptionList({
                         <div className="grid gap-4 lg:grid-cols-[1fr_120px]">
                           <label className="block">
                             <span className="field-label">Label</span>
-                            <input value={editDraft.label} onChange={(event) => setEditDraft({ ...editDraft, label: event.target.value })} className="input" required />
+                            <input value={editDraft.label} onChange={(event) => setEditDraft({ ...editDraft, label: event.target.value })} className="input" maxLength={80} required />
                           </label>
                           <label className="block">
                             <span className="field-label">Emoji</span>
@@ -378,7 +392,7 @@ export function RoleOptionList({
                           </label>
                           <label className="block lg:col-span-2">
                             <span className="field-label">Description</span>
-                            <input value={editDraft.description} onChange={(event) => setEditDraft({ ...editDraft, description: event.target.value })} className="input" placeholder="Optional" />
+                            <input value={editDraft.description} onChange={(event) => setEditDraft({ ...editDraft, description: event.target.value })} className="input" placeholder="Optional" maxLength={100} />
                           </label>
                           <label className="block lg:col-span-2">
                             <span className="field-label">Button style</span>

@@ -1,5 +1,5 @@
 import { Injectable, Inject, forwardRef } from '@nestjs/common';
-import { PermissionsBitField } from 'discord.js';
+import { ChannelType, PermissionsBitField } from 'discord.js';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
 import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
@@ -43,7 +43,9 @@ export class GuildsService {
   async getChannels(guildId: string) {
     const guild = await this.getGuild(guildId);
     await guild.channels.fetch();
-    return guild.channels.cache.filter((c) => c.isTextBased()).map((c) => ({ id: c.id, name: c.name, type: c.type }));
+    return guild.channels.cache
+      .filter((c) => c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement)
+      .map((c) => ({ id: c.id, name: c.name, type: c.type }));
   }
 
   async getRoles(guildId: string) {

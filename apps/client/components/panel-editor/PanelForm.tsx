@@ -167,12 +167,22 @@ export function PanelForm({
     event.preventDefault();
     setState({ loading: true });
 
+    const name = draft.name.trim();
+    const title = draft.title.trim();
+    const accentText = optional(draft.accentText);
+    const description = optional(draft.description);
+
+    if (name.length > 100 || title.length > 256 || (accentText?.length ?? 0) > 256 || (description?.length ?? 0) > 4000) {
+      setState({ loading: false, error: 'Panel name, title, accent text, or description is too long for Discord publishing.' });
+      return;
+    }
+
     const payload = {
       channelId: optional(channelId),
-      name: draft.name.trim(),
-      title: draft.title.trim(),
-      accentText: optional(draft.accentText),
-      description: optional(draft.description),
+      name,
+      title,
+      accentText,
+      description,
       type: draft.type,
       mode: draft.mode,
       style: draft.style,
@@ -246,7 +256,7 @@ export function PanelForm({
 
           <label className="block">
             <span className="field-label">Internal name</span>
-            <input value={draft.name} onChange={(event) => patchDraft({ name: event.target.value })} className="input" placeholder="Server Rules" required />
+            <input value={draft.name} onChange={(event) => patchDraft({ name: event.target.value })} className="input" placeholder="Server Rules" maxLength={100} required />
           </label>
 
           <label className="block">
@@ -261,17 +271,17 @@ export function PanelForm({
 
           <label className="block md:col-span-2">
             <span className="field-label">Embed title</span>
-            <input value={draft.title} onChange={(event) => patchDraft({ title: event.target.value })} className="input text-lg font-bold" required />
+            <input value={draft.title} onChange={(event) => patchDraft({ title: event.target.value })} className="input text-lg font-bold" maxLength={256} required />
           </label>
 
           <label className="block md:col-span-2">
             <span className="field-label">Accent text</span>
-            <input value={draft.accentText} onChange={(event) => patchDraft({ accentText: event.target.value })} placeholder="Optional subtitle or server identity line" className="input" />
+            <input value={draft.accentText} onChange={(event) => patchDraft({ accentText: event.target.value })} placeholder="Optional subtitle or server identity line" className="input" maxLength={256} />
           </label>
 
           <label className="block md:col-span-2">
             <span className="field-label">Description / content body</span>
-            <textarea value={draft.description} onChange={(event) => patchDraft({ description: event.target.value })} rows={12} className="input resize-y leading-7" />
+            <textarea value={draft.description} onChange={(event) => patchDraft({ description: event.target.value })} rows={12} className="input resize-y leading-7" maxLength={4000} />
             <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Discord markdown is supported: **bold**, bullets, section headings, and blank lines.</p>
           </label>
 

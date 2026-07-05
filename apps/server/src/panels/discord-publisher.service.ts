@@ -44,6 +44,7 @@ export class DiscordPublisherService {
       this.logger.log(`Panel published to #${textChannel.name}: ${panel.name}`, 'Publisher');
       return sent;
     } catch (error) {
+      this.logger.warn(`Panel publish failed for ${panel.id}: ${this.describePublishError(error)}`, 'Publisher');
       this.throwPublishError(error);
     }
   }
@@ -107,6 +108,9 @@ export class DiscordPublisherService {
       throw new AppError('PANEL_CONTENT_TOO_LONG', 'Panel content is too long for Discord. Shorten the title, description, or role descriptions.', 400, { totalEmbedLength });
     }
 
+    this.validateImageUrl(panel.imageUrl, 'banner image');
+    this.validateImageUrl(panel.thumbnailUrl, 'thumbnail image');
+
     const roles = panel.roles || [];
     for (const role of roles) {
       if ((role.label?.length ?? 0) > 80) {
@@ -117,6 +121,39 @@ export class DiscordPublisherService {
         throw new AppError('PANEL_ROLE_DESCRIPTION_TOO_LONG', 'Dropdown role descriptions must be 100 characters or fewer before publishing.', 400, { roleId: role.roleId, descriptionLength: role.description?.length ?? 0 });
       }
     }
+  }
+
+  private validateImageUrl(value: string | null | undefined, label: string) {
+    if (!value) return;
+
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:') {
+        throw new Error('not https');
+      }
+    } catch {
+      throw new AppError('PANEL_IMAGE_URL_INVALID', `The ${label} must be a valid public HTTPS URL before publishing.`, 400, { value });
+    }
+  }
+
+  private describePublishError(error: unknown) {
+    if (error instanceof AppError) return `${error.code}: ${error.message}`;
+
+    const discordError = error as {
+      code?: number;
+      status?: number;
+      message?: string;
+      rawError?: { code?: number; message?: string; errors?: unknown };
+    };
+
+    return JSON.stringify({
+      code: discordError.code,
+      status: discordError.status,
+      message: discordError.message,
+      rawCode: discordError.rawError?.code,
+      rawMessage: discordError.rawError?.message,
+      rawErrors: discordError.rawError?.errors,
+    });
   }
 
   private throwPublishError(error: unknown): never {

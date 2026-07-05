@@ -44,6 +44,19 @@ function moveItem<T>(items: T[], from: number, to: number) {
   return next;
 }
 
+type ApiResult = { message?: string; messageId?: string };
+
+async function parseApiResponse(response: Response): Promise<ApiResult> {
+  const text = await response.text().catch(() => '');
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text) as ApiResult;
+  } catch {
+    return { message: text };
+  }
+}
+
 export function RoleOptionList({
   guildId,
   panel,
@@ -203,9 +216,11 @@ export function RoleOptionList({
       const response = await fetch(`/api/guilds/${guildId}/panels/${panel.id}/publish`, {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || 'Failed to publish panel');
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(data.message || `Failed to publish panel (${response.status})`);
       setState({ success: isPublished ? 'Discord message updated.' : `Panel published. Message ID: ${data.messageId}` });
       router.refresh();
     } catch (error) {

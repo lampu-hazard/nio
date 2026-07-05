@@ -12,18 +12,19 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (isServer) {
     try {
-      const { cookies } = await import('next/headers');
+      const { cookies, headers: nextHeaders } = await import('next/headers');
       const cookieStore = await cookies();
-      const cookieString = cookieStore.toString();
+      const cookieString = cookieStore.toString() || (await nextHeaders()).get('cookie') || '';
       if (cookieString) {
         headers['Cookie'] = cookieString;
       }
     } catch (e) {
-      // Diluar request context
+      // Outside request context
     }
   }
 
   const response = await fetch(targetUrl, {
+    cache: isServer ? 'no-store' : init.cache,
     ...init,
     credentials: 'include',
     headers,

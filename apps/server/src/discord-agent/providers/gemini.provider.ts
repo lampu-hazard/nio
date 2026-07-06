@@ -25,11 +25,21 @@ export class GeminiProvider implements AiProvider {
             role: 'user',
             parts: [
               {
-                text: `${systemPrompt}\n\nContext:\n${contextJson}\n\nUser Request: ${userPrompt}`,
+                text: `Context Data:\n${contextJson}\n\nUser Question/Command: ${userPrompt}`,
               },
             ],
           },
         ],
+        systemInstruction: {
+          parts: [
+            {
+              text: systemPrompt,
+            },
+          ],
+        },
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
       }),
     });
 

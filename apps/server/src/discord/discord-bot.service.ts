@@ -174,7 +174,9 @@ export class DiscordBotService implements OnModuleInit {
 
     if (!this.client.user || !message.mentions.has(this.client.user)) return;
 
-    await message.channel.sendTyping().catch(() => null);
+    if (message.channel && typeof (message.channel as any).sendTyping === 'function') {
+      await (message.channel as any).sendTyping().catch(() => null);
+    }
     const response = await this.agent.handleMention(
       message.guild.id,
       message.channel.id,

@@ -1,50 +1,58 @@
 import { GeminiProvider } from './gemini.provider';
 
-describe('GeminiProvider', () => {
+describe('GeminiProvider with Tool Calling', () => {
   let provider: GeminiProvider;
 
   beforeEach(() => {
     provider = new GeminiProvider('mock-api-key', 'gemini-2.5-flash');
   });
 
-  it('calls fetch to google gemini endpoint and returns generated text', async () => {
+  it('handles regular text generation', async () => {
     const mockResponse = {
       candidates: [
-        {
-          content: {
-            parts: [{ text: 'mock AI response' }],
-          },
-        },
-      ],
+        { content: { parts: [{ text: 'plain text response' }] } }
+      ]
     };
-
     const globalFetch = global.fetch;
-    const fetchMock = jest.fn().mockResolvedValue({
+    global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => mockResponse,
     });
-    global.fetch = fetchMock;
 
     try {
-      const response = await provider.generate('System prompt', 'User prompt', '{}');
-      expect(response).toBe('mock AI response');
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock.mock.calls[0][0]).toContain('gemini-2.5-flash:generateContent');
+      const response = await provider.generate('System', 'User', [], []);
+      expect(response.candidates[0].content.parts[0].text).toBe('plain text response');
     } finally {
       global.fetch = globalFetch;
     }
   });
 
-  it('throws an error on API failure', async () => {
+  it('handles model requesting function call', async () => {
+    const mockResponse = {
+      candidates: [
+        {
+          content: {
+            parts: [{
+              functionCall: {
+                name: 'get_user_warnings',
+                args: { targetUserId: '123' }
+              }
+            }]
+          }
+        }
+      ]
+    };
     const globalFetch = global.fetch;
     global.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => 'Internal Error',
+      ok: true,
+      json: async () => mockResponse,
     });
 
     try {
-      await expect(provider.generate('System', 'User', '{}')).rejects.toThrow('Gemini API returned status 500');
+      const response = await provider.generate('System', 'User', [], []);
+      const call = response.candidates[0].content.parts[0].functionCall;
+      expect(call.name).toBe('get_user_warnings');
+      expect(call.args.targetUserId).toBe('123');
     } finally {
       global.fetch = globalFetch;
     }

@@ -1,3 +1,3 @@
 export interface AiProvider {
-  generate(systemPrompt: string, userPrompt: string, contextJson: string): Promise<string>;
+  generate(systemPrompt: string, userPrompt: string, history: any[], tools: any[]): Promise<any>;
 }

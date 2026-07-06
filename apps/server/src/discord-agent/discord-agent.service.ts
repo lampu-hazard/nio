@@ -54,12 +54,8 @@ export class DiscordAgentService {
     const systemPrompt = settings?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     const provider = this.getProvider(providerName, modelName);
 
-    const history: any[] = [
-      {
-        role: 'user',
-        parts: [{ text: prompt }],
-      },
-    ];
+    const history: any[] = [];
+    let userPrompt = prompt;
     let iterations = 0;
     let finalContent = '';
     let proposalId: string | null = null;
@@ -67,13 +63,22 @@ export class DiscordAgentService {
     while (iterations < 5) {
       iterations++;
       try {
-        const response = await provider.generate(systemPrompt, '', history, AGENT_TOOLS);
+        const response = await provider.generate(systemPrompt, userPrompt, history, AGENT_TOOLS);
         const candidate = response.candidates?.[0];
         const content = candidate?.content;
         const part = content?.parts?.[0];
 
         if (part?.functionCall) {
           const call = part.functionCall;
+
+          // Jika ini adalah turn pertama, simpan prompt user awal ke history agar runtut
+          if (history.length === 0) {
+            history.push({
+              role: 'user',
+              parts: [{ text: prompt }],
+            });
+          }
+
           history.push(content);
 
           let result: any;
@@ -104,6 +109,7 @@ export class DiscordAgentService {
               },
             ],
           });
+          userPrompt = ''; // Kosongkan agar turn berikutnya tidak mengirim prompt awal lagi
         } else if (part?.text) {
           finalContent = part.text;
           break;

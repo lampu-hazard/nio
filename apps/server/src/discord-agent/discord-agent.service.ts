@@ -105,7 +105,6 @@ export class DiscordAgentService {
               },
             ],
           });
-          userPrompt = ''; // History carries the conversation, next generation takes empty prompt
         } else if (part?.text) {
           finalContent = part.text;
           break;

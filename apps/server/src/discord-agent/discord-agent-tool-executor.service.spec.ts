@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
 import { ModerationService } from '../moderation/moderation.service';
-import { GuildsService } from '../guilds/guilds.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
 
@@ -12,8 +12,10 @@ describe('DiscordAgentToolExecutorService', () => {
     listWarnings: jest.fn().mockResolvedValue([{ id: 'warn-1' }]),
   };
 
-  const mockGuilds = {
-    getSettings: jest.fn().mockResolvedValue({ logChannelId: 'channel-1' }),
+  const mockPrisma = {
+    guildSettings: {
+      findUnique: jest.fn().mockResolvedValue({ logChannelId: 'channel-1' }),
+    },
   };
 
   const mockProposals = {
@@ -29,7 +31,7 @@ describe('DiscordAgentToolExecutorService', () => {
       providers: [
         DiscordAgentToolExecutorService,
         { provide: ModerationService, useValue: mockModeration },
-        { provide: GuildsService, useValue: mockGuilds },
+        { provide: PrismaService, useValue: mockPrisma },
         { provide: AgentActionProposalService, useValue: mockProposals },
         { provide: DiscordMessageLogService, useValue: mockMessageLogs },
       ],

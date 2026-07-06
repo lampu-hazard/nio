@@ -4,15 +4,11 @@ import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import session from 'express-session';
 import { PrismaSessionStore } from '@quixo3/prisma-session-store';
-import * as dns from 'node:dns';
 import { AppModule } from './app.module';
 import { createSessionOptions } from './auth/session-options';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { AppLogger } from './logger/logger.service';
 import { PrismaService } from './prisma/prisma.service';
-
-// Memaksa resolusi DNS IPv4-first di Bun/Node
-dns.setDefaultResultOrder('ipv4first');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });

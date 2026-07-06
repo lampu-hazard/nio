@@ -34,6 +34,8 @@ export class GeminiProvider implements AiProvider {
       payload.tools = [{ functionDeclarations: tools }];
     }
 
+    console.log('Gemini Request Payload:', JSON.stringify(payload, null, 2));
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {

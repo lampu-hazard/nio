@@ -43,6 +43,7 @@ services:
       - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
       - ANOMALY_ENGINE_URL=anomaly-engine:50051
       - NODE_ENV=production
+      - NODE_OPTIONS=--dns-result-order=ipv4first
 
   nio-client:
     image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-client:${IMAGE_TAG:-latest}

@@ -1,0 +1,27 @@
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '../prisma/prisma.module';
+import { ModerationModule } from '../moderation/moderation.module';
+import { DiscordAgentService } from './discord-agent.service';
+import { DiscordAgentContextService } from './discord-agent-context.service';
+import { DiscordMessageLogService } from './discord-message-log.service';
+import { AgentActionProposalService } from './agent-action-proposal.service';
+import { AgentActionRendererService } from './agent-action-renderer.service';
+
+@Module({
+  imports: [PrismaModule, ModerationModule],
+  providers: [
+    DiscordAgentService,
+    DiscordAgentContextService,
+    DiscordMessageLogService,
+    AgentActionProposalService,
+    AgentActionRendererService,
+  ],
+  exports: [
+    DiscordAgentService,
+    DiscordAgentContextService,
+    DiscordMessageLogService,
+    AgentActionProposalService,
+    AgentActionRendererService,
+  ],
+})
+export class DiscordAgentModule {}

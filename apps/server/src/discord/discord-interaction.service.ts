@@ -4,6 +4,8 @@ import { SelfRolesService } from '../self-roles/self-roles.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { BoosterRoleService } from '../booster-role/booster-role.service';
 import { TakoService } from '../tako/tako.service';
+import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
+import { AgentActionRendererService } from '../discord-agent/agent-action-renderer.service';
 
 @Injectable()
 export class DiscordInteractionService {
@@ -12,6 +14,8 @@ export class DiscordInteractionService {
     private readonly moderation: ModerationService,
     private readonly boosterRoles: BoosterRoleService,
     private readonly tako: TakoService,
+    private readonly agentProposals: AgentActionProposalService,
+    private readonly agentActionRenderer: AgentActionRendererService,
   ) {}
 
   async handle(interaction: Interaction) {
@@ -189,6 +193,27 @@ export class DiscordInteractionService {
         }
         return;
       }
+    }
+
+    if (interaction.isButton() && interaction.customId.startsWith('agent:')) {
+      const [, action, proposalId] = interaction.customId.split(':');
+      try {
+        const result = action === 'approve'
+          ? await this.agentProposals.approveAndExecute(proposalId, interaction.user.id)
+          : await this.agentProposals.cancelProposal(proposalId, interaction.user.id);
+
+        await interaction.update(this.agentActionRenderer.renderExecutionResult(
+          action === 'approve' ? 'Proposal Executed' : 'Proposal Cancelled',
+          result.message,
+        ));
+      } catch (err: any) {
+        await interaction.reply({
+          content: err?.message || 'Failed to process proposal.',
+          ephemeral: true,
+          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+        });
+      }
+      return;
     }
 
     if (interaction.isButton() && interaction.customId.startsWith('sr:')) {

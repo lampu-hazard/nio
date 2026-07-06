@@ -151,7 +151,7 @@ export class TakoService {
 
     try {
       // Panggil Tako API
-      const res = await fetch(`https://tako.id/api/gift/${integration.creatorSlug}`, {
+      const res = await fetch(`https://api.tako.id/v1/gift/${integration.creatorSlug}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

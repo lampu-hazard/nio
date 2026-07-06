@@ -76,7 +76,14 @@ export class DiscordAgentService {
           const call = part.functionCall;
           history.push({
             role: 'model',
-            parts: [{ functionCall: call }],
+            parts: [
+              {
+                functionCall: {
+                  name: call.name,
+                  args: call.args,
+                },
+              },
+            ],
           });
 
           let result: any;
@@ -100,7 +107,9 @@ export class DiscordAgentService {
               {
                 functionResponse: {
                   name: call.name,
-                  response: { result },
+                  response: {
+                    content: JSON.stringify(result),
+                  },
                 },
               },
             ],

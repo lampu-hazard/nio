@@ -91,7 +91,7 @@ export class DiscordAgentService {
           }
 
           history.push({
-            role: 'function',
+            role: 'user',
             parts: [
               {
                 functionResponse: {
@@ -109,6 +109,7 @@ export class DiscordAgentService {
           break;
         }
       } catch (err: any) {
+        console.error('AI Loop Error:', err);
         finalContent = '⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI.';
         break;
       }

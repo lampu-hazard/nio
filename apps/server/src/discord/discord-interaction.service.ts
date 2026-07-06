@@ -207,6 +207,7 @@ export class DiscordInteractionService {
           result.message,
         ));
       } catch (err: any) {
+        console.error('Agent interaction handling error:', err);
         await interaction.reply({
           content: err?.message || 'Failed to process proposal.',
           ephemeral: true,

@@ -22,7 +22,7 @@ export class AgentActionProposalService {
 
   async createProposal(input: CreateAgentActionProposalInput) {
     const reason = input.recommendation.reason.trim().slice(0, 512) || 'AI recommended moderation action.';
-    const payload: Record<string, unknown> = { reason };
+    const payload: any = { reason };
 
     if (input.recommendation.type === 'TIMEOUT') {
       const durationMinutes = Math.min(
@@ -39,7 +39,7 @@ export class AgentActionProposalService {
         requestedById: input.requestedById,
         targetUserId: input.targetUserId,
         actionType: input.recommendation.type,
-        payload,
+        payload: payload,
         status: 'PENDING',
         expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
       },

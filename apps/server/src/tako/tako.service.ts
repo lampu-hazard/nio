@@ -364,16 +364,13 @@ export class TakoService {
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
-    const message = donation.message?.trim() || 'Tidak ada pesan dukungan.';
+    const senderName = donation.senderName || 'Anonymous';
+    const amount = Number(donation.amount || 0).toLocaleString('id-ID');
+    const message = donation.message?.trim();
+    const description = `${senderName} baru saja memberikan Rp ${amount}!${message ? ` ${message}` : ''}`;
     const embed = new EmbedBuilder()
       .setColor(0xf59e0b)
-      .setTitle('💝 Dukungan Tako Baru')
-      .addFields(
-        { name: 'Pengirim', value: donation.senderName || 'Anonymous', inline: false },
-        { name: 'Pesan Dukungan', value: message.length > 1024 ? `${message.slice(0, 1021)}...` : message, inline: false },
-      )
-      .setFooter({ text: 'Tako Direct Support' })
-      .setTimestamp();
+      .setDescription(description.length > 4096 ? `${description.slice(0, 4093)}...` : description);
 
     await channel.send({ embeds: [embed] }).catch((err) => {
       this.logger?.warn(`Failed to send direct Tako donation notification: ${err?.message ?? err}`, 'TakoService');

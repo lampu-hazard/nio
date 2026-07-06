@@ -11,9 +11,10 @@ import { DiscordSlowmodeService } from './discord-slowmode.service';
 import { RustSlowmodeClientService } from './rust-slowmode-client.service';
 import { RustAnomalyClientService } from './rust-anomaly-client.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
+import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
 
 @Module({
-  imports: [SelfRolesModule, StickersModule, ModerationModule, BoosterRoleModule, TakoModule],
+  imports: [SelfRolesModule, StickersModule, ModerationModule, BoosterRoleModule, TakoModule, DiscordAgentModule],
   providers: [
     DiscordBotService,
     DiscordInteractionService,

@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Client, Events, GatewayIntentBits, GuildMember, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, GuildMember, Message, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { DiscordInteractionService } from './discord-interaction.service';
 import { StickersService } from '../stickers/stickers.service';
@@ -7,6 +7,10 @@ import { DiscordSlowmodeService } from './discord-slowmode.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
 import { BoosterRoleService } from '../booster-role/booster-role.service';
 import { TakoService } from '../tako/tako.service';
+import { DiscordAgentService } from '../discord-agent/discord-agent.service';
+import { DiscordAgentContextService } from '../discord-agent/discord-agent-context.service';
+import { DiscordMessageLogService } from '../discord-agent/discord-message-log.service';
+import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -29,12 +33,18 @@ export class DiscordBotService implements OnModuleInit {
     private readonly anomaly: DiscordAnomalyService,
     private readonly boosterRoles: BoosterRoleService,
     private readonly tako: TakoService,
+    private readonly agent: DiscordAgentService,
+    private readonly agentContext: DiscordAgentContextService,
+    private readonly messageLogs: DiscordMessageLogService,
+    private readonly actionProposals: AgentActionProposalService,
   ) {}
 
   async onModuleInit() {
     this.slowmode.setClient(this.client);
     this.boosterRoles.setClient(this.client);
     this.tako.setClient(this.client);
+    this.agentContext.setClient(this.client);
+    this.actionProposals.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -70,6 +80,11 @@ export class DiscordBotService implements OnModuleInit {
       );
 
       if (message.author.bot || !message.guild) return;
+
+      this.handleAgentMessage(message).catch(
+        (err) => this.logger.error(`Discord agent message error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+
       const name = message.content.trim().toLowerCase();
       if (!name || name.length > 32) return;
       const url = this.stickers.getCachedUrl(message.guild.id, name);
@@ -83,6 +98,20 @@ export class DiscordBotService implements OnModuleInit {
         }],
       }).catch(
         (err) => this.logger.error(`Sticker send error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
+    this.client.on(Events.MessageUpdate, (oldMessage, newMessage) => {
+      if (!newMessage.guild || !newMessage.id) return;
+      this.messageLogs.logUpdate(newMessage.id, newMessage.content || '', new Date()).catch(
+        (err) => this.logger.error(`Message log update error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
+    this.client.on(Events.MessageDelete, (message) => {
+      if (!message.guild || !message.id) return;
+      this.messageLogs.logDelete(message.id, new Date()).catch(
+        (err) => this.logger.error(`Message log delete error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );
     });
 
@@ -122,6 +151,45 @@ export class DiscordBotService implements OnModuleInit {
     await new REST({ version: '10' }).setToken(token).put(Routes.applicationCommands(clientId), { body: commands });
     this.logger.log('Slash commands registered', 'DiscordBot');
     await this.client.login(token);
+  }
+
+  private async handleAgentMessage(message: Message) {
+    if (!message.guild) return;
+
+    await this.messageLogs.logCreate({
+      id: message.id,
+      guildId: message.guild.id,
+      channelId: message.channel.id,
+      authorId: message.author.id,
+      content: message.content || '',
+      attachments: message.attachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        url: attachment.url,
+        contentType: attachment.contentType,
+      })),
+      embeds: message.embeds.map((embed) => embed.toJSON()),
+      createdAt: message.createdAt,
+    });
+
+    if (!this.client.user || !message.mentions.has(this.client.user)) return;
+
+    await message.channel.sendTyping().catch(() => null);
+    const response = await this.agent.handleMention(
+      message.guild.id,
+      message.channel.id,
+      message.author.id,
+      message.content,
+    );
+
+    if (!response) return;
+
+    await message.reply({
+      content: response.content,
+      embeds: response.embeds,
+      components: response.components,
+      allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+    });
   }
 
   private isBoosting(member: GuildMember) {

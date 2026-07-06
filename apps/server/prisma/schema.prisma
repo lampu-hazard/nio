@@ -265,3 +265,70 @@ model TakoDonation {
   @@index([discordUserId])
   @@index([status])
 }
+
+model DiscordAgentSettings {
+  guildId              String   @id
+  enabled              Boolean  @default(false)
+  provider             String   @default("gemini")
+  model                String   @default("gemini-2.5-flash")
+  allowedUserIds       String[] @default([])
+  allowedChannelIds    String[] @default([])
+  excludedChannelIds   String[] @default([])
+  systemPrompt         String?
+  messageRetentionDays Int      @default(30)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model AgentInteractionLog {
+  id           String   @id @default(cuid())
+  guildId      String
+  channelId    String
+  userId       String
+  targetUserId String?
+  prompt       String
+  response     String?
+  status       String
+  error        String?
+  createdAt    DateTime @default(now())
+
+  @@index([guildId, createdAt])
+  @@index([guildId, userId, createdAt])
+  @@index([guildId, targetUserId, createdAt])
+}
+
+model DiscordMessageLog {
+  id          String    @id
+  guildId     String
+  channelId   String
+  authorId    String
+  content     String
+  attachments Json?
+  embeds      Json?
+  createdAt   DateTime
+  editedAt    DateTime?
+  deletedAt   DateTime?
+
+  @@index([guildId, authorId, createdAt])
+  @@index([guildId, channelId, createdAt])
+  @@index([guildId, createdAt])
+}
+
+model AgentActionProposal {
+  id            String   @id @default(cuid())
+  guildId       String
+  channelId     String
+  requestedById String
+  targetUserId  String?
+  actionType    String
+  payload       Json
+  status        String   @default("PENDING")
+  expiresAt     DateTime
+  executedAt    DateTime?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([guildId, requestedById, status])
+  @@index([guildId, targetUserId, createdAt])
+}

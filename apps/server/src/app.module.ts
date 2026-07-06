@@ -12,6 +12,7 @@ import { StickersModule } from './stickers/stickers.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { BoosterRoleModule } from './booster-role/booster-role.module';
 import { TakoModule } from './tako/tako.module';
+import { DiscordAgentModule } from './discord-agent/discord-agent.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TakoModule } from './tako/tako.module';
     ModerationModule,
     BoosterRoleModule,
     TakoModule,
+    DiscordAgentModule,
   ],
 })
 export class AppModule {}

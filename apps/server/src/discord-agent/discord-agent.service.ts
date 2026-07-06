@@ -74,17 +74,7 @@ export class DiscordAgentService {
 
         if (part?.functionCall) {
           const call = part.functionCall;
-          history.push({
-            role: 'model',
-            parts: [
-              {
-                functionCall: {
-                  name: call.name,
-                  args: call.args,
-                },
-              },
-            ],
-          });
+          history.push(content);
 
           let result: any;
           try {
@@ -122,7 +112,12 @@ export class DiscordAgentService {
         }
       } catch (err: any) {
         console.error('AI Loop Error:', err);
-        finalContent = '⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI.';
+        const rawMessage = err?.message || String(err);
+        if (rawMessage.includes('429')) {
+          finalContent = '⚠️ Batas kuota AI terlampaui (Rate Limit / Quota Exceeded). Mohon tunggu beberapa saat sebelum mencoba kembali.';
+        } else {
+          finalContent = `⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI: ${rawMessage.slice(0, 100)}`;
+        }
         break;
       }
     }

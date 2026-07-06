@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ModerationService } from '../moderation/moderation.service';
-import { GuildsService } from '../guilds/guilds.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
 
@@ -8,7 +8,7 @@ import { DiscordMessageLogService } from './discord-message-log.service';
 export class DiscordAgentToolExecutorService {
   constructor(
     private readonly moderation: ModerationService,
-    private readonly guilds: GuildsService,
+    private readonly prisma: PrismaService,
     private readonly proposals: AgentActionProposalService,
     private readonly messageLogs: DiscordMessageLogService,
   ) {}
@@ -23,7 +23,24 @@ export class DiscordAgentToolExecutorService {
         return this.moderation.listWarnings(context.guildId, { search: args.targetUserId });
 
       case 'get_server_settings':
-        return this.guilds.getSettings(context.guildId);
+        const settings = await this.prisma.guildSettings.findUnique({
+          where: { guildId: context.guildId },
+        });
+        return {
+          logChannelId: settings?.logChannelId || null,
+          stickerEnabled: settings?.stickerEnabled || false,
+          slowmodeEnabled: settings?.slowmodeEnabled || false,
+          slowmodeChannels: settings?.slowmodeChannels || [],
+          slowmodeIntervalQuiet: settings?.slowmodeIntervalQuiet ?? 0,
+          slowmodeIntervalNormal: settings?.slowmodeIntervalNormal ?? 5,
+          slowmodeIntervalBusy: settings?.slowmodeIntervalBusy ?? 10,
+          anomalyEnabled: settings?.anomalyEnabled || false,
+          phishingDetectionEnabled: settings?.phishingDetectionEnabled ?? true,
+          contentAnomalyEnabled: settings?.contentAnomalyEnabled ?? true,
+          userAnomalyEnabled: settings?.userAnomalyEnabled ?? true,
+          guildBaselineEnabled: settings?.guildBaselineEnabled ?? true,
+          anomalyEnforcementMode: settings?.anomalyEnforcementMode || 'AUDIT_ONLY',
+        };
 
       case 'get_channel_message_logs':
         return this.messageLogs.getUserRecentMessages(context.guildId, args.targetUserId, args.limit || 15);

@@ -320,7 +320,6 @@ export class AgentActionProposalService {
 
           await this.stickers.create(proposal.guildId, {
             name,
-            url: stickerUrl,
             type,
             key: `stickers/${proposal.guildId}/${name}`, // Mock key to bypass headObject if we need it
           }).catch(async (err) => {

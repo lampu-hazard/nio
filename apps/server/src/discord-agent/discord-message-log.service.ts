@@ -61,6 +61,32 @@ export class DiscordMessageLogService {
     });
   }
 
+  async getChannelRecentMessages(guildId: string, channelId: string, limit = 50, userId?: string) {
+    return this.prisma.discordMessageLog.findMany({
+      where: {
+        guildId,
+        channelId,
+        deletedAt: null,
+        ...(userId ? { authorId: userId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  async getDeletedMessages(guildId: string, limit = 50, filters: { channelId?: string; userId?: string } = {}) {
+    return this.prisma.discordMessageLog.findMany({
+      where: {
+        guildId,
+        deletedAt: { not: null },
+        ...(filters.channelId ? { channelId: filters.channelId } : {}),
+        ...(filters.userId ? { authorId: filters.userId } : {}),
+      },
+      orderBy: { deletedAt: 'desc' },
+      take: limit,
+    });
+  }
+
   async runRetentionCleanup(guildId: string, retentionDays: number) {
     if (retentionDays <= 0) return;
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);

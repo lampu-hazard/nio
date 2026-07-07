@@ -1,3 +1,4 @@
+import { describe, expect, it } from '@jest/globals';
 import { AgentActionRendererService } from './agent-action-renderer.service';
 
 describe('AgentActionRendererService', () => {
@@ -15,7 +16,7 @@ describe('AgentActionRendererService', () => {
     expect(payload.embeds).toHaveLength(1);
     expect(payload.components).toHaveLength(1);
     expect(payload.components[0].components).toHaveLength(2);
-    expect(payload.components[0].components[0].data.custom_id).toBe('agent:approve:proposal-1');
-    expect(payload.components[0].components[1].data.custom_id).toBe('agent:cancel:proposal-1');
+    expect((payload.components[0].components[0].data as any).custom_id).toBe('agent:approve:proposal-1');
+    expect((payload.components[0].components[1].data as any).custom_id).toBe('agent:cancel:proposal-1');
   });
 });

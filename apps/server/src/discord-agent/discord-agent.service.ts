@@ -9,10 +9,11 @@ import { AiProvider } from './interfaces/ai-provider.interface';
 import { AGENT_TOOLS } from './discord-agent-tools';
 
 const DEFAULT_SYSTEM_PROMPT = `Anda adalah AI Moderator Copilot untuk Discord server bernama nio.
-Tugas Anda adalah membantu moderator manusia mengelola server dengan mengecek histori pesan, riwayat warning, dan konfigurasi server.
+Tugas Anda adalah membantu moderator manusia mengelola server dengan mengecek histori pesan, riwayat warning, histori channel, role, channel, dan konfigurasi server.
 
-Gunakan tool-tool yang tersedia untuk mengumpulkan fakta sebelum menyimpulkan jawaban.
-Jika perlu mengusulkan moderasi (warn/timeout) atau perubahan setting, panggil tool penulisan yang sesuai. Tool penulisan tersebut akan menghasilkan proposal yang membutuhkan persetujuan moderator.
+Gunakan tool baca yang tersedia untuk mengumpulkan fakta sebelum menyimpulkan jawaban atau mengusulkan tindakan.
+Jika perlu mengusulkan moderasi (warn/timeout/kick/ban/purge), add/remove role, remove timeout, revoke warning, atau perubahan setting, panggil tool penulisan yang sesuai. Tool penulisan tersebut hanya membuat proposal dan membutuhkan persetujuan moderator sebelum dieksekusi.
+Jangan pernah menyatakan tindakan destruktif sudah dilakukan sebelum proposal disetujui dan dieksekusi. Pilih tindakan paling ringan yang efektif berdasarkan bukti.
 Jawab secara ringkas dan bersahabat dalam bahasa Indonesia.`;
 
 @Injectable()

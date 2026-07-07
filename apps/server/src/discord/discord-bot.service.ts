@@ -11,6 +11,7 @@ import { DiscordAgentService } from '../discord-agent/discord-agent.service';
 import { DiscordAgentContextService } from '../discord-agent/discord-agent-context.service';
 import { DiscordMessageLogService } from '../discord-agent/discord-message-log.service';
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
+import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -37,6 +38,7 @@ export class DiscordBotService implements OnModuleInit {
     private readonly agentContext: DiscordAgentContextService,
     private readonly messageLogs: DiscordMessageLogService,
     private readonly actionProposals: AgentActionProposalService,
+    private readonly agentToolExecutor: DiscordAgentToolExecutorService,
   ) {}
 
   async onModuleInit() {
@@ -45,6 +47,9 @@ export class DiscordBotService implements OnModuleInit {
     this.tako.setClient(this.client);
     this.agentContext.setClient(this.client);
     this.actionProposals.setClient(this.client);
+    this.actionProposals.setSlowmodeService(this.slowmode);
+    this.actionProposals.setAnomalyService(this.anomaly);
+    this.agentToolExecutor.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -177,6 +182,12 @@ export class DiscordBotService implements OnModuleInit {
     if (message.channel && typeof (message.channel as any).sendTyping === 'function') {
       await (message.channel as any).sendTyping().catch(() => null);
     }
+
+    const loadingMessage = await message.reply({
+      content: `<@${message.author.id}> nio sedang membaca konteks dan menyiapkan jawaban...`,
+      allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+    }).catch(() => null);
+
     const response = await this.agent.handleMention(
       message.guild.id,
       message.channel.id,
@@ -184,14 +195,24 @@ export class DiscordBotService implements OnModuleInit {
       message.content,
     );
 
-    if (!response) return;
+    if (!response) {
+      await loadingMessage?.delete().catch(() => null);
+      return;
+    }
 
-    await message.reply({
+    const replyPayload = {
       content: response.content,
       embeds: response.embeds,
       components: response.components,
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
-    });
+    };
+
+    if (loadingMessage) {
+      await loadingMessage.edit(replyPayload).catch(() => message.reply(replyPayload));
+      return;
+    }
+
+    await message.reply(replyPayload);
   }
 
   private isBoosting(member: GuildMember) {

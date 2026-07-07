@@ -315,6 +315,7 @@ export class AgentActionProposalService {
   private normalizeSettings(settings: AgentSettingsUpdate) {
     const normalized: AgentSettingsUpdate = {};
     if ('logChannelId' in settings) normalized.logChannelId = settings.logChannelId || null;
+    if ('messageDeleteLogChannelId' in settings) normalized.messageDeleteLogChannelId = settings.messageDeleteLogChannelId || null;
     this.copyBoolean(settings, normalized, 'stickerEnabled');
     this.copyBoolean(settings, normalized, 'slowmodeEnabled');
     if (Array.isArray(settings.slowmodeChannels)) {

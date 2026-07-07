@@ -8,6 +8,7 @@ type ChannelOption = { id: string; name: string };
 
 type Settings = {
   logChannelId: string | null;
+  messageDeleteLogChannelId: string | null;
   stickerEnabled: boolean;
   slowmodeEnabled: boolean;
   slowmodeChannels: string[];
@@ -67,6 +68,7 @@ export default function SettingsPage({ params }: PageProps) {
 
   const [settings, setSettings] = useState<Settings>({
     logChannelId: null,
+    messageDeleteLogChannelId: null,
     stickerEnabled: false,
     slowmodeEnabled: false,
     slowmodeChannels: [],
@@ -302,6 +304,21 @@ export default function SettingsPage({ params }: PageProps) {
                   ))}
                 </select>
                 <p className="mt-2 text-xs text-[var(--muted)]">Select a text channel where the bot will post moderation and panel audit events.</p>
+              </label>
+
+              <label className="mt-5 block">
+                <span className="field-label">Message Deletion Log Channel</span>
+                <select
+                  value={settings.messageDeleteLogChannelId || 'none'}
+                  onChange={(event) => setSettings((prev) => ({ ...prev, messageDeleteLogChannelId: event.target.value === 'none' ? null : event.target.value }))}
+                  className="input"
+                >
+                  <option value="none">Disabled</option>
+                  {channels.map((ch) => (
+                    <option key={ch.id} value={ch.id}>#{ch.name}</option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-[var(--muted)]">Select a channel where deleted message contents and media will be archived.</p>
               </label>
             </section>
 

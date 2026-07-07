@@ -51,6 +51,7 @@ export type Sticker = {
 
 export type Settings = {
   logChannelId: string | null;
+  messageDeleteLogChannelId: string | null;
   stickerEnabled: boolean;
   slowmodeEnabled: boolean;
   slowmodeChannels: string[];

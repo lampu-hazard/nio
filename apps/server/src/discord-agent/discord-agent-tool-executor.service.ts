@@ -210,6 +210,7 @@ export class DiscordAgentToolExecutorService {
     });
     return {
       logChannelId: settings?.logChannelId || null,
+      messageDeleteLogChannelId: settings?.messageDeleteLogChannelId || null,
       stickerEnabled: settings?.stickerEnabled || false,
       slowmodeEnabled: settings?.slowmodeEnabled || false,
       slowmodeChannels: settings?.slowmodeChannels || [],
@@ -329,6 +330,7 @@ export class DiscordAgentToolExecutorService {
   private extractSettings(args: any): AgentSettingsUpdate {
     const settings: AgentSettingsUpdate = {};
     this.copyStringOrNull(args, settings, 'logChannelId');
+    this.copyStringOrNull(args, settings, 'messageDeleteLogChannelId');
     this.copyBoolean(args, settings, 'stickerEnabled');
     this.copyBoolean(args, settings, 'slowmodeEnabled');
     this.copyStringArray(args, settings, 'slowmodeChannels');

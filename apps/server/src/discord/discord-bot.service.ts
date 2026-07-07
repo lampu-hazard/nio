@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Client, Events, GatewayIntentBits, GuildMember, Message, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, GuildMember, Message, Partials, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { DiscordInteractionService } from './discord-interaction.service';
 import { StickersService } from '../stickers/stickers.service';
@@ -114,9 +114,25 @@ export class DiscordBotService implements OnModuleInit {
     });
 
     this.client.on(Events.MessageDelete, (message) => {
+      this.handleMessageDelete(message).catch(
+        (err) => this.logger.error(`Message delete log error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
       if (!message.guild || !message.id) return;
       this.messageLogs.logDelete(message.id, new Date()).catch(
         (err) => this.logger.error(`Message log delete error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
+    this.client.on(Events.MessageDeleteBulk, (messages) => {
+      const messageIds = messages.map((m: any) => m.id);
+      this.handleMessageDeleteBulk(messages).catch(
+        (err) => this.logger.error(`Message delete bulk log error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+      this.messageLogs.prisma.discordMessageLog.updateMany({
+        where: { id: { in: messageIds } },
+        data: { deletedAt: new Date() },
+      }).catch(
+        (err) => this.logger.error(`Message log bulk delete error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );
     });
 
@@ -213,6 +229,125 @@ export class DiscordBotService implements OnModuleInit {
     }
 
     await message.reply(replyPayload);
+  }
+
+  private async handleMessageDelete(message: any) {
+    if (!message.guild || !message.id) return;
+
+    try {
+      const settings = await this.messageLogs.prisma.guildSettings.findUnique({
+        where: { guildId: message.guild.id },
+      });
+
+      const logChannelId = settings?.messageDeleteLogChannelId;
+      if (!logChannelId) return;
+
+      const dbLog = await this.messageLogs.prisma.discordMessageLog.findUnique({
+        where: { id: message.id },
+      });
+
+      if (!dbLog) return;
+
+      const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
+      if (!logChannel || !logChannel.isTextBased()) return;
+
+      const attachments = (dbLog.attachments as any[]) || [];
+      const attachmentBuffers: { attachment: Buffer; name: string }[] = [];
+      const largeAttachments: any[] = [];
+
+      for (const att of attachments) {
+        if (!att.url) continue;
+        const res = await fetch(att.url).catch(() => null);
+        if (res && res.ok) {
+          const contentLength = Number(res.headers.get('content-length') || '0');
+          if (contentLength > 0 && contentLength <= 8 * 1024 * 1024) { // max 8MB
+            const buffer = Buffer.from(await res.arrayBuffer());
+            attachmentBuffers.push({ attachment: buffer, name: att.name || 'file' });
+          } else {
+            largeAttachments.push(att);
+          }
+        }
+      }
+
+      let contentDescription = dbLog.content ? `>>> ${dbLog.content}` : '*No text content*';
+      if (largeAttachments.length > 0) {
+        const largeList = largeAttachments.map((att) => `• [${att.name || 'file'}](${att.url}) (File too large to re-upload)`).join('\n');
+        contentDescription += `\n\n**Attachments (Over limit):**\n${largeList}`;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x7f8c8d)
+        .setTitle('Message Deleted')
+        .setDescription(contentDescription.length > 4096 ? `${contentDescription.slice(0, 4093)}...` : contentDescription)
+        .addFields(
+          { name: 'Author', value: `<@${dbLog.authorId}> (\`${dbLog.authorId}\`)`, inline: true },
+          { name: 'Channel', value: `<#${dbLog.channelId}>`, inline: true },
+          { name: 'Sent At', value: `<t:${Math.floor(dbLog.createdAt.getTime() / 1000)}:f>`, inline: true }
+        )
+        .setTimestamp();
+
+      await logChannel.send({
+        embeds: [embed],
+        files: attachmentBuffers,
+      }).catch((err) => this.logger.error(`Failed to send message delete log: ${err.message}`, err.stack, 'DiscordBot'));
+    } catch (err: any) {
+      this.logger.error(`Error in handleMessageDelete: ${err.message}`, err.stack, 'DiscordBot');
+    }
+  }
+
+  private async handleMessageDeleteBulk(messages: any) {
+    const firstMsg = messages.first();
+    if (!firstMsg || !firstMsg.guild) return;
+
+    const guildId = firstMsg.guild.id;
+    const channelId = firstMsg.channel.id;
+
+    try {
+      const settings = await this.messageLogs.prisma.guildSettings.findUnique({
+        where: { guildId },
+      });
+
+      const logChannelId = settings?.messageDeleteLogChannelId;
+      if (!logChannelId) return;
+
+      const messageIds = messages.map((m: any) => m.id);
+      const dbLogs = await this.messageLogs.prisma.discordMessageLog.findMany({
+        where: { id: { in: messageIds } },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (dbLogs.length === 0) return;
+
+      const logChannel = await firstMsg.guild.channels.fetch(logChannelId).catch(() => null);
+      if (!logChannel || !logChannel.isTextBased()) return;
+
+      const logLines: string[] = [
+        `=== BULK DELETION LOG: #${firstMsg.channel.name || channelId} ===`,
+        `Guild: ${firstMsg.guild.name} (${guildId})`,
+        `Deleted count: ${dbLogs.length}`,
+        `Date: ${new Date().toISOString()}`,
+        `----------------------------------------\n`
+      ];
+
+      for (const log of dbLogs) {
+        const timestamp = log.createdAt.toISOString();
+        const attachments = (log.attachments as any[]) || [];
+        const attNames = attachments.map((a) => a.name).join(', ');
+        const attSuffix = attNames ? ` [Attachments: ${attNames}]` : '';
+        logLines.push(`[${timestamp}] User ID ${log.authorId}: ${log.content || ''}${attSuffix}`);
+      }
+
+      logLines.push(`\n========================================`);
+      const logContent = logLines.join('\n');
+      const buffer = Buffer.from(logContent, 'utf8');
+
+      await logChannel.send({
+        content: `🗑️ **Bulk Message Deletion**\nChannel: <#${channelId}>\nDeleted: \`${dbLogs.length} messages\``,
+        files: [{ attachment: buffer, name: `bulk-delete-log-${Date.now()}.txt` }],
+      }).catch((err) => this.logger.error(`Failed to send message delete bulk log: ${err.message}`, err.stack, 'DiscordBot'));
+    } catch (err: any) {
+      this.logger.error(`Error in handleMessageDeleteBulk: ${err.message}`, err.stack, 'DiscordBot');
+    }
   }
 
   private isBoosting(member: GuildMember) {

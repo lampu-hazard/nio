@@ -96,6 +96,7 @@ export class GuildsService {
     });
     return {
       logChannelId: settings?.logChannelId || null,
+      messageDeleteLogChannelId: settings?.messageDeleteLogChannelId || null,
       stickerEnabled: settings?.stickerEnabled || false,
       slowmodeEnabled: settings?.slowmodeEnabled || false,
       slowmodeChannels: settings?.slowmodeChannels || [],
@@ -116,6 +117,7 @@ export class GuildsService {
       where: { guildId },
       update: {
         logChannelId: dto.logChannelId !== undefined ? dto.logChannelId : undefined,
+        messageDeleteLogChannelId: dto.messageDeleteLogChannelId !== undefined ? dto.messageDeleteLogChannelId : undefined,
         stickerEnabled: dto.stickerEnabled !== undefined ? dto.stickerEnabled : undefined,
         slowmodeEnabled: dto.slowmodeEnabled !== undefined ? dto.slowmodeEnabled : undefined,
         slowmodeChannels: dto.slowmodeChannels !== undefined ? dto.slowmodeChannels : undefined,
@@ -132,6 +134,7 @@ export class GuildsService {
       create: {
         guildId,
         logChannelId: dto.logChannelId || null,
+        messageDeleteLogChannelId: dto.messageDeleteLogChannelId || null,
         stickerEnabled: dto.stickerEnabled || false,
         slowmodeEnabled: dto.slowmodeEnabled || false,
         slowmodeChannels: dto.slowmodeChannels || [],

@@ -4,6 +4,7 @@ export type AgentActionStatus = 'PENDING' | 'APPROVED' | 'CANCELLED' | 'EXECUTED
 
 export type AgentSettingsUpdate = {
   logChannelId?: string | null;
+  messageDeleteLogChannelId?: string | null;
   stickerEnabled?: boolean;
   slowmodeEnabled?: boolean;
   slowmodeChannels?: string[];

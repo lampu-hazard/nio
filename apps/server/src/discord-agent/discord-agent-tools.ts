@@ -201,6 +201,7 @@ export const AGENT_TOOLS = [
       properties: {
         reason: { type: 'STRING', description: 'Reason for the recommended settings change.' },
         logChannelId: { type: 'STRING', description: 'Moderation log channel ID, or empty/null to clear.' },
+        messageDeleteLogChannelId: { type: 'STRING', description: 'Message delete log channel ID, or empty/null to clear.' },
         stickerEnabled: { type: 'BOOLEAN', description: 'Enable custom sticker responses.' },
         slowmodeEnabled: { type: 'BOOLEAN', description: 'Enable automatic slowmode.' },
         slowmodeChannels: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Channel IDs where automatic slowmode may run.' },

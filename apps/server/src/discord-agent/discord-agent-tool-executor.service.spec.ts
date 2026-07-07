@@ -16,7 +16,7 @@ describe('DiscordAgentToolExecutorService', () => {
 
   const mockPrisma = {
     guildSettings: {
-      findUnique: jest.fn(async () => ({ logChannelId: 'channel-1' })),
+      findUnique: jest.fn(async () => ({ logChannelId: 'channel-1', messageDeleteLogChannelId: 'channel-del-1' })),
     },
   };
 

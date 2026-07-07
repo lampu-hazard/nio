@@ -66,6 +66,7 @@ describe('GuildsService', () => {
       });
       expect(result).toEqual({
         logChannelId: null,
+        messageDeleteLogChannelId: null,
         stickerEnabled: false,
         slowmodeEnabled: false,
         slowmodeChannels: [],
@@ -85,6 +86,7 @@ describe('GuildsService', () => {
       const mockSettings = {
         guildId: 'guild-1',
         logChannelId: 'channel-1',
+        messageDeleteLogChannelId: 'channel-del-1',
         stickerEnabled: true,
         slowmodeEnabled: true,
         slowmodeChannels: ['channel-2'],
@@ -107,6 +109,7 @@ describe('GuildsService', () => {
       });
       expect(result).toEqual({
         logChannelId: 'channel-1',
+        messageDeleteLogChannelId: 'channel-del-1',
         stickerEnabled: true,
         slowmodeEnabled: true,
         slowmodeChannels: ['channel-2'],
@@ -157,6 +160,7 @@ describe('GuildsService', () => {
       const mockUpdated = {
         guildId: 'guild-1',
         logChannelId: null,
+        messageDeleteLogChannelId: null,
         stickerEnabled: false,
         slowmodeEnabled: true,
         slowmodeChannels: ['channel-3'],
@@ -179,6 +183,7 @@ describe('GuildsService', () => {
         where: { guildId: 'guild-1' },
         update: {
           logChannelId: undefined,
+          messageDeleteLogChannelId: undefined,
           stickerEnabled: undefined,
           slowmodeEnabled: true,
           slowmodeChannels: ['channel-3'],
@@ -195,6 +200,7 @@ describe('GuildsService', () => {
         create: {
           guildId: 'guild-1',
           logChannelId: null,
+          messageDeleteLogChannelId: null,
           stickerEnabled: false,
           slowmodeEnabled: true,
           slowmodeChannels: ['channel-3'],
@@ -236,6 +242,7 @@ describe('GuildsService', () => {
       const mockUpdated = {
         guildId: 'guild-1',
         logChannelId: null,
+        messageDeleteLogChannelId: null,
         stickerEnabled: true,
         slowmodeEnabled: false,
         slowmodeChannels: [],
@@ -258,6 +265,7 @@ describe('GuildsService', () => {
         where: { guildId: 'guild-1' },
         update: {
           logChannelId: undefined,
+          messageDeleteLogChannelId: undefined,
           stickerEnabled: true,
           slowmodeEnabled: undefined,
           slowmodeChannels: undefined,
@@ -274,6 +282,7 @@ describe('GuildsService', () => {
         create: {
           guildId: 'guild-1',
           logChannelId: null,
+          messageDeleteLogChannelId: null,
           stickerEnabled: true,
           slowmodeEnabled: false,
           slowmodeChannels: [],

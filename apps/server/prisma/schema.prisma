@@ -35,6 +35,7 @@ model Guild {
 model GuildSettings {
   guildId                String   @id
   logChannelId           String?
+  messageDeleteLogChannelId String?
   defaultStyle           String   @default("PREMIUM")
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

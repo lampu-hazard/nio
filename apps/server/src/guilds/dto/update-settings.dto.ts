@@ -6,6 +6,10 @@ export class UpdateSettingsDto {
   logChannelId?: string | null;
 
   @IsOptional()
+  @IsString()
+  messageDeleteLogChannelId?: string | null;
+
+  @IsOptional()
   @IsBoolean()
   stickerEnabled?: boolean;
 

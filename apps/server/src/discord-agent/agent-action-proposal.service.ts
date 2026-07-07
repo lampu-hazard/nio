@@ -1,7 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { Client, PermissionFlagsBits } from 'discord.js';
+import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException, Inject, forwardRef } from '@nestjs/common';
+import { Client, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerationService } from '../moderation/moderation.service';
+import { StickersService } from '../stickers/stickers.service';
 import { CreateAgentActionProposalInput, AgentActionType, AgentSettingsUpdate } from './agent-action.types';
 
 const PROPOSAL_TTL_MS = 10 * 60 * 1000;
@@ -41,6 +42,8 @@ export class AgentActionProposalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly moderation: ModerationService,
+    @Inject(forwardRef(() => StickersService))
+    private readonly stickers: StickersService,
   ) {}
 
   setClient(client: Client) {
@@ -87,6 +90,48 @@ export class AgentActionProposalService {
 
     if (input.recommendation.type === 'REVOKE_WARNING') {
       payload.warningId = this.requireString(input.recommendation.warningId, 'warningId');
+    }
+
+    if (input.recommendation.type === 'LOCKDOWN' || input.recommendation.type === 'UNLOCK') {
+      payload.channelId = input.recommendation.channelId || input.channelId;
+    }
+
+    if (input.recommendation.type === 'SET_SLOWMODE') {
+      payload.channelId = input.recommendation.channelId || input.channelId;
+      payload.slowmodeSeconds = this.clampNumber(input.recommendation.slowmodeSeconds ?? 0, 0, 21600);
+    }
+
+    if (input.recommendation.type === 'SEND_ANNOUNCEMENT') {
+      payload.channelId = input.recommendation.channelId || input.channelId;
+      payload.content = this.requireString(input.recommendation.content, 'content');
+      if (input.recommendation.title) {
+        payload.title = String(input.recommendation.title).trim();
+      }
+    }
+
+    if (['MASS_TIMEOUT', 'MASS_KICK', 'MASS_BAN'].includes(input.recommendation.type)) {
+      const targetUserIds = Array.isArray(input.recommendation.targetUserIds)
+        ? input.recommendation.targetUserIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim())
+        : [];
+      if (targetUserIds.length === 0) {
+        throw new BadRequestException('targetUserIds array cannot be empty.');
+      }
+      payload.targetUserIds = targetUserIds.slice(0, 100); // max 100 users
+      if (input.recommendation.type === 'MASS_TIMEOUT') {
+        payload.durationMinutes = this.clampNumber(input.recommendation.durationMinutes || 10, 1, MAX_TIMEOUT_MINUTES);
+      }
+    }
+
+    if (input.recommendation.type === 'MANAGE_STICKER') {
+      payload.stickerAction = this.requireString(input.recommendation.stickerAction, 'stickerAction');
+      payload.stickerName = this.requireString(input.recommendation.stickerName, 'stickerName');
+      if (payload.stickerAction === 'ADD') {
+        payload.stickerUrl = this.requireString(input.recommendation.stickerUrl, 'stickerUrl');
+      } else if (payload.stickerAction === 'DELETE') {
+        payload.stickerId = this.requireString(input.recommendation.stickerId, 'stickerId');
+      } else {
+        throw new BadRequestException('stickerAction must be ADD or DELETE.');
+      }
     }
 
     return this.prisma.agentActionProposal.create({
@@ -170,6 +215,54 @@ export class AgentActionProposalService {
         message = `PURGE proposal executed. Deleted ${result.deletedCount} message(s).`;
       } else if (actionType === 'UPDATE_SETTINGS') {
         await this.executeSettingsUpdate(proposal.guildId, payload.settings || {});
+      } else if (actionType === 'LOCKDOWN') {
+        const channelId = String(payload.channelId || proposal.channelId);
+        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        if (!channel || !channel.permissionOverwrites) {
+          throw new BadRequestException('Channel does not support permission modifications.');
+        }
+        await channel.permissionOverwrites.edit(guild.roles.everyone, {
+          SendMessages: false,
+        }, { reason: String(payload.reason || 'AI recommended lockdown.') });
+        message = `LOCKDOWN proposal executed for <#${channelId}>.`;
+      } else if (actionType === 'UNLOCK') {
+        const channelId = String(payload.channelId || proposal.channelId);
+        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        if (!channel || !channel.permissionOverwrites) {
+          throw new BadRequestException('Channel does not support permission modifications.');
+        }
+        await channel.permissionOverwrites.edit(guild.roles.everyone, {
+          SendMessages: null,
+        }, { reason: String(payload.reason || 'AI recommended unlock.') });
+        message = `UNLOCK proposal executed for <#${channelId}>.`;
+      } else if (actionType === 'SET_SLOWMODE') {
+        const channelId = String(payload.channelId || proposal.channelId);
+        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        if (!channel || typeof channel.setRateLimitPerUser !== 'function') {
+          throw new BadRequestException('Channel does not support slowmode.');
+        }
+        const seconds = this.clampNumber(payload.slowmodeSeconds, 0, 21600);
+        await channel.setRateLimitPerUser(seconds, String(payload.reason || 'AI recommended slowmode set.'));
+        message = `SET_SLOWMODE proposal executed. Slowmode for <#${channelId}> set to ${seconds} seconds.`;
+      } else if (actionType === 'SEND_ANNOUNCEMENT') {
+        const channelId = String(payload.channelId || proposal.channelId);
+        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        if (!channel || !channel.isTextBased()) {
+          throw new BadRequestException('Channel is not text-based.');
+        }
+        const content = String(payload.content);
+        const title = payload.title ? String(payload.title) : undefined;
+        if (title) {
+          const announcementEmbed = new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle(title)
+            .setDescription(content)
+            .setTimestamp();
+          await channel.send({ embeds: [announcementEmbed] });
+        } else {
+          await channel.send({ content });
+        }
+        message = `SEND_ANNOUNCEMENT proposal executed in <#${channelId}>.`;
       } else if (actionType === 'ADD_ROLE') {
         if (!target) throw new BadRequestException('Target member is not available in this server.');
         const role = await this.resolveManageableRole(guild, payload.roleId);
@@ -183,6 +276,67 @@ export class AgentActionProposalService {
         await target.timeout(null, String(payload.reason || 'AI recommended timeout removal.'));
       } else if (actionType === 'REVOKE_WARNING') {
         await this.moderation.revokeWarning(proposal.guildId, String(payload.warningId));
+      } else if (['MASS_TIMEOUT', 'MASS_KICK', 'MASS_BAN'].includes(actionType)) {
+        const targetIds = (payload.targetUserIds as string[]) || [];
+        const results = { success: 0, failed: 0, errors: [] as string[] };
+        const reason = String(payload.reason || 'AI recommended mass action.');
+
+        for (const targetId of targetIds) {
+          try {
+            const member = await guild.members.fetch(targetId).catch(() => null);
+            if (!member) {
+              results.failed++;
+              results.errors.push(`User ${targetId} not in guild.`);
+              continue;
+            }
+            if (member.roles.highest.position >= me.roles.highest.position) {
+              results.failed++;
+              results.errors.push(`User ${targetId} is higher/equal role than bot.`);
+              continue;
+            }
+            if (actionType === 'MASS_TIMEOUT') {
+              const minutes = this.clampNumber(payload.durationMinutes || 10, 1, MAX_TIMEOUT_MINUTES);
+              await member.timeout(minutes * 60 * 1000, reason);
+            } else if (actionType === 'MASS_KICK') {
+              await member.kick(reason);
+            } else if (actionType === 'MASS_BAN') {
+              await member.ban({ reason });
+            }
+            results.success++;
+          } catch (e: any) {
+            results.failed++;
+            results.errors.push(`User ${targetId}: ${e.message || String(e)}`);
+          }
+        }
+        message = `Mass action executed. Success: ${results.success}, Failed: ${results.failed}.${results.errors.length ? ` Errors: ${results.errors.slice(0, 5).join('; ')}` : ''}`;
+      } else if (actionType === 'MANAGE_STICKER') {
+        const name = String(payload.stickerName);
+        const action = String(payload.stickerAction);
+        if (action === 'ADD') {
+          await this.stickers.create(proposal.guildId, {
+            name,
+            url: String(payload.stickerUrl),
+            type: 'IMAGE', // Default type
+            key: `stickers/${proposal.guildId}/${name}`, // Mock key to bypass headObject if we need it
+          }).catch(async (err) => {
+            // If key not found or similar, we try to directly insert to DB and update cache since AI adds URL directly
+            if (err.message?.includes('not uploaded')) {
+              await this.prisma.sticker.upsert({
+                where: { guildId_name: { guildId: proposal.guildId, name } },
+                update: { url: String(payload.stickerUrl) },
+                create: { guildId: proposal.guildId, name, url: String(payload.stickerUrl), type: 'IMAGE' },
+              });
+              await this.stickers.loadCache();
+            } else {
+              throw err;
+            }
+          });
+          message = `Sticker keyword "${name}" added successfully.`;
+        } else if (action === 'DELETE') {
+          const stickerId = String(payload.stickerId);
+          await this.stickers.delete(proposal.guildId, stickerId);
+          message = `Sticker keyword "${name}" deleted successfully.`;
+        }
       } else {
         throw new BadRequestException(`Unsupported proposal action: ${proposal.actionType}`);
       }
@@ -208,12 +362,14 @@ export class AgentActionProposalService {
       : approver.permissions;
 
     const hasPermission = permissions.has(PermissionFlagsBits.Administrator)
-      || (['WARN', 'TIMEOUT', 'REMOVE_TIMEOUT', 'REVOKE_WARNING'].includes(actionType) && permissions.has(PermissionFlagsBits.ModerateMembers))
+      || (['WARN', 'TIMEOUT', 'REMOVE_TIMEOUT', 'REVOKE_WARNING', 'MASS_TIMEOUT'].includes(actionType) && permissions.has(PermissionFlagsBits.ModerateMembers))
       || (actionType === 'UPDATE_SETTINGS' && permissions.has(PermissionFlagsBits.ManageGuild))
-      || (actionType === 'KICK' && permissions.has(PermissionFlagsBits.KickMembers))
-      || (actionType === 'BAN' && permissions.has(PermissionFlagsBits.BanMembers))
-      || (actionType === 'PURGE' && permissions.has(PermissionFlagsBits.ManageMessages))
-      || (['ADD_ROLE', 'REMOVE_ROLE'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles));
+      || (['KICK', 'MASS_KICK'].includes(actionType) && permissions.has(PermissionFlagsBits.KickMembers))
+      || (['BAN', 'MASS_BAN'].includes(actionType) && permissions.has(PermissionFlagsBits.BanMembers))
+      || (['PURGE', 'LOCKDOWN', 'UNLOCK'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles))
+      || (actionType === 'SET_SLOWMODE' && (permissions.has(PermissionFlagsBits.ManageChannels) || permissions.has(PermissionFlagsBits.ModerateMembers)))
+      || (actionType === 'SEND_ANNOUNCEMENT' && (permissions.has(PermissionFlagsBits.MentionEveryone) || permissions.has(PermissionFlagsBits.ManageMessages)))
+      || (['ADD_ROLE', 'REMOVE_ROLE', 'MANAGE_STICKER'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles));
 
     if (!hasPermission) {
       throw new ForbiddenException(`You do not have permission to approve ${actionType} proposals.`);
@@ -221,13 +377,13 @@ export class AgentActionProposalService {
   }
 
   private assertBotCanExecute(actionType: AgentActionType, me: any, target: any, channelId?: string) {
-    if (['TIMEOUT', 'REMOVE_TIMEOUT'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+    if (['TIMEOUT', 'REMOVE_TIMEOUT', 'MASS_TIMEOUT'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.ModerateMembers)) {
       throw new ForbiddenException('Bot needs Moderate Members permission to execute timeout proposals.');
     }
-    if (actionType === 'KICK' && !me.permissions.has(PermissionFlagsBits.KickMembers)) {
+    if (['KICK', 'MASS_KICK'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.KickMembers)) {
       throw new ForbiddenException('Bot needs Kick Members permission to execute kick proposals.');
     }
-    if (actionType === 'BAN' && !me.permissions.has(PermissionFlagsBits.BanMembers)) {
+    if (['BAN', 'MASS_BAN'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.BanMembers)) {
       throw new ForbiddenException('Bot needs Ban Members permission to execute ban proposals.');
     }
     if (actionType === 'PURGE') {
@@ -236,7 +392,25 @@ export class AgentActionProposalService {
         throw new ForbiddenException('Bot needs Manage Messages permission in that channel to execute purge proposals.');
       }
     }
-    if (['ADD_ROLE', 'REMOVE_ROLE'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    if (['LOCKDOWN', 'UNLOCK'].includes(actionType)) {
+      const permissions = channelId && typeof me.permissionsIn === 'function' ? me.permissionsIn(channelId) : me.permissions;
+      if (!permissions.has(PermissionFlagsBits.ManageRoles) && !permissions.has(PermissionFlagsBits.ManageChannels)) {
+        throw new ForbiddenException('Bot needs Manage Roles or Manage Channels permission in that channel to execute lockdown/unlock proposals.');
+      }
+    }
+    if (actionType === 'SET_SLOWMODE') {
+      const permissions = channelId && typeof me.permissionsIn === 'function' ? me.permissionsIn(channelId) : me.permissions;
+      if (!permissions.has(PermissionFlagsBits.ManageChannels)) {
+        throw new ForbiddenException('Bot needs Manage Channels permission in that channel to execute slowmode proposals.');
+      }
+    }
+    if (actionType === 'SEND_ANNOUNCEMENT') {
+      const permissions = channelId && typeof me.permissionsIn === 'function' ? me.permissionsIn(channelId) : me.permissions;
+      if (!permissions.has(PermissionFlagsBits.SendMessages)) {
+        throw new ForbiddenException('Bot needs Send Messages permission in that channel to send announcements.');
+      }
+    }
+    if (['ADD_ROLE', 'REMOVE_ROLE', 'MANAGE_STICKER'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       throw new ForbiddenException('Bot needs Manage Roles permission to execute role proposals.');
     }
 

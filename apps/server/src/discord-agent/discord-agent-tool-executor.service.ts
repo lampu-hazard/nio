@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { Client } from 'discord.js';
+import { BadRequestException, Injectable, ServiceUnavailableException, ForbiddenException } from '@nestjs/common';
+import { Client, PermissionFlagsBits } from 'discord.js';
 import { ModerationService } from '../moderation/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
@@ -199,6 +199,141 @@ export class DiscordAgentToolExecutorService {
         return { proposalCreated: true, proposalId: settingsProposal.id, actionType: 'UPDATE_SETTINGS' };
       }
 
+      case 'lockdown_channel': {
+        const lockdownProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: null,
+          recommendation: {
+            type: 'LOCKDOWN',
+            reason: this.requireString(args.reason, 'reason'),
+            channelId: args.channelId || context.channelId,
+          },
+        });
+        return { proposalCreated: true, proposalId: lockdownProposal.id, actionType: 'LOCKDOWN' };
+      }
+
+      case 'unlock_channel': {
+        const unlockProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: null,
+          recommendation: {
+            type: 'UNLOCK',
+            reason: this.requireString(args.reason, 'reason'),
+            channelId: args.channelId || context.channelId,
+          },
+        });
+        return { proposalCreated: true, proposalId: unlockProposal.id, actionType: 'UNLOCK' };
+      }
+
+      case 'set_channel_slowmode': {
+        const slowmodeProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: null,
+          recommendation: {
+            type: 'SET_SLOWMODE',
+            reason: this.requireString(args.reason, 'reason'),
+            channelId: args.channelId || context.channelId,
+            slowmodeSeconds: args.slowmodeSeconds,
+          },
+        });
+        return { proposalCreated: true, proposalId: slowmodeProposal.id, actionType: 'SET_SLOWMODE' };
+      }
+
+      case 'send_channel_announcement': {
+        const announcementProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: null,
+          recommendation: {
+            type: 'SEND_ANNOUNCEMENT',
+            reason: this.requireString(args.reason, 'reason'),
+            channelId: args.channelId || context.channelId,
+            content: this.requireString(args.content, 'content'),
+            title: args.title || undefined,
+          },
+        });
+        return { proposalCreated: true, proposalId: announcementProposal.id, actionType: 'SEND_ANNOUNCEMENT' };
+      }
+
+      case 'get_discord_audit_logs':
+        return this.getDiscordAuditLogs(context.guildId, args.limit, args.targetUserId, args.actionType);
+
+      case 'check_user_activity_score':
+        return this.checkUserActivityScore(context.guildId, this.requireString(args.targetUserId, 'targetUserId'), args.days);
+
+      case 'get_recent_joins':
+        return this.getRecentJoins(context.guildId, args.limit, args.hours);
+
+      case 'mass_moderation_action': {
+        const targetIds = Array.isArray(args.targetUserIds)
+          ? args.targetUserIds.filter((id: unknown) => typeof id === 'string' && id.trim()).map((id: string) => id.trim())
+          : [];
+        if (targetIds.length === 0) {
+          throw new BadRequestException('targetUserIds array is empty or invalid.');
+        }
+        const actionType = this.requireString(args.actionType, 'actionType').toUpperCase();
+        if (!['TIMEOUT', 'KICK', 'BAN'].includes(actionType)) {
+          throw new BadRequestException('Invalid mass actionType. Supported: TIMEOUT, KICK, BAN');
+        }
+        const recommendationType = `MASS_${actionType}` as any;
+        const massProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: null,
+          recommendation: {
+            type: recommendationType,
+            reason: this.requireString(args.reason, 'reason'),
+            targetUserIds: targetIds,
+            durationMinutes: args.durationMinutes,
+          },
+        });
+        return { proposalCreated: true, proposalId: massProposal.id, actionType: recommendationType };
+      }
+
+      case 'get_invite_links':
+        return this.getInviteLinks(context.guildId);
+
+      case 'add_user_note':
+        return this.addUserNote(
+          context.guildId,
+          this.requireString(args.targetUserId, 'targetUserId'),
+          context.requestedById,
+          this.requireString(args.content, 'content'),
+        );
+
+      case 'get_user_notes':
+        return this.getUserNotes(context.guildId, this.requireString(args.targetUserId, 'targetUserId'));
+
+      case 'manage_server_sticker': {
+        const action = this.requireString(args.action, 'action').toUpperCase();
+        if (!['ADD', 'DELETE'].includes(action)) {
+          throw new BadRequestException('action must be ADD or DELETE.');
+        }
+        const stickerProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: null,
+          recommendation: {
+            type: 'MANAGE_STICKER',
+            reason: this.requireString(args.reason, 'reason'),
+            stickerName: this.requireString(args.name, 'name'),
+            stickerUrl: args.url || undefined,
+            stickerId: args.stickerId || undefined,
+            stickerAction: action as any,
+          },
+        });
+        return { proposalCreated: true, proposalId: stickerProposal.id, actionType: 'MANAGE_STICKER' };
+      }
+
       default:
         throw new Error(`Tool ${name} is not implemented.`);
     }
@@ -376,5 +511,181 @@ export class DiscordAgentToolExecutorService {
     if (Array.isArray(source[key])) {
       target[key] = source[key].filter((value: unknown) => typeof value === 'string' && value.trim()).map((value: string) => value.trim());
     }
+  }
+
+  private async getDiscordAuditLogs(guildId: string, limit?: number, targetUserId?: string, actionType?: string) {
+    const guild = await this.getGuild(guildId);
+    const me = guild.members.me ?? await guild.members.fetchMe();
+
+    if (!me.permissions.has(PermissionFlagsBits.ViewAuditLog)) {
+      throw new ForbiddenException('Bot lacks View Audit Log permission in this server.');
+    }
+
+    const fetchedLogs = await guild.fetchAuditLogs({
+      limit: this.clampNumber(limit || 15, 1, MAX_READ_LIMIT),
+      user: targetUserId || undefined,
+      type: actionType ? (Number.isInteger(Number(actionType)) ? Number(actionType) : actionType as any) : undefined,
+    });
+
+    return fetchedLogs.entries.map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      reason: entry.reason || null,
+      executorId: entry.executor?.id || null,
+      executorTag: entry.executor?.tag || null,
+      targetId: entry.targetId || null,
+      createdAt: entry.createdAt,
+      changes: entry.changes?.map((c) => ({
+        key: c.key,
+        old: c.old,
+        new: c.new,
+      })) || [],
+    }));
+  }
+
+  private async checkUserActivityScore(guildId: string, targetUserId: string, days?: number) {
+    const daysClamped = this.clampNumber(days || 7, 1, 30);
+    const cutoff = new Date(Date.now() - daysClamped * 24 * 60 * 60 * 1000);
+
+    const logs = await this.prisma.discordMessageLog.findMany({
+      where: {
+        guildId,
+        authorId: targetUserId,
+        createdAt: { gte: cutoff },
+      },
+      select: {
+        id: true,
+        channelId: true,
+        content: true,
+        createdAt: true,
+        deletedAt: true,
+      },
+    });
+
+    const totalMessages = logs.length;
+    const activeDays = new Set(logs.map((log) => log.createdAt.toDateString())).size;
+    const channels = new Set(logs.map((log) => log.channelId));
+    const totalDeleted = logs.filter((log) => log.deletedAt !== null).length;
+
+    // Metric: 1 point per message, 10 per active day, 5 per unique channel
+    const score = totalMessages * 1 + activeDays * 10 + channels.size * 5;
+
+    return {
+      targetUserId,
+      days: daysClamped,
+      totalMessages,
+      activeDays,
+      uniqueChannels: channels.size,
+      totalDeleted,
+      score,
+      level: score > 150 ? 'HIGH' : score > 50 ? 'MEDIUM' : 'LOW',
+    };
+  }
+
+  private async getRecentJoins(guildId: string, limit?: number, hours?: number) {
+    const guild = await this.getGuild(guildId);
+    const limitClamped = this.clampNumber(limit || 15, 1, 100);
+    const hoursClamped = this.clampNumber(hours || 24, 1, 168);
+    const cutoff = Date.now() - hoursClamped * 60 * 60 * 1000;
+
+    await guild.members.fetch();
+    const members = guild.members.cache
+      .filter((m) => m.joinedTimestamp !== null && m.joinedTimestamp >= cutoff)
+      .map((m) => {
+        const ageMs = Date.now() - m.user.createdTimestamp;
+        const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+        const ageDesc = ageDays > 0 ? `${ageDays} days old` : 'new account (today)';
+        return {
+          id: m.id,
+          username: m.user.username,
+          displayName: m.user.globalName || m.user.username,
+          joinedAt: m.joinedAt,
+          createdAt: m.user.createdAt,
+          accountAge: ageDesc,
+        };
+      })
+      .sort((a, b) => (b.joinedAt?.getTime() || 0) - (a.joinedAt?.getTime() || 0))
+      .slice(0, limitClamped);
+
+    return {
+      guildId,
+      timeWindowHours: hoursClamped,
+      memberCount: members.length,
+      members,
+    };
+  }
+
+  private async getInviteLinks(guildId: string) {
+    const guild = await this.getGuild(guildId);
+    const invites = await guild.invites.fetch().catch(() => null);
+    if (!invites) return { guildId, count: 0, invites: [] };
+
+    return {
+      guildId,
+      count: invites.size,
+      invites: invites.map((inv) => ({
+        code: inv.code,
+        url: inv.url,
+        creator: inv.inviter?.tag || inv.inviter?.id || 'Unknown',
+        channel: inv.channel?.name || inv.channel?.id || 'Unknown',
+        uses: inv.uses || 0,
+        maxUses: inv.maxUses || 0,
+        expiresAt: inv.expiresAt || null,
+      })),
+    };
+  }
+
+  private async addUserNote(guildId: string, userId: string, moderatorId: string, content: string) {
+    const note = await this.prisma.userNote.create({
+      data: {
+        guildId,
+        userId,
+        moderatorId,
+        content: content.trim(),
+      },
+    });
+
+    return {
+      success: true,
+      note: {
+        id: note.id,
+        userId: note.userId,
+        moderatorId: note.moderatorId,
+        content: note.content,
+        createdAt: note.createdAt,
+      },
+    };
+  }
+
+  private async getUserNotes(guildId: string, userId: string) {
+    const notes = await this.prisma.userNote.findMany({
+      where: { guildId, userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const client = this.client;
+    const formattedNotes = await Promise.all(
+      notes.map(async (n: any) => {
+        let moderatorTag = n.moderatorId;
+        if (client) {
+          const mod = await client.users.fetch(n.moderatorId).catch(() => null);
+          if (mod) moderatorTag = mod.tag;
+        }
+        return {
+          id: n.id,
+          content: n.content,
+          moderatorId: n.moderatorId,
+          moderatorTag,
+          createdAt: n.createdAt,
+        };
+      }),
+    );
+
+    return {
+      guildId,
+      userId,
+      count: notes.length,
+      notes: formattedNotes,
+    };
   }
 }

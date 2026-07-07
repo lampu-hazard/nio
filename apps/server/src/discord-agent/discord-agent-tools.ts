@@ -222,4 +222,150 @@ export const AGENT_TOOLS = [
       required: ['reason'],
     },
   },
+  {
+    name: 'lockdown_channel',
+    description: 'Create a proposal to lock down a channel by disabling Send Messages permission for the @everyone role. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        channelId: { type: 'STRING', description: 'Discord channel ID to lock down. Defaults to current channel if omitted.' },
+        reason: { type: 'STRING', description: 'Reason for the lockdown.' },
+      },
+      required: ['reason'],
+    },
+  },
+  {
+    name: 'unlock_channel',
+    description: 'Create a proposal to unlock a locked channel by resetting Send Messages permission for the @everyone role. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        channelId: { type: 'STRING', description: 'Discord channel ID to unlock. Defaults to current channel if omitted.' },
+        reason: { type: 'STRING', description: 'Reason for the unlock.' },
+      },
+      required: ['reason'],
+    },
+  },
+  {
+    name: 'set_channel_slowmode',
+    description: 'Create a proposal to set slowmode interval on a channel. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        channelId: { type: 'STRING', description: 'Discord channel ID. Defaults to current channel if omitted.' },
+        slowmodeSeconds: { type: 'INTEGER', description: 'Slowmode interval in seconds (0 to 21600). 0 disables slowmode.' },
+        reason: { type: 'STRING', description: 'Reason for changing slowmode.' },
+      },
+      required: ['slowmodeSeconds', 'reason'],
+    },
+  },
+  {
+    name: 'send_channel_announcement',
+    description: 'Create a proposal to send an announcement message to a channel. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        channelId: { type: 'STRING', description: 'Discord channel ID to send the announcement to. Defaults to current channel if omitted.' },
+        content: { type: 'STRING', description: 'Main markdown-supported announcement text.' },
+        title: { type: 'STRING', description: 'Optional announcement embed title.' },
+        reason: { type: 'STRING', description: 'Reason for sending this announcement.' },
+      },
+      required: ['content', 'reason'],
+    },
+  },
+  {
+    name: 'get_discord_audit_logs',
+    description: 'Fetch official Discord audit logs for security analysis. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Maximum log entries to return (1-50, defaults to 15).' },
+        targetUserId: { type: 'STRING', description: 'Optional user ID to filter by executor or target user.' },
+        actionType: { type: 'STRING', description: 'Optional action type to filter logs.' },
+      },
+    },
+  },
+  {
+    name: 'check_user_activity_score',
+    description: 'Assess user activity index by aggregating message logs over recent days. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        targetUserId: { type: 'STRING', description: 'Discord user ID to calculate score for.' },
+        days: { type: 'INTEGER', description: 'Aggregating window size in days (1-30, defaults to 7).' },
+      },
+      required: ['targetUserId'],
+    },
+  },
+  {
+    name: 'get_recent_joins',
+    description: 'Get list of members who recently joined the guild. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Maximum users to return (1-100, defaults to 15).' },
+        hours: { type: 'INTEGER', description: 'Time window in hours (1-168, defaults to 24).' },
+      },
+    },
+  },
+  {
+    name: 'mass_moderation_action',
+    description: 'Create a proposal to apply a moderation action to multiple users at once. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        targetUserIds: { type: 'ARRAY', items: { type: 'STRING' }, description: 'List of Discord user IDs.' },
+        actionType: { type: 'STRING', description: 'Action to perform: TIMEOUT, KICK, or BAN.' },
+        durationMinutes: { type: 'INTEGER', description: 'Timeout duration in minutes (only for TIMEOUT).' },
+        reason: { type: 'STRING', description: 'Reason for the mass moderation.' },
+      },
+      required: ['targetUserIds', 'actionType', 'reason'],
+    },
+  },
+  {
+    name: 'get_invite_links',
+    description: 'Get active invite links for the server. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
+    name: 'add_user_note',
+    description: 'Add an internal moderation note about a user. Direct write; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        targetUserId: { type: 'STRING', description: 'Discord user ID.' },
+        content: { type: 'STRING', description: 'Internal note details.' },
+      },
+      required: ['targetUserId', 'content'],
+    },
+  },
+  {
+    name: 'get_user_notes',
+    description: 'Retrieve internal moderation notes about a user. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        targetUserId: { type: 'STRING', description: 'Discord user ID.' },
+      },
+      required: ['targetUserId'],
+    },
+  },
+  {
+    name: 'manage_server_sticker',
+    description: 'Create a proposal to add or delete a keyword-triggered sticker. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        action: { type: 'STRING', description: 'Action to perform: ADD or DELETE.' },
+        name: { type: 'STRING', description: 'Keyword trigger name.' },
+        url: { type: 'STRING', description: 'Sticker file URL (required for ADD).' },
+        stickerId: { type: 'STRING', description: 'Sticker database ID (required for DELETE).' },
+        reason: { type: 'STRING', description: 'Reason for modifying stickers.' },
+      },
+      required: ['action', 'name', 'reason'],
+    },
+  },
 ];

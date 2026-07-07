@@ -3,8 +3,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerationService } from '../moderation/moderation.service';
+import { StickersService } from '../stickers/stickers.service';
 
 describe('AgentActionProposalService', () => {
+  const mockStickers = {
+    create: jest.fn(async () => ({})),
+    delete: jest.fn(async () => ({})),
+    loadCache: jest.fn(async () => ({})),
+  };
+
   const mockPrisma = {
     agentActionProposal: {
       create: jest.fn(async () => ({ id: 'proposal-1' })),
@@ -29,6 +36,7 @@ describe('AgentActionProposalService', () => {
         AgentActionProposalService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ModerationService, useValue: mockModeration },
+        { provide: StickersService, useValue: mockStickers },
       ],
     }).compile();
 
@@ -134,6 +142,102 @@ describe('AgentActionProposalService', () => {
     const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
     expect(data.actionType).toBe('REVOKE_WARNING');
     expect(data.payload.warningId).toBe('warn-1');
+  });
+
+  it('normalizes lockdown and unlock proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: null,
+      recommendation: {
+        type: 'LOCKDOWN',
+        reason: 'raid ongoing',
+        channelId: 'channel-2',
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('LOCKDOWN');
+    expect(data.payload.channelId).toBe('channel-2');
+  });
+
+  it('normalizes slowmode proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: null,
+      recommendation: {
+        type: 'SET_SLOWMODE',
+        reason: 'slow down',
+        slowmodeSeconds: 15,
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('SET_SLOWMODE');
+    expect(data.payload.slowmodeSeconds).toBe(15);
+  });
+
+  it('normalizes announcement proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: null,
+      recommendation: {
+        type: 'SEND_ANNOUNCEMENT',
+        reason: 'weekly update',
+        content: 'hello server',
+        title: 'weekly',
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('SEND_ANNOUNCEMENT');
+    expect(data.payload.content).toBe('hello server');
+    expect(data.payload.title).toBe('weekly');
+  });
+
+  it('normalizes mass moderation proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: null,
+      recommendation: {
+        type: 'MASS_BAN',
+        reason: 'raiders',
+        targetUserIds: ['user-1', 'user-2'],
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('MASS_BAN');
+    expect(data.payload.targetUserIds).toEqual(['user-1', 'user-2']);
+  });
+
+  it('normalizes manage sticker proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: null,
+      recommendation: {
+        type: 'MANAGE_STICKER',
+        reason: 'add trigger',
+        stickerAction: 'ADD',
+        stickerName: 'cool',
+        stickerUrl: 'https://example.com/cool.png',
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('MANAGE_STICKER');
+    expect(data.payload.stickerAction).toBe('ADD');
+    expect(data.payload.stickerName).toBe('cool');
+    expect(data.payload.stickerUrl).toBe('https://example.com/cool.png');
   });
 
   it('cancels a pending proposal requested by the same user', async () => {

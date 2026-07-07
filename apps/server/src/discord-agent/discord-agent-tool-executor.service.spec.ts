@@ -18,6 +18,27 @@ describe('DiscordAgentToolExecutorService', () => {
     guildSettings: {
       findUnique: jest.fn(async () => ({ logChannelId: 'channel-1', messageDeleteLogChannelId: 'channel-del-1' })),
     },
+    discordMessageLog: {
+      findMany: jest.fn(async (): Promise<any[]> => []),
+    },
+    userNote: {
+      create: jest.fn(async (params: any) => ({
+        id: 'note-1',
+        guildId: params.data.guildId,
+        userId: params.data.userId,
+        moderatorId: params.data.moderatorId,
+        content: params.data.content,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      })),
+      findMany: jest.fn(async () => [
+        {
+          id: 'note-1',
+          content: 'some note',
+          moderatorId: 'admin-1',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]),
+    },
   };
 
   const mockProposals = {
@@ -34,6 +55,46 @@ describe('DiscordAgentToolExecutorService', () => {
     buildModContext: jest.fn(async () => ({ member: { id: 'user-1' } })),
   };
 
+  const mockGuild = {
+    members: {
+      me: {
+        permissions: {
+          has: jest.fn(() => true),
+        },
+        roles: {
+          highest: { position: 10 },
+        },
+      },
+      fetchMe: jest.fn(async () => ({
+        permissions: {
+          has: jest.fn(() => true),
+        },
+        roles: {
+          highest: { position: 10 },
+        },
+      })),
+    },
+    fetchAuditLogs: jest.fn(async () => ({
+      entries: [
+        {
+          id: 'log-1',
+          action: 24,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'spam',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [],
+        },
+      ],
+    })),
+  };
+
+  const mockClient = {
+    guilds: {
+      fetch: jest.fn(async () => mockGuild),
+    },
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
@@ -48,6 +109,7 @@ describe('DiscordAgentToolExecutorService', () => {
     }).compile();
 
     service = module.get(DiscordAgentToolExecutorService);
+    service.setClient(mockClient as any);
   });
 
   it('executes read tools immediately', async () => {
@@ -98,5 +160,65 @@ describe('DiscordAgentToolExecutorService', () => {
         settings: { slowmodeEnabled: true },
       }),
     }));
+  });
+
+  it('fetches Discord audit logs', async () => {
+    const res = await service.execute('get_discord_audit_logs', { limit: 10 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res).toEqual([{
+      id: 'log-1',
+      action: 24,
+      reason: 'spam',
+      executorId: 'admin-1',
+      executorTag: 'admin#1234',
+      targetId: 'user-1',
+      createdAt: expect.any(Date),
+      changes: [],
+    }]);
+  });
+
+  it('calculates user activity score based on logged messages', async () => {
+    (mockPrisma.discordMessageLog.findMany as any).mockResolvedValueOnce([
+      { id: '1', channelId: 'ch-1', createdAt: new Date(), deletedAt: null },
+      { id: '2', channelId: 'ch-2', createdAt: new Date(), deletedAt: new Date() },
+    ]);
+    const res = await service.execute('check_user_activity_score', { targetUserId: 'user-1', days: 5 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res).toEqual({
+      targetUserId: 'user-1',
+      days: 5,
+      totalMessages: 2,
+      activeDays: 1,
+      uniqueChannels: 2,
+      totalDeleted: 1,
+      score: 22,
+      level: 'LOW',
+    });
+  });
+
+  it('adds user notes and lists them', async () => {
+    const addRes = await service.execute('add_user_note', { targetUserId: 'user-1', content: 'good member' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(addRes).toEqual({
+      success: true,
+      note: {
+        id: 'note-1',
+        userId: 'user-1',
+        moderatorId: 'admin-1',
+        content: 'good member',
+        createdAt: expect.any(Date),
+      },
+    });
+
+    const getRes = await service.execute('get_user_notes', { targetUserId: 'user-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(getRes).toEqual({
+      guildId: 'guild-1',
+      userId: 'user-1',
+      count: 1,
+      notes: [{
+        id: 'note-1',
+        content: 'some note',
+        moderatorId: 'admin-1',
+        moderatorTag: 'admin-1',
+        createdAt: expect.any(Date),
+      }],
+    });
   });
 });

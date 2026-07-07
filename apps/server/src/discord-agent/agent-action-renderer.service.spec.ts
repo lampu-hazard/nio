@@ -40,6 +40,41 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('<@&987654321098765432>');
   });
 
+  it('renders mass moderation proposal details', () => {
+    const service = new AgentActionRendererService();
+
+    const payload = service.renderProposalMessage({
+      id: 'proposal-3',
+      actionType: 'MASS_BAN',
+      targetUserId: null,
+      payload: { reason: 'raiders list', targetUserIds: ['111', '222'] },
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
+
+    const description = payload.embeds[0].data.description;
+    expect(description).toContain('Critical moderation action');
+    expect(description).toContain('mass `BAN`');
+    expect(description).toContain('<@111>');
+    expect(description).toContain('<@222>');
+  });
+
+  it('renders manage sticker proposal details', () => {
+    const service = new AgentActionRendererService();
+
+    const payload = service.renderProposalMessage({
+      id: 'proposal-4',
+      actionType: 'MANAGE_STICKER',
+      targetUserId: null,
+      payload: { reason: 'new sticker', stickerAction: 'ADD', stickerName: 'cool', stickerUrl: 'https://img.com' },
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
+
+    const description = payload.embeds[0].data.description;
+    expect(description).toContain('Role management action'); // theme category matches ADD_ROLE/MANAGE_STICKER
+    expect(description).toContain('`ADD` sticker trigger');
+    expect(description).toContain('`cool`');
+  });
+
   it('renders polished execution results', () => {
     const service = new AgentActionRendererService();
 

@@ -30,6 +30,7 @@ model Guild {
   warnings        Warning[]
   takoIntegration TakoIntegration?
   takoDonations   TakoDonation[]
+  userNotes       UserNote[]
 }
 
 model GuildSettings {
@@ -333,3 +334,19 @@ model AgentActionProposal {
   @@index([guildId, requestedById, status])
   @@index([guildId, targetUserId, createdAt])
 }
+
+model UserNote {
+  id          String   @id @default(cuid())
+  guildId     String
+  userId      String
+  moderatorId String
+  content     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+  @@index([userId])
+}
+

@@ -1,4 +1,4 @@
-export type AgentActionType = 'WARN' | 'TIMEOUT' | 'UPDATE_SETTINGS' | 'KICK' | 'BAN' | 'PURGE' | 'ADD_ROLE' | 'REMOVE_ROLE' | 'REMOVE_TIMEOUT' | 'REVOKE_WARNING';
+export type AgentActionType = 'WARN' | 'TIMEOUT' | 'UPDATE_SETTINGS' | 'KICK' | 'BAN' | 'PURGE' | 'ADD_ROLE' | 'REMOVE_ROLE' | 'REMOVE_TIMEOUT' | 'REVOKE_WARNING' | 'LOCKDOWN' | 'UNLOCK' | 'SET_SLOWMODE' | 'SEND_ANNOUNCEMENT' | 'MASS_TIMEOUT' | 'MASS_KICK' | 'MASS_BAN' | 'MANAGE_STICKER';
 
 export type AgentActionStatus = 'PENDING' | 'APPROVED' | 'CANCELLED' | 'EXECUTED' | 'FAILED' | 'EXPIRED';
 
@@ -34,6 +34,15 @@ export type AgentActionRecommendation = {
   purgeTargetUserId?: string;
   roleId?: string;
   warningId?: string;
+  channelId?: string;
+  content?: string;
+  title?: string;
+  slowmodeSeconds?: number;
+  targetUserIds?: string[];
+  stickerName?: string;
+  stickerUrl?: string;
+  stickerId?: string;
+  stickerAction?: 'ADD' | 'DELETE';
 };
 
 export type CreateAgentActionProposalInput = {

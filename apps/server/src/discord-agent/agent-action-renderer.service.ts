@@ -104,11 +104,55 @@ export class AgentActionRendererService {
       lines.push('> Remove the active Discord timeout from this member.');
     }
 
+    if (proposal.actionType === 'LOCKDOWN') {
+      lines.push(`> Channel: <#${proposal.payload?.channelId}>`);
+      lines.push('> Action: deny Send Messages permission override for @everyone.');
+    }
+
+    if (proposal.actionType === 'UNLOCK') {
+      lines.push(`> Channel: <#${proposal.payload?.channelId}>`);
+      lines.push('> Action: reset/clear Send Messages permission override for @everyone.');
+    }
+
+    if (proposal.actionType === 'SET_SLOWMODE') {
+      lines.push(`> Channel: <#${proposal.payload?.channelId}>`);
+      lines.push(`> Slowmode: \`${proposal.payload?.slowmodeSeconds ?? 0} seconds\``);
+    }
+
+    if (proposal.actionType === 'SEND_ANNOUNCEMENT') {
+      lines.push(`> Channel: <#${proposal.payload?.channelId}>`);
+      if (proposal.payload?.title) {
+        lines.push(`> Title: **${proposal.payload.title}**`);
+      }
+      lines.push(`> Content: ${proposal.payload?.content}`);
+    }
+
     if (proposal.actionType === 'PURGE') {
       lines.push(`> Channel: <#${proposal.payload?.channelId}>`);
       lines.push(`> Limit: \`${proposal.payload?.limit ?? 0} recent messages\``);
       lines.push(`> Filter: ${proposal.payload?.targetUserId ? `<@${proposal.payload.targetUserId}> only` : '`Any author`'}`);
       lines.push('> Constraint: only messages younger than 14 days and not pinned are eligible.');
+    }
+
+    if (['MASS_TIMEOUT', 'MASS_KICK', 'MASS_BAN'].includes(proposal.actionType)) {
+      const targets = (proposal.payload?.targetUserIds as string[]) || [];
+      const targetMentions = targets.map((id) => `<@${id}>`).join(', ');
+      lines.push(`> Action: mass \`${proposal.actionType.replace('MASS_', '')}\``);
+      lines.push(`> Target Members (${targets.length}): ${targetMentions}`);
+      if (proposal.actionType === 'MASS_TIMEOUT' && proposal.payload?.durationMinutes) {
+        lines.push(`> Duration: \`${proposal.payload.durationMinutes} minutes\``);
+      }
+    }
+
+    if (proposal.actionType === 'MANAGE_STICKER') {
+      const action = proposal.payload?.stickerAction;
+      lines.push(`> Action: \`${action}\` sticker trigger`);
+      lines.push(`> Keyword Name: \`${proposal.payload?.stickerName}\``);
+      if (action === 'ADD') {
+        lines.push(`> File URL: [link](${proposal.payload?.stickerUrl})`);
+      } else if (action === 'DELETE') {
+        lines.push(`> Sticker ID: \`${proposal.payload?.stickerId}\``);
+      }
     }
 
     if (proposal.actionType === 'UPDATE_SETTINGS') {
@@ -121,17 +165,26 @@ export class AgentActionRendererService {
   }
 
   private getActionTheme(actionType: string): ActionTheme {
-    if (actionType === 'BAN' || actionType === 'KICK') {
+    if (actionType === 'BAN' || actionType === 'KICK' || actionType === 'MASS_BAN' || actionType === 'MASS_KICK') {
       return { color: 0xe74c3c, label: 'Critical Moderation Proposal', category: 'Critical moderation action' };
     }
-    if (actionType === 'WARN' || actionType === 'TIMEOUT') {
+    if (actionType === 'WARN' || actionType === 'TIMEOUT' || actionType === 'MASS_TIMEOUT') {
       return { color: 0xe67e22, label: 'Moderation Proposal', category: 'Moderation action' };
     }
-    if (actionType === 'ADD_ROLE' || actionType === 'REMOVE_ROLE') {
+    if (actionType === 'ADD_ROLE' || actionType === 'REMOVE_ROLE' || actionType === 'MANAGE_STICKER') {
       return { color: 0x5865f2, label: 'Role Management Proposal', category: 'Role management action' };
     }
-    if (actionType === 'REVOKE_WARNING' || actionType === 'REMOVE_TIMEOUT') {
+    if (actionType === 'REVOKE_WARNING' || actionType === 'REMOVE_TIMEOUT' || actionType === 'UNLOCK') {
       return { color: 0x2ecc71, label: 'Recovery Proposal', category: 'Moderation recovery action' };
+    }
+    if (actionType === 'LOCKDOWN') {
+      return { color: 0xe74c3c, label: 'Lockdown Proposal', category: 'Channel lockdown action' };
+    }
+    if (actionType === 'SET_SLOWMODE') {
+      return { color: 0x7f8c8d, label: 'Set Slowmode Proposal', category: 'Channel slowmode action' };
+    }
+    if (actionType === 'SEND_ANNOUNCEMENT') {
+      return { color: 0x5865f2, label: 'Send Announcement Proposal', category: 'Guild announcement action' };
     }
     if (actionType === 'PURGE' || actionType === 'UPDATE_SETTINGS') {
       return { color: 0x7f8c8d, label: 'Server Operations Proposal', category: 'Server operations action' };

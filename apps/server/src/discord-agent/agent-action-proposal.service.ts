@@ -217,7 +217,7 @@ export class AgentActionProposalService {
         await this.executeSettingsUpdate(proposal.guildId, payload.settings || {});
       } else if (actionType === 'LOCKDOWN') {
         const channelId = String(payload.channelId || proposal.channelId);
-        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        const channel = await guild.channels.fetch(channelId).catch(() => null) as any;
         if (!channel || !channel.permissionOverwrites) {
           throw new BadRequestException('Channel does not support permission modifications.');
         }
@@ -227,7 +227,7 @@ export class AgentActionProposalService {
         message = `LOCKDOWN proposal executed for <#${channelId}>.`;
       } else if (actionType === 'UNLOCK') {
         const channelId = String(payload.channelId || proposal.channelId);
-        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        const channel = await guild.channels.fetch(channelId).catch(() => null) as any;
         if (!channel || !channel.permissionOverwrites) {
           throw new BadRequestException('Channel does not support permission modifications.');
         }
@@ -237,7 +237,7 @@ export class AgentActionProposalService {
         message = `UNLOCK proposal executed for <#${channelId}>.`;
       } else if (actionType === 'SET_SLOWMODE') {
         const channelId = String(payload.channelId || proposal.channelId);
-        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        const channel = await guild.channels.fetch(channelId).catch(() => null) as any;
         if (!channel || typeof channel.setRateLimitPerUser !== 'function') {
           throw new BadRequestException('Channel does not support slowmode.');
         }
@@ -313,18 +313,23 @@ export class AgentActionProposalService {
         const name = String(payload.stickerName);
         const action = String(payload.stickerAction);
         if (action === 'ADD') {
+          const stickerUrl = String(payload.stickerUrl);
+          const ext = stickerUrl.split('?')[0].split('.').pop()?.toLowerCase();
+          const type: 'image/png' | 'image/jpeg' | 'image/gif' =
+            ext === 'gif' ? 'image/gif' : (ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png');
+
           await this.stickers.create(proposal.guildId, {
             name,
-            url: String(payload.stickerUrl),
-            type: 'IMAGE', // Default type
+            url: stickerUrl,
+            type,
             key: `stickers/${proposal.guildId}/${name}`, // Mock key to bypass headObject if we need it
           }).catch(async (err) => {
             // If key not found or similar, we try to directly insert to DB and update cache since AI adds URL directly
             if (err.message?.includes('not uploaded')) {
               await this.prisma.sticker.upsert({
                 where: { guildId_name: { guildId: proposal.guildId, name } },
-                update: { url: String(payload.stickerUrl) },
-                create: { guildId: proposal.guildId, name, url: String(payload.stickerUrl), type: 'IMAGE' },
+                update: { url: stickerUrl, type },
+                create: { guildId: proposal.guildId, name, url: stickerUrl, type },
               });
               await this.stickers.loadCache();
             } else {

@@ -28,7 +28,6 @@ export class TakoController {
     return { ok: true, settings };
   }
 
-  @UseGuards(SessionAuthGuard)
   @Get('public-settings')
   async getPublicSettings(@Param('guildId') guildId: string) {
     const settings = await this.takoService.getSettings(guildId);

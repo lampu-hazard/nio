@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { GeminiProvider } from './gemini.provider';
 
 describe('GeminiProvider with Tool Calling', () => {
@@ -14,10 +15,10 @@ describe('GeminiProvider with Tool Calling', () => {
       ]
     };
     const globalFetch = global.fetch;
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = jest.fn(async () => ({
       ok: true,
       json: async () => mockResponse,
-    });
+    } as Response));
 
     try {
       const response = await provider.generate('System', 'User', [], []);
@@ -43,10 +44,10 @@ describe('GeminiProvider with Tool Calling', () => {
       ]
     };
     const globalFetch = global.fetch;
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = jest.fn(async () => ({
       ok: true,
       json: async () => mockResponse,
-    });
+    } as Response));
 
     try {
       const response = await provider.generate('System', 'User', [], []);

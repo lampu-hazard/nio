@@ -7,7 +7,7 @@ import { DiscordAgentContextService } from './discord-agent-context.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
 import { AgentSettingsUpdate } from './agent-action.types';
 
-const MAX_READ_LIMIT = 50;
+const MAX_READ_LIMIT = 100;
 
 @Injectable()
 export class DiscordAgentToolExecutorService {
@@ -257,6 +257,11 @@ export class DiscordAgentToolExecutorService {
             channelId: args.channelId || context.channelId,
             content: this.requireString(args.content, 'content'),
             title: args.title || undefined,
+            announcementColor: args.color || undefined,
+            announcementImageUrl: args.imageUrl || undefined,
+            announcementThumbnailUrl: args.thumbnailUrl || undefined,
+            announcementFooter: args.footer || undefined,
+            announcementPing: args.ping || 'none',
           },
         });
         return { proposalCreated: true, proposalId: announcementProposal.id, actionType: 'SEND_ANNOUNCEMENT' };
@@ -270,6 +275,35 @@ export class DiscordAgentToolExecutorService {
 
       case 'get_recent_joins':
         return this.getRecentJoins(context.guildId, args.limit, args.hours);
+
+      case 'purge_user_messages': {
+        const purgeUserProposal = await this.proposals.createProposal({
+          guildId: context.guildId,
+          channelId: context.channelId,
+          requestedById: context.requestedById,
+          targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
+          recommendation: {
+            type: 'PURGE_USER_MESSAGES',
+            reason: this.requireString(args.reason, 'reason'),
+            purgeLimit: args.limit || 50,
+            purgeUserChannels: Array.isArray(args.channels) ? args.channels : undefined,
+          },
+        });
+        return { proposalCreated: true, proposalId: purgeUserProposal.id, actionType: 'PURGE_USER_MESSAGES' };
+      }
+
+      case 'get_message_context':
+        return this.getMessageContext(
+          context.guildId,
+          args.channelId || context.channelId,
+          this.requireString(args.messageId, 'messageId'),
+        );
+
+      case 'find_duplicate_messages':
+        return this.findDuplicateMessages(context.guildId, args.limit, args.hours);
+
+      case 'get_server_stats':
+        return this.getServerStats(context.guildId);
 
       case 'mass_moderation_action': {
         const targetIds = Array.isArray(args.targetUserIds)
@@ -686,6 +720,164 @@ export class DiscordAgentToolExecutorService {
       userId,
       count: notes.length,
       notes: formattedNotes,
+    };
+  }
+
+  private async getMessageContext(guildId: string, channelId: string, messageId: string) {
+    const guild = await this.getGuild(guildId);
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) {
+      throw new BadRequestException('Channel is not text-based or not available.');
+    }
+
+    // Fetch 5 messages before and 5 messages after the target message ID
+    const [beforeMessages, afterMessages, targetMsg] = await Promise.all([
+      channel.messages.fetch({ before: messageId, limit: 5 }).catch(() => new Map()),
+      channel.messages.fetch({ after: messageId, limit: 5 }).catch(() => new Map()),
+      channel.messages.fetch(messageId).catch(() => null),
+    ]);
+
+    const formattedMessages = [];
+    if (targetMsg) {
+      formattedMessages.push(this.formatDiscordMessage(targetMsg, true));
+    }
+
+    for (const msg of beforeMessages.values()) {
+      formattedMessages.push(this.formatDiscordMessage(msg));
+    }
+
+    for (const msg of afterMessages.values()) {
+      formattedMessages.push(this.formatDiscordMessage(msg));
+    }
+
+    // Sort by timestamp
+    formattedMessages.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    return {
+      guildId,
+      channelId,
+      messageId,
+      context: formattedMessages,
+    };
+  }
+
+  private formatDiscordMessage(msg: any, isTarget = false) {
+    const attachments = msg.attachments && typeof msg.attachments.map === 'function'
+      ? msg.attachments.map((a: any) => ({ name: a.name, url: a.url }))
+      : Array.from(msg.attachments?.values?.() || []).map((a: any) => ({ name: a.name, url: a.url }));
+
+    return {
+      id: msg.id,
+      authorId: msg.author?.id || 'Unknown',
+      authorTag: msg.author?.tag || 'Unknown',
+      content: msg.content || '',
+      createdAt: msg.createdAt,
+      attachments,
+      isTarget,
+    };
+  }
+
+  private async findDuplicateMessages(guildId: string, limit?: number, hours?: number) {
+    const limitClamped = this.clampNumber(limit || 15, 1, 50);
+    const hoursClamped = this.clampNumber(hours || 1, 1, 24);
+    const cutoff = new Date(Date.now() - hoursClamped * 60 * 60 * 1000);
+
+    // Group message logs by content and author
+    const logs = await this.prisma.discordMessageLog.findMany({
+      where: {
+        guildId,
+        createdAt: { gte: cutoff },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        authorId: true,
+        channelId: true,
+        content: true,
+        createdAt: true,
+      },
+    });
+
+    // Content should have some minimum length to be considered duplicate spam
+    const filteredLogs = logs.filter((log) => log.content && log.content.trim().length >= 10);
+
+    const occurrences = new Map<string, { authorId: string; content: string; channels: Set<string>; count: number; timestamps: Date[] }>();
+
+    for (const log of filteredLogs) {
+      const key = `${log.authorId}:${log.content.trim()}`;
+      if (!occurrences.has(key)) {
+        occurrences.set(key, {
+          authorId: log.authorId,
+          content: log.content.trim(),
+          channels: new Set([log.channelId]),
+          count: 1,
+          timestamps: [log.createdAt],
+        });
+      } else {
+        const item = occurrences.get(key)!;
+        item.channels.add(log.channelId);
+        item.count++;
+        item.timestamps.push(log.createdAt);
+      }
+    }
+
+    const duplicates = Array.from(occurrences.values())
+      .filter((item) => item.count >= 2)
+      .map((item) => ({
+        authorId: item.authorId,
+        content: item.content,
+        distinctChannels: item.channels.size,
+        channelIds: Array.from(item.channels),
+        count: item.count,
+        firstSentAt: new Date(Math.min(...item.timestamps.map((t) => t.getTime()))),
+        lastSentAt: new Date(Math.max(...item.timestamps.map((t) => t.getTime()))),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limitClamped);
+
+    return {
+      guildId,
+      timeWindowHours: hoursClamped,
+      duplicateCount: duplicates.length,
+      duplicates,
+    };
+  }
+
+  private async getServerStats(guildId: string) {
+    const guild = await this.getGuild(guildId);
+    const activeWarnings = await this.prisma.warning.count({
+      where: {
+        guildId,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+    });
+    const pendingProposals = await this.prisma.agentActionProposal.count({
+      where: { guildId, status: 'PENDING' },
+    });
+
+    const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentAnomalies = await this.prisma.auditLog.count({
+      where: { guildId, action: 'ANOMALY_DETECTION', createdAt: { gte: cutoff24h } },
+    });
+    const recentSlowmodes = await this.prisma.auditLog.count({
+      where: { guildId, action: 'SLOWMODE_LEVEL_CHANGED', createdAt: { gte: cutoff24h } },
+    });
+
+    return {
+      guildId,
+      guildName: guild.name,
+      totalMembers: guild.memberCount,
+      onlineMembers: guild.approximatePresenceCount || null,
+      boostersCount: guild.premiumSubscriptionCount || 0,
+      stats24h: {
+        activeWarnings,
+        pendingProposals,
+        recentAnomalies,
+        recentSlowmodes,
+      },
     };
   }
 }

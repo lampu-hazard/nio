@@ -8,6 +8,7 @@ import { DiscordMessageLogService } from './discord-message-log.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { AgentActionRendererService } from './agent-action-renderer.service';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
+import { ConversationMemoryService } from './conversation-memory.service';
 
 @Module({
   imports: [PrismaModule, ModerationModule, forwardRef(() => StickersModule)],
@@ -18,6 +19,7 @@ import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.s
     AgentActionProposalService,
     AgentActionRendererService,
     DiscordAgentToolExecutorService,
+    ConversationMemoryService,
   ],
   exports: [
     DiscordAgentService,
@@ -26,6 +28,7 @@ import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.s
     AgentActionProposalService,
     AgentActionRendererService,
     DiscordAgentToolExecutorService,
+    ConversationMemoryService,
   ],
 })
 export class DiscordAgentModule {}

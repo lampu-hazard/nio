@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DiscordMessageLogService } from './discord-message-log.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,10 +9,10 @@ describe('DiscordMessageLogService', () => {
 
   const mockPrisma = {
     discordMessageLog: {
-      upsert: jest.fn().mockResolvedValue({}),
-      update: jest.fn().mockResolvedValue({}),
-      findMany: jest.fn().mockResolvedValue([]),
-      deleteMany: jest.fn().mockResolvedValue({}),
+      upsert: jest.fn(async () => ({})),
+      update: jest.fn(async () => ({})),
+      findMany: jest.fn(async () => []),
+      deleteMany: jest.fn(async () => ({})),
     },
   };
 
@@ -30,7 +31,7 @@ describe('DiscordMessageLogService', () => {
 
   it('creates or updates a message log when the agent is enabled', async () => {
     (mockPrisma as any).discordAgentSettings = {
-      findUnique: jest.fn().mockResolvedValue({ enabled: true, excludedChannelIds: [] }),
+      findUnique: jest.fn(async () => ({ enabled: true, excludedChannelIds: [] })),
     };
 
     await service.logCreate({
@@ -49,7 +50,7 @@ describe('DiscordMessageLogService', () => {
 
   it('does not log messages from excluded channels', async () => {
     (mockPrisma as any).discordAgentSettings = {
-      findUnique: jest.fn().mockResolvedValue({ enabled: true, excludedChannelIds: ['channel-1'] }),
+      findUnique: jest.fn(async () => ({ enabled: true, excludedChannelIds: ['channel-1'] })),
     };
 
     await service.logCreate({

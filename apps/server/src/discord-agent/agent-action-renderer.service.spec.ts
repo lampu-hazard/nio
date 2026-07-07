@@ -75,6 +75,55 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('`cool`');
   });
 
+  it('renders rich announcement proposal details', () => {
+    const service = new AgentActionRendererService();
+
+    const payload = service.renderProposalMessage({
+      id: 'proposal-5',
+      actionType: 'SEND_ANNOUNCEMENT',
+      targetUserId: null,
+      payload: {
+        reason: 'weekly update',
+        channelId: 'channel-1',
+        content: 'hello server',
+        title: 'Weekly Update',
+        announcementPing: 'here',
+        announcementColor: '#ffaa00',
+        announcementImageUrl: 'https://example.com/image.png',
+        announcementThumbnailUrl: 'https://example.com/thumb.png',
+        announcementFooter: 'footer text',
+      },
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
+
+    const description = payload.embeds[0].data.description;
+    expect(description).toContain('Guild announcement action');
+    expect(description).toContain('Ping: `here`');
+    expect(description).toContain('Color: `#ffaa00`');
+    expect(description).toContain('Image: [link](https://example.com/image.png)');
+    expect(description).toContain('Thumbnail: [link](https://example.com/thumb.png)');
+    expect(description).toContain('Footer: footer text');
+  });
+
+  it('renders purge user messages proposal details', () => {
+    const service = new AgentActionRendererService();
+
+    const payload = service.renderProposalMessage({
+      id: 'proposal-6',
+      actionType: 'PURGE_USER_MESSAGES',
+      targetUserId: 'user-1',
+      payload: { reason: 'spam cleanup', targetUserId: 'user-1', limit: 25, channels: ['channel-1', 'channel-2'] },
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
+
+    const description = payload.embeds[0].data.description;
+    expect(description).toContain('Message cleanup action');
+    expect(description).toContain('<@user-1>');
+    expect(description).toContain('25 recent messages per channel');
+    expect(description).toContain('<#channel-1>');
+    expect(description).toContain('<#channel-2>');
+  });
+
   it('renders polished execution results', () => {
     const service = new AgentActionRendererService();
 

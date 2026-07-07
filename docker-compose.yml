@@ -58,3 +58,27 @@ services:
     environment:
       - BACKEND_URL=http://nio-server:3002
       - NODE_ENV=production
+
+
+  db:
+    image: postgres:16-alpine
+    container_name: postgres-prod
+    restart: always
+    environment:
+      POSTGRES_USER: nio
+      POSTGRES_PASSWORD: nio-server
+      POSTGRES_DB: nio-db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlsd -d core"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db_data:

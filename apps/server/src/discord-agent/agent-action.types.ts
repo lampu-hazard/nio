@@ -1,4 +1,4 @@
-export type AgentActionType = 'WARN' | 'TIMEOUT' | 'UPDATE_SETTINGS' | 'KICK' | 'BAN' | 'PURGE' | 'ADD_ROLE' | 'REMOVE_ROLE' | 'REMOVE_TIMEOUT' | 'REVOKE_WARNING' | 'LOCKDOWN' | 'UNLOCK' | 'SET_SLOWMODE' | 'SEND_ANNOUNCEMENT' | 'MASS_TIMEOUT' | 'MASS_KICK' | 'MASS_BAN' | 'MANAGE_STICKER';
+export type AgentActionType = 'WARN' | 'TIMEOUT' | 'UPDATE_SETTINGS' | 'KICK' | 'BAN' | 'PURGE' | 'ADD_ROLE' | 'REMOVE_ROLE' | 'REMOVE_TIMEOUT' | 'REVOKE_WARNING' | 'LOCKDOWN' | 'UNLOCK' | 'SET_SLOWMODE' | 'SEND_ANNOUNCEMENT' | 'MASS_TIMEOUT' | 'MASS_KICK' | 'MASS_BAN' | 'MANAGE_STICKER' | 'PURGE_USER_MESSAGES';
 
 export type AgentActionStatus = 'PENDING' | 'APPROVED' | 'CANCELLED' | 'EXECUTED' | 'FAILED' | 'EXPIRED';
 
@@ -43,6 +43,12 @@ export type AgentActionRecommendation = {
   stickerUrl?: string;
   stickerId?: string;
   stickerAction?: 'ADD' | 'DELETE';
+  announcementColor?: string;
+  announcementImageUrl?: string;
+  announcementThumbnailUrl?: string;
+  announcementFooter?: string;
+  announcementPing?: 'none' | 'here' | 'everyone';
+  purgeUserChannels?: string[];
 };
 
 export type CreateAgentActionProposalInput = {

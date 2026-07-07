@@ -55,7 +55,31 @@ describe('DiscordAgentToolExecutorService', () => {
     buildModContext: jest.fn(async () => ({ member: { id: 'user-1' } })),
   };
 
+  const mockChannelMessages = {
+    fetch: jest.fn(async (params: any) => {
+      if (typeof params === 'string') {
+        return { id: params, author: { id: 'user-1', tag: 'user#1234' }, content: 'target', createdAt: new Date('2026-01-01T00:01:00Z'), attachments: new Map() };
+      }
+      return new Map([
+        ['ctx-1', { id: 'ctx-1', author: { id: 'user-1', tag: 'user#1234' }, content: params?.before ? 'before' : 'after', createdAt: params?.before ? new Date('2026-01-01T00:00:00Z') : new Date('2026-01-01T00:02:00Z'), attachments: new Map() }],
+      ]);
+    }),
+  };
+
+  const mockChannel = {
+    id: 'channel-1',
+    isTextBased: jest.fn(() => true),
+    messages: mockChannelMessages,
+  };
+
   const mockGuild = {
+    name: 'Test Guild',
+    memberCount: 42,
+    approximatePresenceCount: 7,
+    premiumSubscriptionCount: 3,
+    channels: {
+      fetch: jest.fn(async () => mockChannel),
+    },
     members: {
       me: {
         permissions: {
@@ -93,6 +117,9 @@ describe('DiscordAgentToolExecutorService', () => {
     guilds: {
       fetch: jest.fn(async () => mockGuild),
     },
+    users: {
+      fetch: jest.fn(async () => ({ tag: 'admin#1234' })),
+    },
   };
 
   beforeEach(async () => {
@@ -127,12 +154,60 @@ describe('DiscordAgentToolExecutorService', () => {
   it('gets recent channel messages with a clamped limit', async () => {
     const res = await service.execute('get_channel_recent_messages', { channelId: 'channel-1', limit: 500 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'fallback-channel' });
     expect(res).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'msg-1', content: 'hello' })]));
-    (expect(mockMessageLogs.getChannelRecentMessages) as any).toHaveBeenCalledWith('guild-1', 'channel-1', 50, undefined);
+    (expect(mockMessageLogs.getChannelRecentMessages) as any).toHaveBeenCalledWith('guild-1', 'channel-1', 100, undefined);
   });
 
   it('creates proposals for write tools', async () => {
     const res = await service.execute('warn_user', { targetUserId: 'user-1', reason: 'spam' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'WARN' });
+  });
+
+  it('creates rich announcement proposals', async () => {
+    const res = await service.execute('send_channel_announcement', {
+      channelId: 'channel-2',
+      content: 'hello',
+      title: 'Update',
+      color: '#ffaa00',
+      imageUrl: 'https://example.com/image.png',
+      thumbnailUrl: 'https://example.com/thumb.png',
+      footer: 'footer',
+      ping: 'here',
+      reason: 'weekly update',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'SEND_ANNOUNCEMENT' });
+    (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
+      targetUserId: null,
+      recommendation: expect.objectContaining({
+        type: 'SEND_ANNOUNCEMENT',
+        channelId: 'channel-2',
+        content: 'hello',
+        announcementColor: '#ffaa00',
+        announcementImageUrl: 'https://example.com/image.png',
+        announcementThumbnailUrl: 'https://example.com/thumb.png',
+        announcementFooter: 'footer',
+        announcementPing: 'here',
+      }),
+    }));
+  });
+
+  it('creates purge user messages proposals', async () => {
+    const res = await service.execute('purge_user_messages', {
+      targetUserId: 'user-1',
+      limit: 25,
+      channels: ['channel-1'],
+      reason: 'spam cleanup',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'PURGE_USER_MESSAGES' });
+    (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
+      targetUserId: 'user-1',
+      recommendation: expect.objectContaining({
+        type: 'PURGE_USER_MESSAGES',
+        purgeLimit: 25,
+        purgeUserChannels: ['channel-1'],
+      }),
+    }));
   });
 
   it('gets deleted message history with filters', async () => {
@@ -216,9 +291,57 @@ describe('DiscordAgentToolExecutorService', () => {
         id: 'note-1',
         content: 'some note',
         moderatorId: 'admin-1',
-        moderatorTag: 'admin-1',
+        moderatorTag: 'admin#1234',
         createdAt: expect.any(Date),
       }],
     });
+  });
+
+  it('fetches message context around a target message', async () => {
+    const res = await service.execute('get_message_context', { messageId: 'target-msg', channelId: 'channel-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'fallback-channel' });
+
+    expect(res).toEqual(expect.objectContaining({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      messageId: 'target-msg',
+    }));
+    expect(res.context).toHaveLength(3);
+    expect(res.context[1]).toEqual(expect.objectContaining({ id: 'target-msg', isTarget: true }));
+  });
+
+  it('identifies duplicate messages to detect spam', async () => {
+    (mockPrisma.discordMessageLog.findMany as any).mockResolvedValueOnce([
+      { id: '1', authorId: 'user-1', channelId: 'ch-1', content: 'spam message', createdAt: new Date() },
+      { id: '2', authorId: 'user-1', channelId: 'ch-2', content: 'spam message', createdAt: new Date() },
+    ]);
+    const res = await service.execute('find_duplicate_messages', { hours: 1 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res.duplicateCount).toBe(1);
+    expect(res.duplicates[0]).toEqual(expect.objectContaining({
+      authorId: 'user-1',
+      content: 'spam message',
+      distinctChannels: 2,
+      count: 2,
+    }));
+  });
+
+  it('returns server statistics summary', async () => {
+    // mock count calls for prisma warning, proposal, and auditlog
+    mockPrisma.discordMessageLog.findMany.mockResolvedValueOnce([]); // mock some details if needed
+    const mockPrismaCount = jest.fn(async () => 5);
+    (service as any).prisma.warning = { count: mockPrismaCount };
+    (service as any).prisma.agentActionProposal = { count: mockPrismaCount };
+    (service as any).prisma.auditLog = { count: mockPrismaCount };
+
+    const res = await service.execute('get_server_stats', {}, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res).toEqual(expect.objectContaining({
+      guildId: 'guild-1',
+      totalMembers: expect.any(Number),
+      stats24h: {
+        activeWarnings: 5,
+        pendingProposals: 5,
+        recentAnomalies: 5,
+        recentSlowmodes: 5,
+      },
+    }));
   });
 });

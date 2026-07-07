@@ -29,7 +29,7 @@ export const AGENT_TOOLS = [
       properties: {
         channelId: { type: 'STRING', description: 'Discord channel ID. Defaults to the current channel when omitted.' },
         targetUserId: { type: 'STRING', description: 'Optional Discord user ID to filter messages by author.' },
-        limit: { type: 'INTEGER', description: 'Maximum messages to return. Backend clamps this to a safe limit.' },
+        limit: { type: 'INTEGER', description: 'Maximum messages to return. Backend clamps this to a safe limit of 100.' },
       },
     },
   },
@@ -41,7 +41,7 @@ export const AGENT_TOOLS = [
       properties: {
         channelId: { type: 'STRING', description: 'Optional Discord channel ID to filter deleted messages.' },
         targetUserId: { type: 'STRING', description: 'Optional Discord user ID to filter deleted messages by author.' },
-        limit: { type: 'INTEGER', description: 'Maximum deleted messages to return. Backend clamps this to a safe limit.' },
+        limit: { type: 'INTEGER', description: 'Maximum deleted messages to return. Backend clamps this to a safe limit of 100.' },
       },
     },
   },
@@ -261,16 +261,66 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'send_channel_announcement',
-    description: 'Create a proposal to send an announcement message to a channel. Creates an action card before execution.',
+    description: 'Create a proposal to send a rich announcement message to a channel. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
         channelId: { type: 'STRING', description: 'Discord channel ID to send the announcement to. Defaults to current channel if omitted.' },
         content: { type: 'STRING', description: 'Main markdown-supported announcement text.' },
         title: { type: 'STRING', description: 'Optional announcement embed title.' },
+        color: { type: 'STRING', description: 'Optional embed accent color in hex code (e.g. #ffaa00).' },
+        imageUrl: { type: 'STRING', description: 'Optional large image URL to embed.' },
+        thumbnailUrl: { type: 'STRING', description: 'Optional small thumbnail URL to embed.' },
+        footer: { type: 'STRING', description: 'Optional embed footer text.' },
+        ping: { type: 'STRING', enum: ['none', 'here', 'everyone'], description: 'Optional role mention to ping when sending. Defaults to none.' },
         reason: { type: 'STRING', description: 'Reason for sending this announcement.' },
       },
       required: ['content', 'reason'],
+    },
+  },
+  {
+    name: 'purge_user_messages',
+    description: 'Create a proposal to delete all recent messages from a specific user across server text channels. Creates an action card before execution.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        targetUserId: { type: 'STRING', description: 'Discord user ID.' },
+        limit: { type: 'INTEGER', description: 'Maximum messages to delete per channel (1-100, defaults to 50).' },
+        channels: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Optional channel IDs. Purges all text channels if omitted.' },
+        reason: { type: 'STRING', description: 'Reason for the mass purge.' },
+      },
+      required: ['targetUserId', 'reason'],
+    },
+  },
+  {
+    name: 'get_message_context',
+    description: 'Fetch the surrounding chat context (recent messages before and after) of a specific message ID in the channel. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        messageId: { type: 'STRING', description: 'Discord message ID.' },
+        channelId: { type: 'STRING', description: 'Optional Discord channel ID. Defaults to current channel if omitted.' },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'find_duplicate_messages',
+    description: 'Search for identical or highly similar messages sent by users across different channels to detect spam. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        limit: { type: 'INTEGER', description: 'Maximum duplicate entries to return (1-50, defaults to 15).' },
+        hours: { type: 'INTEGER', description: 'Time window in hours (1-24, defaults to 1).' },
+      },
+    },
+  },
+  {
+    name: 'get_server_stats',
+    description: 'Fetch server statistics including total members, active warnings, pending proposals, and recent slowmode/anomaly incidents. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
     },
   },
   {

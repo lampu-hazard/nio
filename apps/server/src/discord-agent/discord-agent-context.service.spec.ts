@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DiscordAgentContextService } from './discord-agent-context.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,26 +9,26 @@ describe('DiscordAgentContextService', () => {
   let service: DiscordAgentContextService;
 
   const mockPrisma = {
-    guildSettings: { findUnique: jest.fn().mockResolvedValue({}) },
+    guildSettings: { findUnique: jest.fn(async () => ({})) },
   };
 
   const mockModeration = {
-    listWarnings: jest.fn().mockResolvedValue([]),
-    countActiveWarnings: jest.fn().mockResolvedValue(0),
-    getSettings: jest.fn().mockResolvedValue({ warnLimitEnabled: false }),
+    listWarnings: jest.fn(async () => []),
+    countActiveWarnings: jest.fn(async () => 0),
+    getSettings: jest.fn(async () => ({ warnLimitEnabled: false })),
   };
 
   const mockMessageLog = {
-    getUserRecentMessages: jest.fn().mockResolvedValue([]),
+    getUserRecentMessages: jest.fn(async () => []),
   };
 
   const mockClient = {
     guilds: {
-      fetch: jest.fn().mockResolvedValue({
+      fetch: jest.fn(async () => ({
         id: 'guild-1',
         name: 'Test Guild',
         members: {
-          fetch: jest.fn().mockResolvedValue({
+          fetch: jest.fn(async () => ({
             id: 'user-1',
             user: {
               username: 'target',
@@ -41,9 +42,9 @@ describe('DiscordAgentContextService', () => {
             nickname: null,
             communicationDisabledUntil: null,
             roles: { cache: { map: () => [] } },
-          }),
+          })),
         },
-      }),
+      })),
     },
   };
 

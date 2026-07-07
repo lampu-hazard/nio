@@ -12,6 +12,7 @@ import { DiscordAgentContextService } from '../discord-agent/discord-agent-conte
 import { DiscordMessageLogService } from '../discord-agent/discord-message-log.service';
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
+import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -39,6 +40,7 @@ export class DiscordBotService implements OnModuleInit {
     private readonly messageLogs: DiscordMessageLogService,
     private readonly actionProposals: AgentActionProposalService,
     private readonly agentToolExecutor: DiscordAgentToolExecutorService,
+    private readonly conversationMemory: ConversationMemoryService,
   ) {}
 
   async onModuleInit() {
@@ -195,6 +197,18 @@ export class DiscordBotService implements OnModuleInit {
 
     if (!this.client.user || !message.mentions.has(this.client.user)) return;
 
+    let referencedBotMessageId: string | undefined;
+    if (message.reference?.messageId) {
+      try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+        if (referencedMessage && referencedMessage.author.id === this.client.user.id) {
+          referencedBotMessageId = referencedMessage.id;
+        }
+      } catch {
+        // If we can't fetch the referenced message, proceed without memory.
+      }
+    }
+
     if (message.channel && typeof (message.channel as any).sendTyping === 'function') {
       await (message.channel as any).sendTyping().catch(() => null);
     }
@@ -209,6 +223,7 @@ export class DiscordBotService implements OnModuleInit {
       message.channel.id,
       message.author.id,
       message.content,
+      referencedBotMessageId,
     );
 
     if (!response) {
@@ -223,12 +238,28 @@ export class DiscordBotService implements OnModuleInit {
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     };
 
+    let responseMessageId: string | undefined;
+
     if (loadingMessage) {
-      await loadingMessage.edit(replyPayload).catch(() => message.reply(replyPayload));
-      return;
+      const edited = await loadingMessage.edit(replyPayload).catch(() => null);
+      if (edited) {
+        responseMessageId = edited.id;
+      } else {
+        const fallback = await message.reply(replyPayload).catch(() => null);
+        responseMessageId = fallback?.id;
+      }
+    } else {
+      const sent = await message.reply(replyPayload).catch(() => null);
+      responseMessageId = sent?.id;
     }
 
-    await message.reply(replyPayload);
+    if (responseMessageId && response.conversationTurns?.length) {
+      await this.conversationMemory.saveConversation(
+        message.guild.id,
+        responseMessageId,
+        response.conversationTurns,
+      ).catch(() => null);
+    }
   }
 
   private async handleMessageDelete(message: any) {

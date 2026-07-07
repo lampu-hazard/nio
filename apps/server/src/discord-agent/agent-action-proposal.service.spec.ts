@@ -180,7 +180,7 @@ describe('AgentActionProposalService', () => {
     expect(data.payload.slowmodeSeconds).toBe(15);
   });
 
-  it('normalizes announcement proposals', async () => {
+  it('normalizes rich announcement proposals', async () => {
     await service.createProposal({
       guildId: 'guild-1',
       channelId: 'channel-1',
@@ -191,6 +191,11 @@ describe('AgentActionProposalService', () => {
         reason: 'weekly update',
         content: 'hello server',
         title: 'weekly',
+        announcementColor: 'ffaa00',
+        announcementImageUrl: 'https://example.com/image.png',
+        announcementThumbnailUrl: 'https://example.com/thumb.png',
+        announcementFooter: 'footer text',
+        announcementPing: 'here',
       },
     });
 
@@ -198,6 +203,32 @@ describe('AgentActionProposalService', () => {
     expect(data.actionType).toBe('SEND_ANNOUNCEMENT');
     expect(data.payload.content).toBe('hello server');
     expect(data.payload.title).toBe('weekly');
+    expect(data.payload.announcementColor).toBe('#ffaa00');
+    expect(data.payload.announcementImageUrl).toBe('https://example.com/image.png');
+    expect(data.payload.announcementThumbnailUrl).toBe('https://example.com/thumb.png');
+    expect(data.payload.announcementFooter).toBe('footer text');
+    expect(data.payload.announcementPing).toBe('here');
+  });
+
+  it('normalizes purge user messages proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: 'target-1',
+      recommendation: {
+        type: 'PURGE_USER_MESSAGES',
+        reason: 'mass spam cleanup',
+        purgeLimit: 500,
+        purgeUserChannels: ['channel-2', 'channel-2', ' channel-3 '],
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('PURGE_USER_MESSAGES');
+    expect(data.payload.targetUserId).toBe('target-1');
+    expect(data.payload.limit).toBe(100);
+    expect(data.payload.channels).toEqual(['channel-2', 'channel-3']);
   });
 
   it('normalizes mass moderation proposals', async () => {

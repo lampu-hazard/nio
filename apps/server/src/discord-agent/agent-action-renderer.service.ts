@@ -125,12 +125,33 @@ export class AgentActionRendererService {
         lines.push(`> Title: **${proposal.payload.title}**`);
       }
       lines.push(`> Content: ${proposal.payload?.content}`);
+      lines.push(`> Ping: \`${proposal.payload?.announcementPing || 'none'}\``);
+      if (proposal.payload?.announcementColor) {
+        lines.push(`> Color: \`${proposal.payload.announcementColor}\``);
+      }
+      if (proposal.payload?.announcementImageUrl) {
+        lines.push(`> Image: [link](${proposal.payload.announcementImageUrl})`);
+      }
+      if (proposal.payload?.announcementThumbnailUrl) {
+        lines.push(`> Thumbnail: [link](${proposal.payload.announcementThumbnailUrl})`);
+      }
+      if (proposal.payload?.announcementFooter) {
+        lines.push(`> Footer: ${proposal.payload.announcementFooter}`);
+      }
     }
 
     if (proposal.actionType === 'PURGE') {
       lines.push(`> Channel: <#${proposal.payload?.channelId}>`);
       lines.push(`> Limit: \`${proposal.payload?.limit ?? 0} recent messages\``);
       lines.push(`> Filter: ${proposal.payload?.targetUserId ? `<@${proposal.payload.targetUserId}> only` : '`Any author`'}`);
+      lines.push('> Constraint: only messages younger than 14 days and not pinned are eligible.');
+    }
+
+    if (proposal.actionType === 'PURGE_USER_MESSAGES') {
+      const channels = Array.isArray(proposal.payload?.channels) ? proposal.payload.channels : [];
+      lines.push(`> Member: <@${proposal.payload?.targetUserId}> (\`${proposal.payload?.targetUserId}\`)`);
+      lines.push(`> Limit: \`${proposal.payload?.limit ?? 0} recent messages per channel\``);
+      lines.push(`> Channels: ${channels.length ? channels.map((channelId: string) => `<#${channelId}>`).join(', ') : '`All text channels`'}`);
       lines.push('> Constraint: only messages younger than 14 days and not pinned are eligible.');
     }
 
@@ -185,6 +206,9 @@ export class AgentActionRendererService {
     }
     if (actionType === 'SEND_ANNOUNCEMENT') {
       return { color: 0x5865f2, label: 'Send Announcement Proposal', category: 'Guild announcement action' };
+    }
+    if (actionType === 'PURGE_USER_MESSAGES') {
+      return { color: 0xe67e22, label: 'User Message Purge Proposal', category: 'Message cleanup action' };
     }
     if (actionType === 'PURGE' || actionType === 'UPDATE_SETTINGS') {
       return { color: 0x7f8c8d, label: 'Server Operations Proposal', category: 'Server operations action' };

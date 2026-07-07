@@ -104,9 +104,30 @@ export class AgentActionProposalService {
     if (input.recommendation.type === 'SEND_ANNOUNCEMENT') {
       payload.channelId = input.recommendation.channelId || input.channelId;
       payload.content = this.requireString(input.recommendation.content, 'content');
-      if (input.recommendation.title) {
-        payload.title = String(input.recommendation.title).trim();
-      }
+
+      const title = this.normalizeOptionalString(input.recommendation.title, 256);
+      if (title) payload.title = title;
+
+      const color = this.normalizeAnnouncementColor(input.recommendation.announcementColor);
+      if (color) payload.announcementColor = color;
+
+      const imageUrl = this.normalizeOptionalUrl(input.recommendation.announcementImageUrl, 'announcementImageUrl');
+      if (imageUrl) payload.announcementImageUrl = imageUrl;
+
+      const thumbnailUrl = this.normalizeOptionalUrl(input.recommendation.announcementThumbnailUrl, 'announcementThumbnailUrl');
+      if (thumbnailUrl) payload.announcementThumbnailUrl = thumbnailUrl;
+
+      const footer = this.normalizeOptionalString(input.recommendation.announcementFooter, 2048);
+      if (footer) payload.announcementFooter = footer;
+
+      payload.announcementPing = this.normalizeAnnouncementPing(input.recommendation.announcementPing);
+    }
+
+    if (input.recommendation.type === 'PURGE_USER_MESSAGES') {
+      payload.targetUserId = this.requireString(input.recommendation.purgeTargetUserId || input.targetUserId, 'targetUserId');
+      payload.limit = this.clampNumber(input.recommendation.purgeLimit || 50, 1, 100);
+      const channels = this.normalizeChannelIdList(input.recommendation.purgeUserChannels, 'purgeUserChannels');
+      if (channels) payload.channels = channels;
     }
 
     if (['MASS_TIMEOUT', 'MASS_KICK', 'MASS_BAN'].includes(input.recommendation.type)) {
@@ -246,23 +267,44 @@ export class AgentActionProposalService {
         message = `SET_SLOWMODE proposal executed. Slowmode for <#${channelId}> set to ${seconds} seconds.`;
       } else if (actionType === 'SEND_ANNOUNCEMENT') {
         const channelId = String(payload.channelId || proposal.channelId);
-        const channel = await guild.channels.fetch(channelId).catch(() => null);
+        const channel = await guild.channels.fetch(channelId).catch(() => null) as any;
         if (!channel || !channel.isTextBased()) {
           throw new BadRequestException('Channel is not text-based.');
         }
         const content = String(payload.content);
         const title = payload.title ? String(payload.title) : undefined;
-        if (title) {
-          const announcementEmbed = new EmbedBuilder()
-            .setColor(0x5865f2)
-            .setTitle(title)
-            .setDescription(content)
-            .setTimestamp();
-          await channel.send({ embeds: [announcementEmbed] });
-        } else {
-          await channel.send({ content });
+
+        const colorNum = payload.announcementColor
+          ? parseInt(String(payload.announcementColor).replace('#', ''), 16)
+          : 0x5865f2;
+
+        const announcementEmbed = new EmbedBuilder()
+          .setColor(colorNum)
+          .setDescription(content)
+          .setTimestamp();
+
+        if (title) announcementEmbed.setTitle(title);
+        if (payload.announcementImageUrl) announcementEmbed.setImage(payload.announcementImageUrl);
+        if (payload.announcementThumbnailUrl) announcementEmbed.setThumbnail(payload.announcementThumbnailUrl);
+        if (payload.announcementFooter) announcementEmbed.setFooter({ text: payload.announcementFooter });
+
+        let pingText = '';
+        if (payload.announcementPing === 'everyone') {
+          pingText = '@everyone';
+        } else if (payload.announcementPing === 'here') {
+          pingText = '@here';
         }
+
+        await channel.send({
+          content: pingText || undefined,
+          embeds: [announcementEmbed],
+          allowedMentions: { parse: ['everyone'] },
+        });
+
         message = `SEND_ANNOUNCEMENT proposal executed in <#${channelId}>.`;
+      } else if (actionType === 'PURGE_USER_MESSAGES') {
+        const result = await this.executePurgeUserMessages(guild, payload);
+        message = `PURGE_USER_MESSAGES executed. Deleted ${result.deletedCount} message(s) across ${result.channelCount} channel(s).${result.errors.length ? ` Errors: ${result.errors.slice(0, 3).join('; ')}` : ''}`;
       } else if (actionType === 'ADD_ROLE') {
         if (!target) throw new BadRequestException('Target member is not available in this server.');
         const role = await this.resolveManageableRole(guild, payload.roleId);
@@ -370,7 +412,7 @@ export class AgentActionProposalService {
       || (actionType === 'UPDATE_SETTINGS' && permissions.has(PermissionFlagsBits.ManageGuild))
       || (['KICK', 'MASS_KICK'].includes(actionType) && permissions.has(PermissionFlagsBits.KickMembers))
       || (['BAN', 'MASS_BAN'].includes(actionType) && permissions.has(PermissionFlagsBits.BanMembers))
-      || (['PURGE', 'LOCKDOWN', 'UNLOCK'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles))
+      || (['PURGE', 'LOCKDOWN', 'UNLOCK', 'PURGE_USER_MESSAGES'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles))
       || (actionType === 'SET_SLOWMODE' && (permissions.has(PermissionFlagsBits.ManageChannels) || permissions.has(PermissionFlagsBits.ModerateMembers)))
       || (actionType === 'SEND_ANNOUNCEMENT' && (permissions.has(PermissionFlagsBits.MentionEveryone) || permissions.has(PermissionFlagsBits.ManageMessages)))
       || (['ADD_ROLE', 'REMOVE_ROLE', 'MANAGE_STICKER'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles));
@@ -390,7 +432,7 @@ export class AgentActionProposalService {
     if (['BAN', 'MASS_BAN'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.BanMembers)) {
       throw new ForbiddenException('Bot needs Ban Members permission to execute ban proposals.');
     }
-    if (actionType === 'PURGE') {
+    if (['PURGE', 'PURGE_USER_MESSAGES'].includes(actionType)) {
       const permissions = channelId && typeof me.permissionsIn === 'function' ? me.permissionsIn(channelId) : me.permissions;
       if (!permissions.has(PermissionFlagsBits.ManageMessages)) {
         throw new ForbiddenException('Bot needs Manage Messages permission in that channel to execute purge proposals.');
@@ -445,16 +487,58 @@ export class AgentActionProposalService {
 
     const limit = this.clampNumber(payload.limit || 10, 1, MAX_PURGE_LIMIT);
     const fetched = await channel.messages.fetch({ limit });
+    const eligible = this.filterPurgeEligibleMessages(fetched, payload.targetUserId, limit);
+
+    if (!eligible.length) return { deletedCount: 0 };
+    const deleted = await channel.bulkDelete(eligible, true);
+    return { deletedCount: deleted.size };
+  }
+
+  private async executePurgeUserMessages(guild: any, payload: any) {
+    const targetUserId = this.requireString(payload.targetUserId, 'targetUserId');
+    const limit = this.clampNumber(payload.limit || 50, 1, MAX_PURGE_LIMIT);
+    let channelIds = Array.isArray(payload.channels) ? payload.channels : [];
+
+    if (!channelIds.length) {
+      await guild.channels.fetch();
+      channelIds = guild.channels.cache
+        .filter((channel: any) => channel && typeof channel.isTextBased === 'function' && channel.isTextBased() && typeof channel.bulkDelete === 'function')
+        .map((channel: any) => channel.id);
+    }
+
+    let deletedCount = 0;
+    let channelCount = 0;
+    const errors: string[] = [];
+
+    for (const channelId of channelIds) {
+      try {
+        const channel = await guild.channels.fetch(channelId).catch(() => null) as any;
+        if (!channel || typeof channel.bulkDelete !== 'function' || !channel.messages?.fetch) continue;
+
+        channelCount++;
+        const fetched = await channel.messages.fetch({ limit: MAX_PURGE_LIMIT });
+        const eligible = this.filterPurgeEligibleMessages(fetched, targetUserId, limit);
+        if (!eligible.length) continue;
+
+        const deleted = await channel.bulkDelete(eligible, true);
+        deletedCount += deleted.size;
+      } catch (err: any) {
+        errors.push(`Channel ${channelId}: ${err?.message || String(err)}`);
+      }
+    }
+
+    return { deletedCount, channelCount, errors };
+  }
+
+  private filterPurgeEligibleMessages(messages: any, targetUserId: string | undefined, limit: number) {
     const cutoff = Date.now() - BULK_DELETE_MAX_AGE_MS;
-    const eligible = fetched.filter((message: any) => {
+    const eligible = messages.filter((message: any) => {
       if (message.createdTimestamp <= cutoff) return false;
-      if (payload.targetUserId && message.author?.id !== payload.targetUserId) return false;
+      if (targetUserId && message.author?.id !== targetUserId) return false;
       return !message.pinned;
     });
 
-    if (!eligible.size) return { deletedCount: 0 };
-    const deleted = await channel.bulkDelete(eligible, true);
-    return { deletedCount: deleted.size };
+    return Array.from(eligible.values()).slice(0, limit);
   }
 
   private async executeSettingsUpdate(guildId: string, rawSettings: AgentSettingsUpdate) {
@@ -524,6 +608,63 @@ export class AgentActionProposalService {
       throw new BadRequestException(`${field} is required.`);
     }
     return value.trim();
+  }
+
+  private normalizeOptionalString(value: unknown, maxLength: number) {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed ? trimmed.slice(0, maxLength) : undefined;
+  }
+
+  private normalizeOptionalUrl(value: unknown, field: string) {
+    const trimmed = this.normalizeOptionalString(value, 2048);
+    if (!trimmed) return undefined;
+
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      throw new BadRequestException(`${field} must be a valid HTTP(S) URL.`);
+    }
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new BadRequestException(`${field} must be a valid HTTP(S) URL.`);
+    }
+    return url.toString();
+  }
+
+  private normalizeAnnouncementColor(value: unknown) {
+    const trimmed = this.normalizeOptionalString(value, 16);
+    if (!trimmed) return undefined;
+    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+    if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+      throw new BadRequestException('announcementColor must be a hex color like #ffaa00.');
+    }
+    return normalized.toLowerCase();
+  }
+
+  private normalizeAnnouncementPing(value: unknown): 'none' | 'here' | 'everyone' {
+    if (value === undefined || value === null || value === '') return 'none';
+    if (value === 'none' || value === 'here' || value === 'everyone') return value;
+    throw new BadRequestException('announcementPing must be none, here, or everyone.');
+  }
+
+  private normalizeChannelIdList(value: unknown, field: string) {
+    if (value === undefined || value === null) return undefined;
+    if (!Array.isArray(value)) throw new BadRequestException(`${field} must be an array of channel IDs.`);
+
+    const seen = new Set<string>();
+    const channels = value
+      .filter((channelId) => typeof channelId === 'string' && channelId.trim())
+      .map((channelId) => channelId.trim())
+      .filter((channelId) => {
+        if (seen.has(channelId)) return false;
+        seen.add(channelId);
+        return true;
+      });
+
+    if (channels.length > 100) throw new BadRequestException(`${field} cannot contain more than 100 channels.`);
+    return channels.length ? channels : undefined;
   }
 
   private normalizeAnomalyMode(value: string): 'AUDIT_ONLY' | 'DELETE_HIGH_CONFIDENCE' | 'DELETE_AND_TIMEOUT_CRITICAL' {

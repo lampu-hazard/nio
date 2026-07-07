@@ -9,6 +9,7 @@ import { AgentActionRendererService } from './agent-action-renderer.service';
 import { GeminiProvider } from './providers/gemini.provider';
 import { AiProvider } from './interfaces/ai-provider.interface';
 import { AGENT_TOOLS } from './discord-agent-tools';
+import { ConversationMemoryService, ConversationTurn } from './conversation-memory.service';
 
 const DEFAULT_SYSTEM_PROMPT = `Anda adalah AI Moderator Copilot untuk Discord server bernama nio.
 Tugas Anda adalah membantu mengelola server dengan mengecek histori pesan, riwayat warning, histori channel, role, channel, dan konfigurasi server.
@@ -54,6 +55,7 @@ export class DiscordAgentService {
     private readonly executor: DiscordAgentToolExecutorService,
     private readonly proposals: AgentActionProposalService,
     private readonly renderer: AgentActionRendererService,
+    private readonly memory: ConversationMemoryService,
   ) {}
 
   async handleMention(
@@ -61,6 +63,7 @@ export class DiscordAgentService {
     channelId: string,
     authorId: string,
     rawContent: string,
+    referencedBotMessageId?: string,
   ): Promise<any> {
     const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
     const isGlobalEnabled = process.env.DISCORD_AGENT_ENABLED === 'true';
@@ -85,7 +88,16 @@ export class DiscordAgentService {
     const systemPrompt = settings?.systemPrompt || loadDefaultSystemPrompt();
     const provider = this.getProvider(providerName, modelName);
 
-    const history: any[] = [];
+    let previousTurns: ConversationTurn[] = [];
+    if (referencedBotMessageId) {
+      previousTurns = await this.memory.loadHistory(guildId, referencedBotMessageId);
+    }
+
+    const history: any[] = previousTurns.flatMap((turn) => [
+      { role: 'user', parts: [{ text: turn.userPrompt }] },
+      { role: 'model', parts: [{ text: turn.aiResponse }] },
+    ]);
+
     let userPrompt = prompt;
     let iterations = 0;
     let finalContent = '';
@@ -102,8 +114,8 @@ export class DiscordAgentService {
         if (part?.functionCall) {
           const call = part.functionCall;
 
-          // Jika ini adalah turn pertama, simpan prompt user awal ke history agar runtut
-          if (history.length === 0) {
+          // Jika ini adalah turn pertama setelah loaded history, simpan prompt user awal ke history agar runtut
+          if (history.length === previousTurns.length * 2) {
             history.push({
               role: 'user',
               parts: [{ text: prompt }],
@@ -186,10 +198,19 @@ export class DiscordAgentService {
       },
     }).catch(() => null);
 
+    let conversationTurns: ConversationTurn[] | undefined = undefined;
+    if (!finalContent.startsWith('⚠️')) {
+      conversationTurns = [
+        ...previousTurns,
+        { userPrompt: prompt, aiResponse: finalContent, timestamp: Date.now() },
+      ];
+    }
+
     return {
       content: finalContent,
       ...(embeds ? { embeds } : {}),
       ...(components ? { components } : {}),
+      ...(conversationTurns ? { conversationTurns } : {}),
     };
   }
 

@@ -123,16 +123,16 @@ export class DiscordBotService implements OnModuleInit {
       );
     });
 
-    this.client.on(Events.MessageDeleteBulk, (messages) => {
+    this.client.on(Events.MessageBulkDelete, (messages) => {
       const messageIds = messages.map((m: any) => m.id);
       this.handleMessageDeleteBulk(messages).catch(
-        (err) => this.logger.error(`Message delete bulk log error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+        (err: any) => this.logger.error(`Message delete bulk log error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );
       this.messageLogs.prisma.discordMessageLog.updateMany({
         where: { id: { in: messageIds } },
         data: { deletedAt: new Date() },
       }).catch(
-        (err) => this.logger.error(`Message log bulk delete error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+        (err: any) => this.logger.error(`Message log bulk delete error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );
     });
 
@@ -289,7 +289,7 @@ export class DiscordBotService implements OnModuleInit {
       await logChannel.send({
         embeds: [embed],
         files: attachmentBuffers,
-      }).catch((err) => this.logger.error(`Failed to send message delete log: ${err.message}`, err.stack, 'DiscordBot'));
+      }).catch((err: any) => this.logger.error(`Failed to send message delete log: ${err.message}`, err.stack, 'DiscordBot'));
     } catch (err: any) {
       this.logger.error(`Error in handleMessageDelete: ${err.message}`, err.stack, 'DiscordBot');
     }
@@ -344,7 +344,7 @@ export class DiscordBotService implements OnModuleInit {
       await logChannel.send({
         content: `🗑️ **Bulk Message Deletion**\nChannel: <#${channelId}>\nDeleted: \`${dbLogs.length} messages\``,
         files: [{ attachment: buffer, name: `bulk-delete-log-${Date.now()}.txt` }],
-      }).catch((err) => this.logger.error(`Failed to send message delete bulk log: ${err.message}`, err.stack, 'DiscordBot'));
+      }).catch((err: any) => this.logger.error(`Failed to send message delete bulk log: ${err.message}`, err.stack, 'DiscordBot'));
     } catch (err: any) {
       this.logger.error(`Error in handleMessageDeleteBulk: ${err.message}`, err.stack, 'DiscordBot');
     }

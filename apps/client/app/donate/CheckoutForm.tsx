@@ -16,7 +16,7 @@ type CheckoutResponse = {
   transactionId?: string;
 };
 
-export function CheckoutForm({ guildId }: { guildId: string }) {
+export function CheckoutForm({ guildId, userId, username }: { guildId: string; userId?: string; username?: string }) {
   const [settings, setSettings] = useState<TakoSettings | null>(null);
   const [amount, setAmount] = useState<number>(10000);
   const [email, setEmail] = useState('');
@@ -33,7 +33,7 @@ export function CheckoutForm({ guildId }: { guildId: string }) {
     try {
       setLoading(true);
       setError('');
-      const res = await api<{ ok: boolean; settings: TakoSettings }>(`/guilds/${guildId}/tako/settings`);
+      const res = await api<{ ok: boolean; settings: TakoSettings }>(`/guilds/${guildId}/tako/public-settings`);
       if (!res.settings.enabled || !res.settings.rewardRoleId) {
         setError('Tako donation rewards are not enabled on this server.');
         return;
@@ -45,7 +45,7 @@ export function CheckoutForm({ guildId }: { guildId: string }) {
       }
     } catch (err: any) {
       const message = err?.message || 'Failed to load donation settings.';
-      if (message.toLowerCase().includes('login') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('access denied')) {
+      if (!userId && (message.toLowerCase().includes('login') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('access denied'))) {
         window.location.href = `/api/auth/discord?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
         return;
       }
@@ -69,7 +69,13 @@ export function CheckoutForm({ guildId }: { guildId: string }) {
       setError('');
       const res = await api<CheckoutResponse>(`/guilds/${guildId}/tako/checkout`, {
         method: 'POST',
-        body: JSON.stringify({ amount, email, paymentMethod }),
+        body: JSON.stringify({
+          amount,
+          email,
+          paymentMethod,
+          ...(userId ? { discordUserId: userId } : {}),
+          ...(username ? { discordUsername: username } : {}),
+        }),
       });
       window.location.href = res.paymentUrl;
     } catch (err: any) {

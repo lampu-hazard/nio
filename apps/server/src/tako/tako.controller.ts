@@ -29,18 +29,39 @@ export class TakoController {
   }
 
   @UseGuards(SessionAuthGuard)
+  @Get('public-settings')
+  async getPublicSettings(@Param('guildId') guildId: string) {
+    const settings = await this.takoService.getSettings(guildId);
+    return {
+      ok: true,
+      settings: {
+        enabled: settings.enabled,
+        minimumAmount: settings.minimumAmount,
+        paymentMethods: settings.paymentMethods,
+        rewardRoleId: settings.rewardRoleId,
+      },
+    };
+  }
+
   @Post('checkout')
   async createCheckout(
     @Param('guildId') guildId: string,
     @Body() dto: CheckoutTakoDto,
-    @CurrentUser() user: SessionUser,
+    @CurrentUser() user?: SessionUser,
   ) {
+    const userId = user?.id || dto.discordUserId;
+    const username = user?.username || dto.discordUsername;
+
+    if (!userId || !username) {
+      throw new BadRequestException('Discord user ID and username are required.');
+    }
+
     const checkout = await this.takoService.createCheckout(guildId, {
       amount: dto.amount,
       email: dto.email,
       paymentMethod: dto.paymentMethod,
-      discordUserId: user.id,
-      discordUsername: user.username,
+      discordUserId: userId,
+      discordUsername: username,
     });
     return { ok: true, ...checkout };
   }

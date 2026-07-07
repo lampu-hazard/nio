@@ -1,4 +1,4 @@
-import { IsEmail, IsInt, IsString, Min } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class CheckoutTakoDto {
   @IsInt()
@@ -10,4 +10,12 @@ export class CheckoutTakoDto {
 
   @IsString()
   paymentMethod!: string;
+
+  @IsOptional()
+  @IsString()
+  discordUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  discordUsername?: string;
 }

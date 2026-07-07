@@ -3,6 +3,8 @@ import { CheckoutForm } from './CheckoutForm';
 type PageProps = {
   searchParams: Promise<{
     guildId?: string;
+    userId?: string;
+    username?: string;
   }>;
 };
 
@@ -21,7 +23,11 @@ export default async function DonatePage({ searchParams }: PageProps) {
         </div>
 
         {params.guildId ? (
-          <CheckoutForm guildId={params.guildId} />
+          <CheckoutForm
+            guildId={params.guildId}
+            userId={params.userId}
+            username={params.username}
+          />
         ) : (
           <div className="notice notice-error">Missing Discord server ID. Please use the link provided by the bot.</div>
         )}

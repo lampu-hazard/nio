@@ -59,10 +59,12 @@ export class DiscordInteractionService {
 
           const url = process.env.FRONTEND_URL || 'http://localhost:3000';
           const minFormatted = settings.minimumAmount.toLocaleString('id-ID');
+          const userId = interaction.user.id;
+          const username = encodeURIComponent(interaction.user.username);
           await interaction.reply({
             embeds: [this.buildStatusEmbed(
               'Tako Donation Reward',
-              `Donate minimal **Rp${minFormatted}** via Tako to automatically receive the <@&${settings.rewardRoleId}> role!\n\n✦ [Click here to open donation page](${url}/donate?guildId=${guildId})`
+              `Donate minimal **Rp${minFormatted}** via Tako to automatically receive the <@&${settings.rewardRoleId}> role!\n\n✦ [Click here to open donation page](${url}/donate?guildId=${guildId}&userId=${userId}&username=${username})`
             )],
             ephemeral: true,
           });

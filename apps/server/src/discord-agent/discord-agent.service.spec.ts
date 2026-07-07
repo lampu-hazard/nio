@@ -37,7 +37,9 @@ describe('DiscordAgentService loop', () => {
 
   const mockMemory = {
     loadHistory: jest.fn(async (_guildId?: string, _botMessageId?: string): Promise<any[]> => []),
+    loadChannelHistory: jest.fn(async (_guildId?: string, _channelId?: string): Promise<any[]> => []),
     saveConversation: jest.fn(async (_guildId?: string, _botMessageId?: string, _turns?: any[]): Promise<void> => {}),
+    saveChannelConversation: jest.fn(async (_guildId?: string, _channelId?: string, _turns?: any[]): Promise<void> => {}),
   };
 
   beforeEach(async () => {
@@ -150,6 +152,30 @@ describe('DiscordAgentService loop', () => {
     expect(result.conversationTurns[0].userPrompt).toBe('previous question');
     expect(result.conversationTurns[1].userPrompt).toBe('continue');
     expect(result.conversationTurns[1].aiResponse).toBe('Continuing the conversation.');
+  });
+
+  it('loads channel history for fresh mentions without referencedBotMessageId', async () => {
+    (mockMemory.loadChannelHistory as any).mockResolvedValueOnce([
+      { userPrompt: 'cek user target', aiResponse: 'target user info', timestamp: 1000 },
+    ]);
+
+    const providerMock = {
+      generate: jest.fn(async () => ({
+        candidates: [{ content: { parts: [{ text: 'I understand dia as the previous target.' }] } }],
+      })),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> kamu to dia');
+
+    (expect(mockMemory.loadChannelHistory) as any).toHaveBeenCalledWith('guild-1', 'channel-1');
+    expect(mockMemory.loadHistory).not.toHaveBeenCalled();
+
+    const generateCall = (providerMock.generate as any).mock.calls[0];
+    const history = generateCall[2];
+    expect(history[0]).toEqual({ role: 'user', parts: [{ text: 'cek user target' }] });
+    expect(history[1]).toEqual({ role: 'model', parts: [{ text: 'target user info' }] });
+    expect(result.conversationTurns).toHaveLength(2);
   });
 
   it('starts fresh when loadHistory returns no turns', async () => {

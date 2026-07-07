@@ -91,6 +91,8 @@ export class DiscordAgentService {
     let previousTurns: ConversationTurn[] = [];
     if (referencedBotMessageId) {
       previousTurns = await this.memory.loadHistory(guildId, referencedBotMessageId);
+    } else {
+      previousTurns = await this.memory.loadChannelHistory(guildId, channelId);
     }
 
     const history: any[] = previousTurns.flatMap((turn) => [

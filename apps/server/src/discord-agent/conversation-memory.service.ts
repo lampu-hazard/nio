@@ -10,6 +10,7 @@ export interface ConversationTurn {
 export const MAX_TURNS = 20;
 export const TTL_SECONDS = 1800;
 export const KEY_PREFIX = 'agent:conv:';
+export const CHANNEL_KEY_PREFIX = 'agent:conv:last:';
 
 @Injectable()
 export class ConversationMemoryService implements OnModuleDestroy {
@@ -25,8 +26,24 @@ export class ConversationMemoryService implements OnModuleDestroy {
   }
 
   async loadHistory(guildId: string, botMessageId: string): Promise<ConversationTurn[]> {
+    return this.loadByKey(`${KEY_PREFIX}${guildId}:${botMessageId}`);
+  }
+
+  async saveConversation(guildId: string, botMessageId: string, turns: ConversationTurn[]): Promise<void> {
+    await this.saveByKey(`${KEY_PREFIX}${guildId}:${botMessageId}`, turns);
+  }
+
+  async loadChannelHistory(guildId: string, channelId: string): Promise<ConversationTurn[]> {
+    return this.loadByKey(`${CHANNEL_KEY_PREFIX}${guildId}:${channelId}`);
+  }
+
+  async saveChannelConversation(guildId: string, channelId: string, turns: ConversationTurn[]): Promise<void> {
+    await this.saveByKey(`${CHANNEL_KEY_PREFIX}${guildId}:${channelId}`, turns);
+  }
+
+  private async loadByKey(key: string): Promise<ConversationTurn[]> {
     try {
-      const raw = await this.redis.get(`${KEY_PREFIX}${guildId}:${botMessageId}`);
+      const raw = await this.redis.get(key);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
@@ -36,15 +53,10 @@ export class ConversationMemoryService implements OnModuleDestroy {
     }
   }
 
-  async saveConversation(guildId: string, botMessageId: string, turns: ConversationTurn[]): Promise<void> {
+  private async saveByKey(key: string, turns: ConversationTurn[]): Promise<void> {
     try {
       const trimmed = turns.length > MAX_TURNS ? turns.slice(turns.length - MAX_TURNS) : turns;
-      await this.redis.set(
-        `${KEY_PREFIX}${guildId}:${botMessageId}`,
-        JSON.stringify(trimmed),
-        'EX',
-        TTL_SECONDS,
-      );
+      await this.redis.set(key, JSON.stringify(trimmed), 'EX', TTL_SECONDS);
     } catch {
       // Graceful degradation: silently fail, conversation still works without persistence.
     }

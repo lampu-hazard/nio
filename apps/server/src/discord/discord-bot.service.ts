@@ -195,7 +195,7 @@ export class DiscordBotService implements OnModuleInit {
       createdAt: message.createdAt,
     });
 
-    if (!this.client.user || !message.mentions.has(this.client.user)) return;
+    if (!this.client.user) return;
 
     let referencedBotMessageId: string | undefined;
     if (message.reference?.messageId) {
@@ -208,6 +208,9 @@ export class DiscordBotService implements OnModuleInit {
         // If we can't fetch the referenced message, proceed without memory.
       }
     }
+
+    const isMentioningBot = message.mentions.has(this.client.user);
+    if (!isMentioningBot && !referencedBotMessageId) return;
 
     if (message.channel && typeof (message.channel as any).sendTyping === 'function') {
       await (message.channel as any).sendTyping().catch(() => null);
@@ -257,6 +260,12 @@ export class DiscordBotService implements OnModuleInit {
       await this.conversationMemory.saveConversation(
         message.guild.id,
         responseMessageId,
+        response.conversationTurns,
+      ).catch(() => null);
+
+      await this.conversationMemory.saveChannelConversation(
+        message.guild.id,
+        message.channel.id,
         response.conversationTurns,
       ).catch(() => null);
     }

@@ -167,24 +167,26 @@ export class TakoService {
         }),
       });
 
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(body?.message || body?.error || `Tako API returned status ${res.status}`);
+        throw new Error(`Tako API returned status ${res.status}: ${this.formatTakoError(body)}`);
       }
 
       const data = body as {
         statusCode?: number;
+        message?: unknown;
+        error?: unknown;
         result?: {
           success?: boolean;
           giftId?: string;
           transactionId?: string;
           paymentUrl?: string;
         };
-      };
-      const result = data.result;
+      } | null;
+      const result = data?.result;
 
       if (!result?.success || !result.paymentUrl) {
-        throw new Error('Failed to retrieve payment URL from Tako.');
+        throw new Error(`Failed to retrieve payment URL from Tako: ${this.formatTakoError(body)}`);
       }
 
       // Update donation dengan transaction ID
@@ -206,6 +208,22 @@ export class TakoService {
       });
       throw new BadRequestException(`Failed to create Tako payment checkout: ${err.message}`);
     }
+  }
+
+  private formatTakoError(body: unknown) {
+    if (!body) return 'empty response body';
+    if (typeof body === 'string') return body;
+    if (typeof body === 'object') {
+      const payload = body as any;
+      if (typeof payload.message === 'string') return payload.message;
+      if (typeof payload.error === 'string') return payload.error;
+      try {
+        return JSON.stringify(payload);
+      } catch {
+        return String(payload);
+      }
+    }
+    return String(body);
   }
 
   async handleWebhook(guildId: string, rawBody: string, signatureHeader?: string) {

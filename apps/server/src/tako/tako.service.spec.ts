@@ -40,6 +40,40 @@ describe('TakoService direct donation notifications', () => {
 });
 
 describe('TakoService checkout API', () => {
+  it('formats Tako object error responses instead of [object Object]', async () => {
+    const prisma = {
+      takoIntegration: {
+        findUnique: jest.fn(async () => ({
+          enabled: true,
+          apiKey: 'api-key',
+          creatorSlug: 'creator',
+          rewardRoleId: 'role-1',
+          minimumAmount: 10000,
+          paymentMethods: ['qris'],
+        })),
+      },
+      takoDonation: {
+        create: jest.fn(async () => ({ id: 'donation-1' })),
+        update: jest.fn(async () => ({})),
+      },
+    };
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ message: { code: 'VALIDATION_ERROR', details: ['Invalid email'] } }),
+    })) as any;
+
+    const service = new TakoService(prisma as any);
+
+    await expect(service.createCheckout('guild-1', {
+      amount: 10000,
+      email: 'bad-email',
+      paymentMethod: 'qris',
+      discordUserId: 'user-1',
+      discordUsername: 'User',
+    })).rejects.toThrow('Tako API returned status 400: {"message":{"code":"VALIDATION_ERROR","details":["Invalid email"]}}');
+  });
+
   it('creates checkout through Tako API v1 and reads result payload', async () => {
     const prisma = {
       takoIntegration: {

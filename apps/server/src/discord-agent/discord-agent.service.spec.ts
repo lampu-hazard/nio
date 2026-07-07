@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DiscordAgentService } from './discord-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,18 +12,18 @@ describe('DiscordAgentService loop', () => {
 
   const mockPrisma = {
     discordAgentSettings: {
-      findUnique: jest.fn().mockResolvedValue({
+      findUnique: jest.fn(async () => ({
         enabled: true,
         allowedUserIds: ['admin-1'],
         provider: 'gemini',
         model: 'gemini-2.5-flash',
-      }),
+      })),
     },
-    agentInteractionLog: { create: jest.fn().mockResolvedValue({}) },
+    agentInteractionLog: { create: jest.fn(async () => ({})) },
   };
 
   const mockExecutor = {
-    execute: jest.fn(),
+    execute: jest.fn(async (): Promise<any> => null),
   };
 
   const mockProposals = {
@@ -30,7 +31,7 @@ describe('DiscordAgentService loop', () => {
   };
 
   const mockRenderer = {
-    renderProposalMessage: jest.fn().mockReturnValue({ embeds: [], components: [] }),
+    renderProposalMessage: jest.fn(() => ({ embeds: [], components: [] })),
   };
 
   beforeEach(async () => {
@@ -70,17 +71,17 @@ describe('DiscordAgentService loop', () => {
 
     let callCount = 0;
     const providerMock = {
-      generate: jest.fn().mockImplementation(() => {
+      generate: jest.fn(async () => {
         const res = mockResponses[callCount];
         callCount++;
-        return Promise.resolve(res);
+        return res;
       }),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
-    mockExecutor.execute.mockResolvedValue([{ id: 'warn-1' }]);
+    mockExecutor.execute.mockImplementation(async () => [{ id: 'warn-1' }]);
 
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '@nio cek warnings user-1');
     expect(result.content).toBe('User has 0 warnings. No action needed.');
-    expect(mockExecutor.execute).toHaveBeenCalledWith('get_user_warnings', { targetUserId: 'user-1' }, { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' });
+    (expect(mockExecutor.execute) as any).toHaveBeenCalledWith('get_user_warnings', { targetUserId: 'user-1' }, { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' });
   });
 });

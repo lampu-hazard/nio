@@ -73,7 +73,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'warn_user',
-    description: 'Create a proposal to warn a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to warn a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -85,7 +85,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'timeout_user',
-    description: 'Create a proposal to timeout a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to timeout a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -98,7 +98,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'kick_user',
-    description: 'Create a proposal to kick a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to kick a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -110,7 +110,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'ban_user',
-    description: 'Create a proposal to ban a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to ban a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -123,7 +123,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'purge_channel_messages',
-    description: 'Create a proposal to bulk delete recent channel messages. Requires moderator approval before execution.',
+    description: 'Create a proposal to bulk delete recent channel messages. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -137,7 +137,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'add_role_to_user',
-    description: 'Create a proposal to add a role to a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to add a role to a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -150,7 +150,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'remove_role_from_user',
-    description: 'Create a proposal to remove a role from a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to remove a role from a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -163,7 +163,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'remove_timeout_user',
-    description: 'Create a proposal to remove an active timeout from a user. Requires moderator approval before execution.',
+    description: 'Create a proposal to remove an active timeout from a user. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -175,7 +175,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'revoke_warning',
-    description: 'Create a proposal to delete a warning record by warning ID. Requires moderator approval before execution.',
+    description: 'Create a proposal to delete a warning record by warning ID. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -195,7 +195,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'update_server_settings',
-    description: 'Create a proposal to update guild settings. Requires moderator approval before execution.',
+    description: 'Create a proposal to update guild settings. Creates an action card before execution.',
     parameters: {
       type: 'OBJECT',
       properties: {

@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
@@ -9,12 +11,40 @@ import { AiProvider } from './interfaces/ai-provider.interface';
 import { AGENT_TOOLS } from './discord-agent-tools';
 
 const DEFAULT_SYSTEM_PROMPT = `Anda adalah AI Moderator Copilot untuk Discord server bernama nio.
-Tugas Anda adalah membantu moderator manusia mengelola server dengan mengecek histori pesan, riwayat warning, histori channel, role, channel, dan konfigurasi server.
+Tugas Anda adalah membantu mengelola server dengan mengecek histori pesan, riwayat warning, histori channel, role, channel, dan konfigurasi server.
 
 Gunakan tool baca yang tersedia untuk mengumpulkan fakta sebelum menyimpulkan jawaban atau mengusulkan tindakan.
-Jika perlu mengusulkan moderasi (warn/timeout/kick/ban/purge), add/remove role, remove timeout, revoke warning, atau perubahan setting, panggil tool penulisan yang sesuai. Tool penulisan tersebut hanya membuat proposal dan membutuhkan persetujuan moderator sebelum dieksekusi.
-Jangan pernah menyatakan tindakan destruktif sudah dilakukan sebelum proposal disetujui dan dieksekusi. Pilih tindakan paling ringan yang efektif berdasarkan bukti.
+Jika perlu mengusulkan moderasi (warn/timeout/kick/ban/purge), add/remove role, remove timeout, revoke warning, atau perubahan setting, panggil tool penulisan yang sesuai. Tool penulisan tersebut hanya membuat proposal dan perlu di-execute lewat kartu aksi.
+Jangan pernah menyatakan tindakan destruktif sudah dilakukan sebelum kartu aksi dieksekusi. Pilih tindakan paling ringan yang efektif berdasarkan bukti.
 Jawab secara ringkas dan bersahabat dalam bahasa Indonesia.`;
+
+let cachedDefaultSystemPrompt: string | null = null;
+
+function loadDefaultSystemPrompt() {
+  if (cachedDefaultSystemPrompt) return cachedDefaultSystemPrompt;
+
+  const candidates = [
+    path.resolve(process.cwd(), 'system-prompt.md'),
+    path.resolve(process.cwd(), 'apps/server/system-prompt.md'),
+    path.resolve(__dirname, '../../system-prompt.md'),
+    path.resolve(__dirname, '../system-prompt.md'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const prompt = fs.readFileSync(candidate, 'utf8').trim();
+      if (prompt) {
+        cachedDefaultSystemPrompt = prompt;
+        return cachedDefaultSystemPrompt;
+      }
+    } catch {
+      // Try the next runtime path, then fall back to the built-in prompt.
+    }
+  }
+
+  cachedDefaultSystemPrompt = DEFAULT_SYSTEM_PROMPT;
+  return cachedDefaultSystemPrompt;
+}
 
 @Injectable()
 export class DiscordAgentService {
@@ -52,7 +82,7 @@ export class DiscordAgentService {
 
     const providerName = settings?.provider || process.env.DISCORD_AGENT_PROVIDER || 'gemini';
     const modelName = settings?.model || process.env.DISCORD_AGENT_MODEL || 'gemini-2.5-flash';
-    const systemPrompt = settings?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    const systemPrompt = settings?.systemPrompt || loadDefaultSystemPrompt();
     const provider = this.getProvider(providerName, modelName);
 
     const history: any[] = [];

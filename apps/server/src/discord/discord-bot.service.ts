@@ -184,7 +184,7 @@ export class DiscordBotService implements OnModuleInit {
     }
 
     const loadingMessage = await message.reply({
-      content: `<@${message.author.id}> nio sedang membaca konteks dan menyiapkan jawaban...`,
+      content: '**nio** sedang membaca konteks...\n-# Meninjau riwayat channel, warning, role, dan tool yang relevan.',
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     }).catch(() => null);
 

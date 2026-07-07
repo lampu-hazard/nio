@@ -150,12 +150,13 @@ export class TakoService {
     });
 
     try {
-      // Panggil Tako API
-      const res = await fetch(`https://tako.id/api/gift/${integration.creatorSlug}`, {
+      // Panggil Tako API v1
+      const res = await fetch(`https://tako.id/api/v1/gift/${integration.creatorSlug}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${integration.apiKey}`,
+          'User-Agent': process.env.TAKO_USER_AGENT || 'nio/1.0',
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           name: input.discordUsername,
@@ -166,26 +167,36 @@ export class TakoService {
         }),
       });
 
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.message || `Tako API returned status ${res.status}`);
+        throw new Error(body?.message || body?.error || `Tako API returned status ${res.status}`);
       }
 
-      const data = await res.json() as { success: boolean; transactionId?: string; paymentUrl?: string };
+      const data = body as {
+        statusCode?: number;
+        result?: {
+          success?: boolean;
+          giftId?: string;
+          transactionId?: string;
+          paymentUrl?: string;
+        };
+      };
+      const result = data.result;
 
-      if (!data.success || !data.paymentUrl) {
+      if (!result?.success || !result.paymentUrl) {
         throw new Error('Failed to retrieve payment URL from Tako.');
       }
 
       // Update donation dengan transaction ID
       await this.prisma.takoDonation.update({
         where: { id: donation.id },
-        data: { transactionId: data.transactionId },
+        data: { transactionId: result.transactionId },
       });
 
       return {
-        paymentUrl: data.paymentUrl,
-        transactionId: data.transactionId,
+        paymentUrl: result.paymentUrl,
+        transactionId: result.transactionId,
+        giftId: result.giftId,
       };
     } catch (err: any) {
       this.logger?.error(`Tako checkout creation failed: ${err.message}`, err.stack, 'TakoService');

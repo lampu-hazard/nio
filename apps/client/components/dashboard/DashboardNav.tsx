@@ -2,7 +2,7 @@
 
 type DashboardNavProps = {
   guildId: string;
-  activeTab: 'panels' | 'analytics' | 'audit-logs' | 'settings' | 'stickers' | 'moderation' | 'booster-roles';
+  activeTab: 'panels' | 'analytics' | 'audit-logs' | 'settings' | 'stickers' | 'moderation' | 'booster-roles' | 'leaderboard';
 };
 
 export function DashboardNav({ guildId, activeTab }: DashboardNavProps) {
@@ -12,6 +12,7 @@ export function DashboardNav({ guildId, activeTab }: DashboardNavProps) {
     { id: 'moderation' as const, label: 'Moderation', href: `/dashboard/${guildId}/moderation` },
     { id: 'booster-roles' as const, label: 'Booster Roles', href: `/dashboard/${guildId}/booster-roles` },
     { id: 'analytics' as const, label: 'Analytics', href: `/dashboard/${guildId}/analytics` },
+    { id: 'leaderboard' as const, label: 'Leaderboard', href: `/leaderboard/${guildId}` },
     { id: 'audit-logs' as const, label: 'Audit Logs', href: `/dashboard/${guildId}/audit-logs` },
     { id: 'settings' as const, label: 'Settings', href: `/dashboard/${guildId}/settings` },
   ];

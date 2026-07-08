@@ -13,6 +13,7 @@ import { ModerationModule } from './moderation/moderation.module';
 import { BoosterRoleModule } from './booster-role/booster-role.module';
 import { TakoModule } from './tako/tako.module';
 import { DiscordAgentModule } from './discord-agent/discord-agent.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { DiscordAgentModule } from './discord-agent/discord-agent.module';
     BoosterRoleModule,
     TakoModule,
     DiscordAgentModule,
+    LeaderboardModule,
   ],
 })
 export class AppModule {}

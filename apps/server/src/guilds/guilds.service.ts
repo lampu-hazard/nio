@@ -66,9 +66,25 @@ export class GuildsService {
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
   }
 
-  async getAuditLogs(guildId: string) {
+  async getAuditLogs(guildId: string, query: { userId?: string; excludeSystem?: string; action?: string } = {}) {
+    const where: any = { guildId };
+
+    if (query.userId) {
+      where.userId = query.userId;
+    }
+
+    if (query.action) {
+      where.action = query.action;
+    }
+
+    if (query.excludeSystem === 'true') {
+      where.action = {
+        notIn: ['SLOWMODE_LEVEL_CHANGED'],
+      };
+    }
+
     return this.prisma.auditLog.findMany({
-      where: { guildId },
+      where,
       include: {
         user: {
           select: {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Req, UseGuards, Query } from '@nestjs/common';
 import { Request } from 'express';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { GuildAccessGuard } from './guards/guild-access.guard';
@@ -27,8 +27,13 @@ export class GuildsController {
 
   @UseGuards(GuildAccessGuard)
   @Get(':guildId/audit-logs')
-  async auditLogs(@Param('guildId') guildId: string) {
-    return { ok: true, auditLogs: await this.guilds.getAuditLogs(guildId) };
+  async auditLogs(
+    @Param('guildId') guildId: string,
+    @Query('userId') userId?: string,
+    @Query('excludeSystem') excludeSystem?: string,
+    @Query('action') action?: string,
+  ) {
+    return { ok: true, auditLogs: await this.guilds.getAuditLogs(guildId, { userId, excludeSystem, action }) };
   }
 
   @UseGuards(GuildAccessGuard)

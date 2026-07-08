@@ -31,6 +31,7 @@ model Guild {
   takoIntegration TakoIntegration?
   takoDonations   TakoDonation[]
   userNotes       UserNote[]
+  voiceSessions   VoiceSession[]
 }
 
 model GuildSettings {
@@ -350,3 +351,22 @@ model UserNote {
   @@index([userId])
 }
 
+model VoiceSession {
+  id        String    @id @default(cuid())
+  guildId   String
+  userId    String
+  channelId String
+  joinedAt  DateTime
+  leftAt    DateTime?
+  duration  Int?      // Duration in seconds
+  createdAt DateTime  @default(now())
+
+  guild     Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+  @@index([userId])
+  @@index([joinedAt])
+}
+
+
+1111

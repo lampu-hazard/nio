@@ -77,6 +77,12 @@ export class DiscordBotService implements OnModuleInit {
       );
     });
 
+    this.client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+      this.handleVoiceStateUpdate(oldState, newState).catch(
+        (err) => this.logger.error(`Voice state update error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
     this.client.on('messageCreate', (message) => {
       this.slowmode.handleMessage(message).catch(
         (err) => this.logger.error(`Slowmode service error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
@@ -387,5 +393,70 @@ export class DiscordBotService implements OnModuleInit {
   private isBoosting(member: GuildMember) {
     const premiumRoleId = member.guild.roles.premiumSubscriberRole?.id;
     return Boolean(member.premiumSince || (premiumRoleId && member.roles.cache.has(premiumRoleId)));
+  }
+
+  private async handleVoiceStateUpdate(oldState: any, newState: any) {
+    const member = newState.member || oldState.member;
+    if (!member || member.user.bot || !newState.guild) return;
+
+    const guildId = newState.guild.id;
+    const userId = member.id;
+
+    const oldChannelId = oldState.channelId;
+    const newChannelId = newState.channelId;
+
+    // Case 1: Join Voice
+    if (!oldChannelId && newChannelId) {
+      await this.messageLogs.prisma.voiceSession.create({
+        data: {
+          guildId,
+          userId,
+          channelId: newChannelId,
+          joinedAt: new Date(),
+        },
+      }).catch(() => null);
+    }
+    // Case 2: Leave Voice
+    else if (oldChannelId && !newChannelId) {
+      await this.closeActiveVoiceSession(guildId, userId);
+    }
+    // Case 3: Move Channels
+    else if (oldChannelId && newChannelId && oldChannelId !== newChannelId) {
+      await this.closeActiveVoiceSession(guildId, userId);
+      await this.messageLogs.prisma.voiceSession.create({
+        data: {
+          guildId,
+          userId,
+          channelId: newChannelId,
+          joinedAt: new Date(),
+        },
+      }).catch(() => null);
+    }
+  }
+
+  private async closeActiveVoiceSession(guildId: string, userId: string) {
+    const activeSession = await this.messageLogs.prisma.voiceSession.findFirst({
+      where: {
+        guildId,
+        userId,
+        leftAt: null,
+      },
+      orderBy: {
+        joinedAt: 'desc',
+      },
+    });
+
+    if (activeSession) {
+      const now = new Date();
+      const durationSeconds = Math.max(0, Math.floor((now.getTime() - activeSession.joinedAt.getTime()) / 1000));
+
+      await this.messageLogs.prisma.voiceSession.update({
+        where: { id: activeSession.id },
+        data: {
+          leftAt: now,
+          duration: durationSeconds,
+        },
+      }).catch(() => null);
+    }
   }
 }

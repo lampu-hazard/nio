@@ -316,4 +316,46 @@ describe('GuildsService', () => {
       });
     });
   });
+
+  describe('getAuditLogs', () => {
+    beforeEach(() => {
+      prisma.auditLog = {
+        findMany: jest.fn(async () => []),
+      };
+    });
+
+    it('queries audit logs with basic guild filter', async () => {
+      await service.getAuditLogs('guild-1', {});
+
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { guildId: 'guild-1' },
+        orderBy: { createdAt: 'desc' },
+      }));
+    });
+
+    it('queries with user and action filters', async () => {
+      await service.getAuditLogs('guild-1', { userId: 'user-1', action: 'PANEL_CREATE' });
+
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          guildId: 'guild-1',
+          userId: 'user-1',
+          action: 'PANEL_CREATE',
+        },
+      }));
+    });
+
+    it('queries excluding system actions when excludeSystem is true', async () => {
+      await service.getAuditLogs('guild-1', { excludeSystem: 'true' });
+
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          guildId: 'guild-1',
+          action: {
+            notIn: ['SLOWMODE_LEVEL_CHANGED'],
+          },
+        },
+      }));
+    });
+  });
 });

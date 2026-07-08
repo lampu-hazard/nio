@@ -367,6 +367,3 @@ model VoiceSession {
   @@index([userId])
   @@index([joinedAt])
 }
-
-
-1111

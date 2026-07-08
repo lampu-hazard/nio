@@ -5,7 +5,6 @@ import { GuildAccessGuard } from '../guilds/guards/guild-access.guard';
 import { BoosterRoleService } from './booster-role.service';
 import { ClaimRoleDto } from './dto/claim-role.dto';
 
-@UseGuards(SessionAuthGuard)
 @Controller('guilds/:guildId/booster-role')
 export class BoosterRoleController {
   constructor(private readonly boosterRoles: BoosterRoleService) {}
@@ -14,10 +13,9 @@ export class BoosterRoleController {
   async validateToken(
     @Param('guildId') guildId: string,
     @Query('token') token: string,
-    @CurrentUser() user: SessionUser,
   ) {
     if (!token) throw new BadRequestException('Missing booster role token.');
-    const validation = await this.boosterRoles.validateToken(guildId, token, user.id);
+    const validation = await this.boosterRoles.validateToken(guildId, token);
     return { ok: true, validation };
   }
 
@@ -25,9 +23,8 @@ export class BoosterRoleController {
   async claimRole(
     @Param('guildId') guildId: string,
     @Body() dto: ClaimRoleDto,
-    @CurrentUser() user: SessionUser,
   ) {
-    const role = await this.boosterRoles.claimRole(guildId, dto.token, user.id, dto.name, {
+    const role = await this.boosterRoles.claimRole(guildId, dto.token, dto.name, {
       primaryColor: dto.primaryColor || dto.color || '#ffffff',
       secondaryColor: dto.secondaryColor,
       tertiaryColor: dto.tertiaryColor,

@@ -142,12 +142,26 @@ describe('BoosterRoleService', () => {
     };
     guild.roles.fetch.mockResolvedValue(role);
 
-    await service.claimRole('guild-1', 'claim-token', 'user-1', 'New Name', { primaryColor: '#abcdef' });
+    await service.claimRole('guild-1', 'claim-token', 'New Name', { primaryColor: '#abcdef' });
 
     expect(guild.roles.create).not.toHaveBeenCalled();
     (expect(role.edit) as any).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Name', colors: { primaryColor: 0xabcdef } }));
     expect(prisma.boosterCustomRole.upsert).toHaveBeenCalledWith(expect.objectContaining({
       update: expect.objectContaining({ roleId: 'role-1', name: 'New Name', color: '#abcdef', primaryColor: '#abcdef' }),
     }));
+  });
+
+  it('validates a token purely based on database record without session user', async () => {
+    prisma.boosterRoleClaimToken.findUnique.mockResolvedValue({
+      token: 'claim-token',
+      guildId: 'guild-1',
+      userId: 'user-1',
+      expiresAt: new Date(Date.now() + 10000),
+    });
+    guild.members.fetch.mockResolvedValue(makeMember({ booster: true }));
+
+    const result = await service.validateToken('guild-1', 'claim-token');
+
+    expect(result.userId).toBe('user-1');
   });
 });

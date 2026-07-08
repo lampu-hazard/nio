@@ -61,15 +61,14 @@ export class BoosterRoleService {
     });
   }
 
-  async validateToken(guildId: string, token: string, sessionUserId: string): Promise<BoosterRoleTokenValidation> {
+  async validateToken(guildId: string, token: string): Promise<BoosterRoleTokenValidation> {
     const claim = await this.prisma.boosterRoleClaimToken.findUnique({ where: { token } });
     if (!claim || claim.guildId !== guildId) throw new NotFoundException('Invalid booster role link.');
-    if (claim.userId !== sessionUserId) throw new ForbiddenException('This booster role link belongs to another user.');
     if (claim.expiresAt.getTime() < Date.now()) throw new ForbiddenException('This booster role link has expired.');
 
-    await this.assertActiveBooster(guildId, sessionUserId);
+    await this.assertActiveBooster(guildId, claim.userId);
     const existingRole = await this.prisma.boosterCustomRole.findUnique({
-      where: { guildId_userId: { guildId, userId: sessionUserId } },
+      where: { guildId_userId: { guildId, userId: claim.userId } },
       select: {
         roleId: true,
         name: true,
@@ -83,7 +82,7 @@ export class BoosterRoleService {
 
     return {
       guildId,
-      userId: sessionUserId,
+      userId: claim.userId,
       expiresAt: claim.expiresAt,
       existingRole,
     };
@@ -92,22 +91,25 @@ export class BoosterRoleService {
   async claimRole(
     guildId: string,
     token: string,
-    sessionUserId: string,
     name: string,
     style: RoleStyleInput,
   ) {
     const normalizedName = name.trim();
     const normalizedStyle = this.normalizeStyle(style);
     this.validateRoleInput(normalizedName, normalizedStyle);
-    await this.validateToken(guildId, token, sessionUserId);
+    await this.validateToken(guildId, token);
+
+    const claim = await this.prisma.boosterRoleClaimToken.findUnique({ where: { token } });
+    if (!claim) throw new NotFoundException('Booster role link not found.');
+    const targetUserId = claim.userId;
 
     const guild = await this.getClient().guilds.fetch(guildId);
-    const member = await guild.members.fetch(sessionUserId);
+    const member = await guild.members.fetch(targetUserId);
     const me = guild.members.me ?? await guild.members.fetchMe();
     this.assertCanManageRoles(me);
 
     const existing = await this.prisma.boosterCustomRole.findUnique({
-      where: { guildId_userId: { guildId, userId: sessionUserId } },
+      where: { guildId_userId: { guildId, userId: targetUserId } },
     });
 
     let role = existing ? await guild.roles.fetch(existing.roleId).catch(() => null) : null;
@@ -124,7 +126,7 @@ export class BoosterRoleService {
     if (!role) {
       role = await guild.roles.create({
         ...rolePayload,
-        reason: `Custom booster role for ${sessionUserId}`,
+        reason: `Custom booster role for ${targetUserId}`,
       }).catch((err) => this.rethrowDiscordRoleError(err));
       if (role.position >= me.roles.highest.position) {
         await role.delete('Custom booster role was created above the bot role.').catch(() => null);
@@ -133,7 +135,7 @@ export class BoosterRoleService {
     } else {
       await role.edit({
         ...rolePayload,
-        reason: `Custom booster role update for ${sessionUserId}`,
+        reason: `Custom booster role update for ${targetUserId}`,
       }).catch((err) => this.rethrowDiscordRoleError(err));
     }
 
@@ -144,7 +146,7 @@ export class BoosterRoleService {
 
     const iconUrl = role.iconURL?.({ size: 64 }) ?? null;
     const saved = await this.prisma.boosterCustomRole.upsert({
-      where: { guildId_userId: { guildId, userId: sessionUserId } },
+      where: { guildId_userId: { guildId, userId: targetUserId } },
       update: {
         roleId: role.id,
         name: normalizedName,
@@ -158,7 +160,7 @@ export class BoosterRoleService {
       },
       create: {
         guildId,
-        userId: sessionUserId,
+        userId: targetUserId,
         roleId: role.id,
         name: normalizedName,
         color: normalizedStyle.primaryColor,

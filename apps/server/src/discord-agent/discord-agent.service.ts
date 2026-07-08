@@ -103,10 +103,21 @@ export class DiscordAgentService {
     let finalContent = '';
     let proposalId: string | null = null;
 
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+
     while (iterations < 5) {
       iterations++;
       try {
         const response = await provider.generate(systemPrompt, userPrompt, history, AGENT_TOOLS);
+
+        const usage = response?.usageMetadata;
+        if (usage) {
+          promptTokens += usage.promptTokenCount || 0;
+          completionTokens += usage.candidatesTokenCount || 0;
+          totalTokens += usage.totalTokenCount || 0;
+        }
         const candidate = response.candidates?.[0];
         const content = candidate?.content;
         const part = content?.parts?.[0];
@@ -195,6 +206,9 @@ export class DiscordAgentService {
         prompt,
         response: finalContent,
         status: finalContent.startsWith('⚠️') ? 'FAILED' : 'SUCCESS',
+        promptTokens,
+        completionTokens,
+        totalTokens,
       },
     }).catch(() => null);
 

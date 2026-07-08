@@ -295,6 +295,11 @@ model AgentInteractionLog {
   error        String?
   createdAt    DateTime @default(now())
 
+  // Token usage fields
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+
   @@index([guildId, createdAt])
   @@index([guildId, userId, createdAt])
   @@index([guildId, targetUserId, createdAt])

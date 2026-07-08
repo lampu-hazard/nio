@@ -20,7 +20,14 @@ describe('DiscordAgentService loop', () => {
         model: 'gemini-2.5-flash',
       })),
     },
-    agentInteractionLog: { create: jest.fn(async () => ({})) },
+    agentInteractionLog: {
+      create: jest.fn(async (params: any) => {
+        expect(params.data).toHaveProperty('promptTokens');
+        expect(params.data).toHaveProperty('completionTokens');
+        expect(params.data).toHaveProperty('totalTokens');
+        return {};
+      }),
+    },
   };
 
   const mockExecutor = {
@@ -58,7 +65,7 @@ describe('DiscordAgentService loop', () => {
     service = module.get(DiscordAgentService);
   });
 
-  it('runs tool execution loop and returns final reply', async () => {
+  it('runs tool execution loop and returns final reply accumulating tokens', async () => {
     const mockResponses = [
       {
         candidates: [{
@@ -67,14 +74,24 @@ describe('DiscordAgentService loop', () => {
               functionCall: { name: 'get_user_warnings', args: { targetUserId: 'user-1' } }
             }]
           }
-        }]
+        }],
+        usageMetadata: {
+          promptTokenCount: 150,
+          candidatesTokenCount: 30,
+          totalTokenCount: 180,
+        },
       },
       {
         candidates: [{
           content: {
             parts: [{ text: 'User has 0 warnings. No action needed.' }]
           }
-        }]
+        }],
+        usageMetadata: {
+          promptTokenCount: 250,
+          candidatesTokenCount: 20,
+          totalTokenCount: 270,
+        },
       }
     ];
 
@@ -92,12 +109,26 @@ describe('DiscordAgentService loop', () => {
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '@nio cek warnings user-1');
     expect(result.content).toBe('User has 0 warnings. No action needed.');
     (expect(mockExecutor.execute) as any).toHaveBeenCalledWith('get_user_warnings', { targetUserId: 'user-1' }, { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' });
+    expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          promptTokens: 400,
+          completionTokens: 50,
+          totalTokens: 450,
+        }),
+      })
+    );
   });
 
-  it('returns conversationTurns with new exchange on success', async () => {
+  it('returns conversationTurns with new exchange on success and logs token usage', async () => {
     const providerMock = {
       generate: jest.fn(async () => ({
         candidates: [{ content: { parts: [{ text: 'Sure, here is the info.' }] } }],
+        usageMetadata: {
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          totalTokenCount: 150,
+        },
       })),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
@@ -110,6 +141,15 @@ describe('DiscordAgentService loop', () => {
       aiResponse: 'Sure, here is the info.',
       timestamp: expect.any(Number),
     });
+    expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+        }),
+      })
+    );
   });
 
   it('does not return conversationTurns on error response', async () => {

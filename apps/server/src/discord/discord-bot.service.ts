@@ -262,12 +262,6 @@ export class DiscordBotService implements OnModuleInit {
         responseMessageId,
         response.conversationTurns,
       ).catch(() => null);
-
-      await this.conversationMemory.saveChannelConversation(
-        message.guild.id,
-        message.channel.id,
-        response.conversationTurns,
-      ).catch(() => null);
     }
   }
 

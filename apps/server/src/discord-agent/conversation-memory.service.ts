@@ -10,7 +10,6 @@ export interface ConversationTurn {
 export const MAX_TURNS = 20;
 export const TTL_SECONDS = 1800;
 export const KEY_PREFIX = 'agent:conv:';
-export const CHANNEL_KEY_PREFIX = 'agent:conv:last:';
 
 @Injectable()
 export class ConversationMemoryService implements OnModuleDestroy {
@@ -33,13 +32,6 @@ export class ConversationMemoryService implements OnModuleDestroy {
     await this.saveByKey(`${KEY_PREFIX}${guildId}:${botMessageId}`, turns);
   }
 
-  async loadChannelHistory(guildId: string, channelId: string): Promise<ConversationTurn[]> {
-    return this.loadByKey(`${CHANNEL_KEY_PREFIX}${guildId}:${channelId}`);
-  }
-
-  async saveChannelConversation(guildId: string, channelId: string, turns: ConversationTurn[]): Promise<void> {
-    await this.saveByKey(`${CHANNEL_KEY_PREFIX}${guildId}:${channelId}`, turns);
-  }
 
   private async loadByKey(key: string): Promise<ConversationTurn[]> {
     try {

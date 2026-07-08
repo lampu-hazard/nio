@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { ConversationMemoryService, ConversationTurn, MAX_TURNS, TTL_SECONDS, KEY_PREFIX, CHANNEL_KEY_PREFIX } from './conversation-memory.service';
+import { ConversationMemoryService, ConversationTurn, MAX_TURNS, TTL_SECONDS, KEY_PREFIX } from './conversation-memory.service';
 
 const mockRedisInstance = {
   get: jest.fn(async (_key: string): Promise<string | null> => null),
@@ -100,32 +100,6 @@ describe('ConversationMemoryService', () => {
     ]);
   });
 
-  it('loads channel history using channel last key', async () => {
-    const turns: ConversationTurn[] = [
-      { userPrompt: 'cek user', aiResponse: 'user info', timestamp: 1000 },
-    ];
-    mockRedisInstance.get.mockResolvedValueOnce(JSON.stringify(turns));
-
-    const result = await service.loadChannelHistory('guild-1', 'channel-1');
-
-    expect(result).toEqual(turns);
-    expect(mockRedisInstance.get).toHaveBeenCalledWith(`${CHANNEL_KEY_PREFIX}guild-1:channel-1`);
-  });
-
-  it('saves channel history with TTL', async () => {
-    const turns: ConversationTurn[] = [
-      { userPrompt: 'cek user', aiResponse: 'user info', timestamp: 1000 },
-    ];
-
-    await service.saveChannelConversation('guild-1', 'channel-1', turns);
-
-    expect(mockRedisInstance.set).toHaveBeenCalledWith(
-      `${CHANNEL_KEY_PREFIX}guild-1:channel-1`,
-      JSON.stringify(turns),
-      'EX',
-      TTL_SECONDS,
-    );
-  });
 
   it('disconnects Redis on module destroy', async () => {
     await service.onModuleDestroy();

@@ -33,6 +33,7 @@
     "express-session": "latest",
     "ioredis": "^5.11.1",
     "nest-winston": "latest",
+    "pg": "^8.22.0",
     "reflect-metadata": "latest",
     "rxjs": "latest",
     "winston": "latest"
@@ -45,6 +46,7 @@
     "@types/express-session": "latest",
     "@types/jest": "latest",
     "@types/node": "latest",
+    "@types/pg": "^8.20.0",
     "jest": "latest",
     "prisma": "^6.19.0",
     "ts-jest": "latest",

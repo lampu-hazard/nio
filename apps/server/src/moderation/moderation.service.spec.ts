@@ -118,7 +118,7 @@ describe('ModerationService', () => {
       },
     ]);
 
-    globalThis.fetch = jest.fn(async () => ({ ok: false, status: 404 })) as typeof globalThis.fetch;
+    globalThis.fetch = jest.fn(async () => ({ ok: false, status: 404 })) as unknown as typeof globalThis.fetch;
 
     const result = await service.listWarningsWithProfiles('guild-1', {});
 

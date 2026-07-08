@@ -11,7 +11,7 @@ describe('BoosterRoleController', () => {
 
     const result = await controller.validateToken('guild-1', 'claim-token', { id: 'user-1', username: 'tester' });
 
-    expect(service.validateToken).toHaveBeenCalledWith('guild-1', 'claim-token', 'user-1');
+    (expect(service.validateToken) as any).toHaveBeenCalledWith('guild-1', 'claim-token', 'user-1');
     expect(result.ok).toBe(true);
   });
 
@@ -24,7 +24,7 @@ describe('BoosterRoleController', () => {
 
     const result = await controller.claimRole('guild-1', { token: 'claim-token', name: 'Booster', primaryColor: '#abcdef' }, { id: 'user-1', username: 'tester' });
 
-    expect(service.claimRole).toHaveBeenCalledWith('guild-1', 'claim-token', 'user-1', 'Booster', {
+    (expect(service.claimRole) as any).toHaveBeenCalledWith('guild-1', 'claim-token', 'user-1', 'Booster', {
       primaryColor: '#abcdef',
       secondaryColor: undefined,
       tertiaryColor: undefined,

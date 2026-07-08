@@ -8,10 +8,14 @@ function makeMember({ booster = true, hasRole = false } = {}) {
     premiumSince: booster ? new Date('2026-07-04T00:00:00.000Z') : null,
     roles: {
       cache: {
-        has: jest.fn(() => hasRole),
+        has: jest.fn((roleId: string) => {
+          if (roleId === 'premium-role') return booster;
+          if (roleId === 'role-1') return hasRole;
+          return false;
+        }),
       },
-      add: jest.fn(),
-      remove: jest.fn(),
+      add: jest.fn(async () => {}),
+      remove: jest.fn(async () => {}),
     },
   };
 }
@@ -26,8 +30,16 @@ describe('BoosterRoleService', () => {
     guild = {
       roles: {
         premiumSubscriberRole: { id: 'premium-role' },
-        create: jest.fn(),
-        fetch: jest.fn(),
+        create: jest.fn(async () => ({
+          id: 'role-1',
+          position: 3,
+          edit: jest.fn(async () => ({})),
+          setPosition: jest.fn(async () => ({})),
+          delete: jest.fn(async () => {}),
+        })),
+        fetch: jest.fn(async () => ({
+          premiumSubscriberRole: { id: 'premium-role' },
+        })),
       },
       members: {
         fetch: jest.fn(),
@@ -96,7 +108,7 @@ describe('BoosterRoleService', () => {
 
     const result = await service.revokeExpiredBoosterRole('guild-1', 'user-1');
 
-    expect(member.roles.remove).toHaveBeenCalledWith('role-1', 'Removed custom booster role because member is no longer boosting.');
+    (expect(member.roles.remove) as any).toHaveBeenCalledWith('role-1', 'Removed custom booster role because member is no longer boosting.');
     expect(prisma.boosterCustomRole.update).toHaveBeenCalledWith({
       where: { guildId_userId: { guildId: 'guild-1', userId: 'user-1' } },
       data: expect.objectContaining({ active: false }),
@@ -124,7 +136,7 @@ describe('BoosterRoleService', () => {
     const role = {
       id: 'role-1',
       position: 3,
-      edit: jest.fn(),
+      edit: jest.fn(async () => role),
       setPosition: jest.fn(async () => role),
       iconURL: jest.fn(() => null),
     };
@@ -133,7 +145,7 @@ describe('BoosterRoleService', () => {
     await service.claimRole('guild-1', 'claim-token', 'user-1', 'New Name', { primaryColor: '#abcdef' });
 
     expect(guild.roles.create).not.toHaveBeenCalled();
-    expect(role.edit).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Name', colors: { primaryColor: 0xabcdef } }));
+    (expect(role.edit) as any).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Name', colors: { primaryColor: 0xabcdef } }));
     expect(prisma.boosterCustomRole.upsert).toHaveBeenCalledWith(expect.objectContaining({
       update: expect.objectContaining({ roleId: 'role-1', name: 'New Name', color: '#abcdef', primaryColor: '#abcdef' }),
     }));

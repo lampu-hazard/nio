@@ -235,6 +235,7 @@ export class BoosterRoleService {
 
     const guild = await this.getClient().guilds.fetch(guildId);
     const member = await guild.members.fetch(userId).catch(() => null);
+    await guild.roles.fetch().catch(() => null);
     const premiumRoleId = guild.roles.premiumSubscriberRole?.id;
     const stillBoosting = Boolean(member?.premiumSince || (premiumRoleId && member?.roles.cache.has(premiumRoleId)));
     if (stillBoosting) return { revoked: false, reason: 'Member is still boosting.' };
@@ -262,6 +263,7 @@ export class BoosterRoleService {
   async isActiveBooster(guildId: string, userId: string): Promise<boolean> {
     const guild = await this.getClient().guilds.fetch(guildId);
     const member = await guild.members.fetch(userId);
+    await guild.roles.fetch().catch(() => null);
     const premiumRoleId = guild.roles.premiumSubscriberRole?.id;
     return Boolean(member.premiumSince || (premiumRoleId && member.roles.cache.has(premiumRoleId)));
   }
@@ -286,6 +288,7 @@ export class BoosterRoleService {
       return member;
     }
 
+    await guild.roles.fetch().catch(() => null);
     const premiumRoleId = guild.roles.premiumSubscriberRole?.id;
     const active = Boolean(member.premiumSince || (premiumRoleId && member.roles.cache.has(premiumRoleId)));
     if (!active) throw new ForbiddenException('Only active server boosters can manage a custom booster role.');

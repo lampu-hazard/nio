@@ -10,6 +10,8 @@ services:
       - "3003:3003"
     environment:
       - RUST_LOG=info
+    networks:
+      - private
 
   anomaly-engine:
     image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-anomaly-engine:${IMAGE_TAG:-latest}
@@ -22,43 +24,8 @@ services:
       - "50051:50051"
     environment:
       - RUST_LOG=info
-
-  nio-server:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: apps/server/Dockerfile
-    container_name: nio-server
-    restart: unless-stopped
-    ports:
-      - "3002:3002"
-    depends_on:
-      slowmode-engine:
-        condition: service_started
-      anomaly-engine:
-        condition: service_started
-    env_file:
-      - ./apps/server/.env
-    environment:
-      - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
-      - ANOMALY_ENGINE_URL=anomaly-engine:50051
-      - NODE_ENV=production
-
-  nio-client:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-client:${IMAGE_TAG:-latest}
-    build:
-      context: ./apps/client
-      dockerfile: Dockerfile
-    container_name: nio-client
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    depends_on:
-      - nio-server
-    environment:
-      - BACKEND_URL=http://nio-server:3002
-      - NODE_ENV=production
-
+    networks:
+      - private
 
   db:
     image: postgres:16-alpine
@@ -75,10 +42,57 @@ services:
     networks:
       - private
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atlsd -d core"]
+      test: ["CMD-SHELL", "pg_isready -U nio -d nio-db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  nio-server:
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: nio-server
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    depends_on:
+      db:
+        condition: service_healthy
+      slowmode-engine:
+        condition: service_started
+      anomaly-engine:
+        condition: service_started
+    env_file:
+      - ./apps/server/.env
+    environment:
+      - NODE_ENV=production
+      - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
+      - ANOMALY_ENGINE_URL=anomaly-engine:50051
+
+    networks:
+      - private
+
+  nio-client:
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-client:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/client
+      dockerfile: Dockerfile
+    container_name: nio-client
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - nio-server
+    environment:
+      - NODE_ENV=production
+      - BACKEND_URL=http://nio-server:3002
+    networks:
+      - private
+
 volumes:
   db_data:
+
+networks:
+  private:
+    driver: bridge

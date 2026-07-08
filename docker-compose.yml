@@ -29,7 +29,7 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: postgres-prod
+    container_name: nio-db
     restart: always
     environment:
       POSTGRES_USER: nio

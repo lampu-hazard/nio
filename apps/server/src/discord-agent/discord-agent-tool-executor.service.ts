@@ -270,6 +270,30 @@ export class DiscordAgentToolExecutorService {
       case 'get_discord_audit_logs':
         return this.getDiscordAuditLogs(context.guildId, args.limit, args.targetUserId, args.actionType);
 
+      case 'get_audit_logs':
+        return this.getAuditLogs(context.guildId, {
+          category: args.category,
+          actionType: args.actionType,
+          targetUserId: args.targetUserId,
+          executorId: args.executorId,
+          limit: args.limit,
+        });
+
+      case 'get_member_audit_trail':
+        return this.getAuditLogs(context.guildId, {
+          targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
+          limit: args.limit,
+        });
+
+      case 'get_moderator_actions':
+        return this.getAuditLogs(context.guildId, {
+          executorId: this.requireString(args.moderatorId, 'moderatorId'),
+          limit: args.limit,
+        });
+
+      case 'search_audit_events':
+        return this.searchAuditEvents(context.guildId, this.requireString(args.query, 'query'), args.limit);
+
       case 'check_user_activity_score':
         return this.checkUserActivityScore(context.guildId, this.requireString(args.targetUserId, 'targetUserId'), args.days);
 
@@ -575,6 +599,243 @@ export class DiscordAgentToolExecutorService {
         new: c.new,
       })) || [],
     }));
+  }
+
+  private async getAuditLogs(
+    guildId: string,
+    filters: {
+      category?: string;
+      actionType?: string;
+      targetUserId?: string;
+      executorId?: string;
+      limit?: number;
+    },
+  ) {
+    const guild = await this.getGuild(guildId);
+    const me = guild.members.me ?? await guild.members.fetchMe();
+
+    if (!me.permissions.has(PermissionFlagsBits.ViewAuditLog)) {
+      throw new ForbiddenException('Bot lacks View Audit Log permission in this server.');
+    }
+
+    const rawLimit = this.clampNumber(filters.limit || 15, 1, 50);
+
+    // Fetch slightly more raw logs than requested to allow filtering by target/category post-fetch
+    const fetchLimit = filters.targetUserId || filters.category ? Math.min(100, rawLimit * 3) : rawLimit;
+
+    const fetchedLogs = await guild.fetchAuditLogs({
+      limit: fetchLimit,
+      user: filters.executorId || undefined,
+      type: filters.actionType ? (Number.isInteger(Number(filters.actionType)) ? Number(filters.actionType) : filters.actionType as any) : undefined,
+    });
+
+    let entries = fetchedLogs.entries.map((entry) => this.normalizeAuditEntry(entry));
+
+    // Filter post-fetch if targetUserId is set
+    if (filters.targetUserId) {
+      entries = entries.filter((e) => e.target.id === filters.targetUserId);
+    }
+
+    // Filter post-fetch if category is set
+    if (filters.category) {
+      entries = entries.filter((e) => e.category === filters.category);
+    }
+
+    // Slice to the requested limit
+    entries = entries.slice(0, rawLimit);
+
+    return {
+      guildId,
+      count: entries.length,
+      entries,
+    };
+  }
+
+  private async searchAuditEvents(guildId: string, query: string, limit?: number) {
+    const guild = await this.getGuild(guildId);
+    const me = guild.members.me ?? await guild.members.fetchMe();
+
+    if (!me.permissions.has(PermissionFlagsBits.ViewAuditLog)) {
+      throw new ForbiddenException('Bot lacks View Audit Log permission in this server.');
+    }
+
+    const rawLimit = this.clampNumber(limit || 15, 1, 50);
+    const fetchedLogs = await guild.fetchAuditLogs({
+      limit: 100, // Fetch more to query match
+    });
+
+    const normalized = fetchedLogs.entries.map((entry) => this.normalizeAuditEntry(entry));
+    const term = query.toLowerCase().trim();
+
+    const matches = normalized.filter((e) => {
+      if (e.id.toLowerCase().includes(term)) return true;
+      if (e.actionLabel.toLowerCase().includes(term)) return true;
+      if (e.category.toLowerCase().includes(term)) return true;
+      if (e.reason && e.reason.toLowerCase().includes(term)) return true;
+      if (e.executor.id?.toLowerCase().includes(term)) return true;
+      if (e.executor.tag?.toLowerCase().includes(term)) return true;
+      if (e.target.id?.toLowerCase().includes(term)) return true;
+      if (e.target.type?.toLowerCase().includes(term)) return true;
+
+      // Match in changes list
+      for (const change of e.changes) {
+        if (change.key.toLowerCase().includes(term)) return true;
+        if (typeof change.old === 'string' && change.old.toLowerCase().includes(term)) return true;
+        if (typeof change.new === 'string' && change.new.toLowerCase().includes(term)) return true;
+      }
+
+      // Match roleNames
+      if (e.roleChanges) {
+        for (const r of [...e.roleChanges.added, ...e.roleChanges.removed]) {
+          if (r.id?.toLowerCase().includes(term)) return true;
+          if (r.name?.toLowerCase().includes(term)) return true;
+        }
+      }
+
+      return false;
+    });
+
+    const entries = matches.slice(0, rawLimit);
+
+    return {
+      guildId,
+      count: entries.length,
+      entries,
+    };
+  }
+
+  private normalizeAuditEntry(entry: any) {
+    const rawAction = entry.action;
+    let category: 'role' | 'timeout' | 'ban' | 'kick' | 'channel' | 'server' | 'other' = 'other';
+    let actionLabel = `Audit Log Action #${rawAction}`;
+
+    const changes = entry.changes?.map((c: any) => ({
+      key: c.key,
+      old: c.old,
+      new: c.new,
+    })) || [];
+
+    // Map Discord.js AuditLogEvent enum or raw numbers to category and readable label
+    // Check numbers or names for compatibility
+    const actionStr = String(rawAction);
+
+    // Role Changes
+    if (actionStr.includes('ROLE') || rawAction === 25 || rawAction === 30 || rawAction === 31 || rawAction === 32) {
+      category = 'role';
+      if (rawAction === 25 || actionStr.includes('MEMBER_ROLE_UPDATE')) {
+        actionLabel = 'Member role update';
+      } else if (rawAction === 30 || actionStr.includes('ROLE_CREATE')) {
+        actionLabel = 'Role created';
+      } else if (rawAction === 31 || actionStr.includes('ROLE_UPDATE')) {
+        actionLabel = 'Role updated';
+      } else if (rawAction === 32 || actionStr.includes('ROLE_DELETE')) {
+        actionLabel = 'Role deleted';
+      }
+    }
+    // Member Timeout or general member updates
+    else if (rawAction === 24 || actionStr.includes('MEMBER_UPDATE')) {
+      const hasTimeoutChange = changes.some((c: any) => c.key === 'communication_disabled_until');
+      if (hasTimeoutChange) {
+        category = 'timeout';
+        actionLabel = 'Member timeout update';
+      } else {
+        category = 'other';
+        actionLabel = 'Member updated';
+      }
+    }
+    // Kick
+    else if (rawAction === 20 || actionStr.includes('MEMBER_KICK')) {
+      category = 'kick';
+      actionLabel = 'Member kicked';
+    }
+    // Ban
+    else if (rawAction === 22 || rawAction === 23 || actionStr.includes('MEMBER_BAN')) {
+      category = 'ban';
+      if (rawAction === 22 || actionStr.includes('ADD')) {
+        actionLabel = 'Member banned';
+      } else {
+        actionLabel = 'Member unbanned';
+      }
+    }
+    // Channel Changes
+    else if (actionStr.includes('CHANNEL') || rawAction === 10 || rawAction === 11 || rawAction === 12) {
+      category = 'channel';
+      if (rawAction === 10 || actionStr.includes('CREATE')) {
+        actionLabel = 'Channel created';
+      } else if (rawAction === 11 || actionStr.includes('UPDATE')) {
+        actionLabel = 'Channel updated';
+      } else if (rawAction === 12 || actionStr.includes('DELETE')) {
+        actionLabel = 'Channel deleted';
+      }
+    }
+    // Server/Guild settings
+    else if (actionStr.includes('GUILD') || rawAction === 1 || actionStr.includes('SETTINGS')) {
+      category = 'server';
+      actionLabel = 'Server settings updated';
+    }
+
+    // Role additions / removals formatting helper
+    const addedRoles: any[] = [];
+    const removedRoles: any[] = [];
+    if (category === 'role') {
+      const addChange = changes.find((c: any) => c.key === '$add');
+      const removeChange = changes.find((c: any) => c.key === '$remove');
+      const rolesChange = changes.find((c: any) => c.key === 'roles');
+
+      if (addChange?.new) {
+        const arr = Array.isArray(addChange.new) ? addChange.new : [addChange.new];
+        addedRoles.push(...arr.map((r: any) => ({ id: r.id, name: r.name })));
+      }
+      if (removeChange?.new) {
+        const arr = Array.isArray(removeChange.new) ? removeChange.new : [removeChange.new];
+        removedRoles.push(...arr.map((r: any) => ({ id: r.id, name: r.name })));
+      }
+      if (rolesChange) {
+        // If old/new lists are given, diff them to find what was added/removed
+        const oldIds = Array.isArray(rolesChange.old) ? rolesChange.old.map((r: any) => r.id) : [];
+        const newIds = Array.isArray(rolesChange.new) ? rolesChange.new.map((r: any) => r.id) : [];
+        const added = Array.isArray(rolesChange.new) ? rolesChange.new.filter((r: any) => r && r.id && !oldIds.includes(r.id)) : [];
+        const removed = Array.isArray(rolesChange.old) ? rolesChange.old.filter((r: any) => r && r.id && !newIds.includes(r.id)) : [];
+        addedRoles.push(...added.map((r: any) => ({ id: r.id, name: r.name })));
+        removedRoles.push(...removed.map((r: any) => ({ id: r.id, name: r.name })));
+      }
+    }
+
+    // Timeout updates formatting helper
+    let timeoutChange: any = undefined;
+    if (category === 'timeout') {
+      const tChange = changes.find((c: any) => c.key === 'communication_disabled_until');
+      if (tChange) {
+        const oldUntil = tChange.old ? String(tChange.old) : null;
+        const newUntil = tChange.new ? String(tChange.new) : null;
+        const revoked = !newUntil && !!oldUntil;
+        timeoutChange = {
+          oldUntil,
+          newUntil,
+          revoked,
+        };
+      }
+    }
+
+    return {
+      id: entry.id,
+      action: rawAction,
+      actionLabel,
+      category,
+      executor: {
+        id: entry.executor?.id || null,
+        tag: entry.executor?.tag || null,
+      },
+      target: {
+        id: entry.targetId || null,
+        type: entry.targetType || null,
+      },
+      reason: entry.reason || null,
+      createdAt: entry.createdAt,
+      changes,
+      ...(category === 'role' ? { roleChanges: { added: addedRoles, removed: removedRoles } } : {}),
+      ...(timeoutChange ? { timeoutChange } : {}),
+    };
   }
 
   private async checkUserActivityScore(guildId: string, targetUserId: string, days?: number) {

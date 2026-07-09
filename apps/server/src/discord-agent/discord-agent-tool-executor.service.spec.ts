@@ -98,7 +98,7 @@ describe('DiscordAgentToolExecutorService', () => {
         },
       })),
     },
-    fetchAuditLogs: jest.fn(async () => ({
+    fetchAuditLogs: jest.fn(async (..._args: any[]): Promise<any> => ({
       entries: [
         {
           id: 'log-1',
@@ -107,7 +107,7 @@ describe('DiscordAgentToolExecutorService', () => {
           targetId: 'user-1',
           reason: 'spam',
           createdAt: new Date('2026-01-01T00:00:00Z'),
-          changes: [],
+          changes: [] as any[],
         },
       ],
     })),
@@ -249,6 +249,150 @@ describe('DiscordAgentToolExecutorService', () => {
       createdAt: expect.any(Date),
       changes: [],
     }]);
+  });
+
+  it('fetches general normalized audit logs with categories and normalization', async () => {
+    mockGuild.fetchAuditLogs.mockResolvedValueOnce({
+      entries: [
+        {
+          id: 'log-role-1',
+          action: 25, // MEMBER_ROLE_UPDATE (typically)
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'role added',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [{ key: '$add', new: [{ id: 'role-vip', name: 'VIP' }] }] as any[],
+        },
+        {
+          id: 'log-timeout-1',
+          action: 24, // MEMBER_UPDATE
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'timed out',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [{ key: 'communication_disabled_until', new: '2026-01-01T01:00:00.000Z' }] as any[],
+        },
+      ],
+    });
+
+    const res = await service.execute('get_audit_logs', { category: 'role' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res.guildId).toBe('guild-1');
+    expect(res.count).toBe(1);
+    expect(res.entries[0]).toEqual(expect.objectContaining({
+      id: 'log-role-1',
+      category: 'role',
+      actionLabel: 'Member role update',
+      roleChanges: {
+        added: [{ id: 'role-vip', name: 'VIP' }],
+        removed: [],
+      },
+    }));
+
+    mockGuild.fetchAuditLogs.mockResolvedValueOnce({
+      entries: [
+        {
+          id: 'log-timeout-1',
+          action: 24,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'timed out',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [{ key: 'communication_disabled_until', new: '2026-01-01T01:00:00.000Z' }] as any[],
+        },
+      ],
+    });
+
+    const resTimeout = await service.execute('get_audit_logs', { category: 'timeout' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(resTimeout.count).toBe(1);
+    expect(resTimeout.entries[0].timeoutChange).toEqual({
+      newUntil: '2026-01-01T01:00:00.000Z',
+      oldUntil: null,
+      revoked: false,
+    });
+  });
+
+  it('fetches member audit trail specifically targeting user', async () => {
+    mockGuild.fetchAuditLogs.mockResolvedValueOnce({
+      entries: [
+        {
+          id: 'log-role-1',
+          action: 25,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'role added',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [{ key: '$add', new: [{ id: 'role-vip', name: 'VIP' }] }] as any[],
+        },
+        {
+          id: 'log-role-2',
+          action: 25,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-2',
+          reason: 'role added to other',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [{ key: '$add', new: [{ id: 'role-vip', name: 'VIP' }] }] as any[],
+        },
+      ],
+    });
+
+    const res = await service.execute('get_member_audit_trail', { targetUserId: 'user-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res.count).toBe(1);
+    expect(res.entries[0].id).toBe('log-role-1');
+  });
+
+  it('fetches moderator actions filter', async () => {
+    mockGuild.fetchAuditLogs.mockResolvedValueOnce({
+      entries: [
+        {
+          id: 'log-role-1',
+          action: 25,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'role added',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [] as any[],
+        },
+      ],
+    });
+
+    const res = await service.execute('get_moderator_actions', { moderatorId: 'admin-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res.count).toBe(1);
+    expect(mockGuild.fetchAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ user: 'admin-1' }));
+  });
+
+  it('searches audit events based on query matching', async () => {
+    mockGuild.fetchAuditLogs.mockResolvedValueOnce({
+      entries: [
+        {
+          id: 'log-role-1',
+          action: 25,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-1',
+          reason: 'important update',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [{ key: '$add', new: [{ id: 'role-vip', name: 'VIP' }] }] as any[],
+        },
+        {
+          id: 'log-role-2',
+          action: 25,
+          executor: { id: 'admin-1', tag: 'admin#1234' },
+          targetId: 'user-2',
+          reason: 'normal changes',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          changes: [] as any[],
+        },
+      ],
+    });
+
+    const res = await service.execute('search_audit_events', { query: 'important' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(res.count).toBe(1);
+    expect(res.entries[0].id).toBe('log-role-1');
+  });
+
+  it('throws ForbiddenException when bot lacks ViewAuditLog permission', async () => {
+    mockGuild.members.me.permissions.has.mockReturnValueOnce(false);
+    await expect(service.execute('get_audit_logs', {}, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' }))
+      .rejects.toThrow('Bot lacks View Audit Log permission');
   });
 
   it('calculates user activity score based on logged messages', async () => {

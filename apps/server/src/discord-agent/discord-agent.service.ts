@@ -47,6 +47,16 @@ function loadDefaultSystemPrompt() {
   return cachedDefaultSystemPrompt;
 }
 
+export type ReferencedMessageContext = {
+  id: string;
+  channelId: string;
+  authorId: string;
+  authorTag: string;
+  content: string;
+  createdAt: Date;
+  attachments: Array<{ name: string; url: string }>;
+};
+
 @Injectable()
 export class DiscordAgentService {
   constructor(
@@ -64,6 +74,7 @@ export class DiscordAgentService {
     authorId: string,
     rawContent: string,
     referencedBotMessageId?: string,
+    replyContext?: ReferencedMessageContext,
   ): Promise<any> {
     const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
     const isGlobalEnabled = process.env.DISCORD_AGENT_ENABLED === 'true';
@@ -99,6 +110,22 @@ export class DiscordAgentService {
     ]);
 
     let userPrompt = prompt;
+    if (replyContext) {
+      const attachmentLines = replyContext.attachments.length
+        ? replyContext.attachments.map((a) => `- ${a.name}: ${a.url}`).join('\n')
+        : 'none';
+      userPrompt = `Konteks pesan yang di-reply:
+Author: ${replyContext.authorTag} (${replyContext.authorId})
+Channel: <#${replyContext.channelId}>
+Waktu: ${replyContext.createdAt.toISOString()}
+Isi:
+${replyContext.content || '(no text content)'}
+Attachments: ${attachmentLines}
+
+Permintaan moderator:
+${prompt}`;
+    }
+
     let iterations = 0;
     let finalContent = '';
     let proposalId: string | null = null;

@@ -204,14 +204,31 @@ export class DiscordBotService implements OnModuleInit {
     if (!this.client.user) return;
 
     let referencedBotMessageId: string | undefined;
+    let replyContext: any = undefined;
+
     if (message.reference?.messageId) {
       try {
         const referencedMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-        if (referencedMessage && referencedMessage.author.id === this.client.user.id) {
-          referencedBotMessageId = referencedMessage.id;
+        if (referencedMessage) {
+          if (referencedMessage.author.id === this.client.user.id) {
+            referencedBotMessageId = referencedMessage.id;
+          } else {
+            replyContext = {
+              id: referencedMessage.id,
+              channelId: referencedMessage.channel.id,
+              authorId: referencedMessage.author.id,
+              authorTag: referencedMessage.author.tag,
+              content: referencedMessage.content || '',
+              createdAt: referencedMessage.createdAt,
+              attachments: Array.from(referencedMessage.attachments.values()).map((a: any) => ({
+                name: a.name,
+                url: a.url,
+              })),
+            };
+          }
         }
       } catch {
-        // If we can't fetch the referenced message, proceed without memory.
+        // If we can't fetch the referenced message, proceed without memory or reply context.
       }
     }
 
@@ -233,6 +250,7 @@ export class DiscordBotService implements OnModuleInit {
       message.author.id,
       message.content,
       referencedBotMessageId,
+      replyContext,
     );
 
     if (!response) {

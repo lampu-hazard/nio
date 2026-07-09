@@ -227,4 +227,46 @@ describe('DiscordAgentService loop', () => {
     expect(history).toHaveLength(0);
     expect(result.conversationTurns).toHaveLength(1);
   });
+
+  it('injects referenced message context when replyContext is provided', async () => {
+    const providerMock = {
+      generate: jest.fn(async () => ({
+        candidates: [{ content: { parts: [{ text: 'I see the replied message.' }] } }],
+      })),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const replyContext = {
+      id: 'ref-1',
+      channelId: 'channel-1',
+      authorId: 'user-2',
+      authorTag: 'user#5678',
+      content: 'please help me',
+      createdAt: new Date('2026-07-10T12:00:00Z'),
+      attachments: [{ name: 'file.png', url: 'https://example.com/file.png' }],
+    };
+
+    const result = await service.handleMention(
+      'guild-1',
+      'channel-1',
+      'admin-1',
+      'check this',
+      undefined,
+      replyContext,
+    );
+
+    expect(result.content).toBe('I see the replied message.');
+
+    const generateCall = (providerMock.generate as any).mock.calls[0];
+    const userPrompt = generateCall[1];
+    expect(userPrompt).toContain('Konteks pesan yang di-reply:');
+    expect(userPrompt).toContain('Author: user#5678 (user-2)');
+    expect(userPrompt).toContain('please help me');
+    expect(userPrompt).toContain('file.png: https://example.com/file.png');
+    expect(userPrompt).toContain('Permintaan moderator:\ncheck this');
+
+    // Stored turns should have the original clean prompt
+    expect(result.conversationTurns).toHaveLength(1);
+    expect(result.conversationTurns[0].userPrompt).toBe('check this');
+  });
 });

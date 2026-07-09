@@ -336,6 +336,56 @@ export const AGENT_TOOLS = [
     },
   },
   {
+    name: 'get_audit_logs',
+    description: 'Fetch general normalized Discord audit logs with optional filters. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        category: { type: 'STRING', enum: ['role', 'timeout', 'ban', 'kick', 'channel', 'server', 'other'], description: 'Filter events by category.' },
+        actionType: { type: 'STRING', description: 'Raw action type code or name to filter by.' },
+        targetUserId: { type: 'STRING', description: 'Optional user ID to filter by action target.' },
+        executorId: { type: 'STRING', description: 'Optional moderator user ID who executed the action.' },
+        limit: { type: 'INTEGER', description: 'Maximum log entries to return (1-50, defaults to 15).' },
+      },
+    },
+  },
+  {
+    name: 'get_member_audit_trail',
+    description: 'Fetch normalized audit log history specifically targeting a single user ID (role additions/removals, timeouts, bans). Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        targetUserId: { type: 'STRING', description: 'Discord user ID of the target member.' },
+        limit: { type: 'INTEGER', description: 'Maximum log entries to return (1-50, defaults to 15).' },
+      },
+      required: ['targetUserId'],
+    },
+  },
+  {
+    name: 'get_moderator_actions',
+    description: 'Fetch normalized audit log history of actions performed by a specific moderator user ID. Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        moderatorId: { type: 'STRING', description: 'Discord user ID of the moderator/executor.' },
+        limit: { type: 'INTEGER', description: 'Maximum log entries to return (1-50, defaults to 15).' },
+      },
+      required: ['moderatorId'],
+    },
+  },
+  {
+    name: 'search_audit_events',
+    description: 'Perform a search query match over recent normalized audit events (matches text in labels, targets, executors, roles, or reasons). Read-only; executed immediately.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'Search term to match (e.g., username, role name, or action name).' },
+        limit: { type: 'INTEGER', description: 'Maximum log entries to return (1-50, defaults to 15).' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'check_user_activity_score',
     description: 'Assess user activity index by aggregating message logs over recent days. Read-only; executed immediately.',
     parameters: {

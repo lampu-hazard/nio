@@ -113,10 +113,15 @@ export class LeaderboardService {
         where: { id: userId },
       });
       if (localUser) {
+        const avatarUrl = localUser.avatar
+          ? (localUser.avatar.startsWith('http')
+              ? localUser.avatar
+              : `https://cdn.discordapp.com/avatars/${userId}/${localUser.avatar}.png`)
+          : null;
         return {
           username: localUser.username,
           displayName: localUser.globalName || localUser.username,
-          avatar: localUser.avatar || null,
+          avatar: avatarUrl,
         };
       }
     } catch {
@@ -124,10 +129,18 @@ export class LeaderboardService {
     }
 
     // 4. Fallback values
+    let defaultAvatarIndex = 0;
+    try {
+      defaultAvatarIndex = Number(BigInt(userId) % 5n);
+    } catch {
+      // Fallback if userId is not a numeric string
+      defaultAvatarIndex = userId.charCodeAt(0) % 5;
+    }
+    const avatar = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarIndex}.png`;
     return {
       username: `User#${userId.slice(0, 4)}`,
       displayName: `User#${userId.slice(0, 4)}`,
-      avatar: null,
+      avatar,
     };
   }
 }

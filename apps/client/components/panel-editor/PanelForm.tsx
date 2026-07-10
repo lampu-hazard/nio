@@ -27,7 +27,7 @@ type FormState = {
   uploading?: 'banner' | 'thumbnail';
 };
 
-const TEMPLATES: Record<string, Partial<Draft>> = {
+``const TEMPLATES: Record<string, Partial<Draft>> = {
   rules: {
     type: 'RULES',
     name: 'Server Rules',

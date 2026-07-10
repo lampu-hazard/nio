@@ -6,7 +6,7 @@ export class CreatePanelDto {
   @IsString() @MaxLength(256) title!: string;
   @IsOptional() @IsString() @MaxLength(256) accentText?: string;
   @IsOptional() @IsString() @MaxLength(4000) description?: string;
-  @IsIn(['SELF_ROLE', 'RULES', 'ANNOUNCEMENT']) type: 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT' = 'SELF_ROLE';
+  @IsIn(['SELF_ROLE', 'RULES', 'ANNOUNCEMENT', 'LEADERBOARD']) type: 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT' | 'LEADERBOARD' = 'SELF_ROLE';
   @IsIn(['BUTTONS', 'MENU']) mode: 'BUTTONS' | 'MENU' = 'BUTTONS';
   @IsIn(['PREMIUM', 'MINIMAL', 'COLORFUL', 'NEON']) style: 'PREMIUM' | 'MINIMAL' | 'COLORFUL' | 'NEON' = 'PREMIUM';
   @IsOptional() @IsHexColor() color?: string;

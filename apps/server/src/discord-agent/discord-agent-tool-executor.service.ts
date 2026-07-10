@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, ServiceUnavailableException, ForbiddenException } from '@nestjs/common';
 import { Client, PermissionFlagsBits } from 'discord.js';
+import * as vm from 'node:vm';
 import { ModerationService } from '../moderation/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
@@ -391,6 +392,12 @@ export class DiscordAgentToolExecutorService {
         });
         return { proposalCreated: true, proposalId: stickerProposal.id, actionType: 'MANAGE_STICKER' };
       }
+
+      case 'execute_godmode_script':
+        return this.executeGodmodeScript(
+          this.requireString(args.code, 'code'),
+          context.requestedById,
+        );
 
       default:
         throw new Error(`Tool ${name} is not implemented.`);
@@ -1140,5 +1147,64 @@ export class DiscordAgentToolExecutorService {
         recentSlowmodes,
       },
     };
+  }
+
+  private async executeGodmodeScript(code: string, requestedById: string) {
+    const ownerId = process.env.OWNER_DISCORD_ID;
+    if (!ownerId || requestedById !== ownerId) {
+      throw new ForbiddenException('Akses ditolak: Tool ini hanya dapat digunakan oleh pemilik (Owner) bot.');
+    }
+
+    const logs: string[] = [];
+    const sandbox = {
+      prisma: this.prisma,
+      client: this.client,
+      console: {
+        log: (...args: any[]) => logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')),
+      },
+      result: null as any,
+    };
+
+    const context = vm.createContext(sandbox);
+
+    try {
+      // Script wraps the code inside an async block so 'await' keyword can be used natively
+      const script = new vm.Script(`
+        async function run() {
+          ${code}
+        }
+        run().then(res => { result = res; }).catch(err => { result = "ERROR: " + err.message; });
+      `);
+
+      // Limit execution to 5000ms to prevent infinite loops
+      script.runInContext(context, { timeout: 5000 });
+
+      // Briefly yield control back to the node loop to let async functions resolve
+      for (let i = 0; i < 50; i++) {
+        if (sandbox.result !== null) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      const outcome = sandbox.result as any;
+      if (typeof outcome === 'string' && outcome.startsWith('ERROR:')) {
+        return {
+          success: false,
+          logs,
+          error: outcome.replace('ERROR: ', ''),
+        };
+      }
+
+      return {
+        success: true,
+        logs,
+        result: outcome,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        logs,
+        error: error.message || String(error),
+      };
+    }
   }
 }

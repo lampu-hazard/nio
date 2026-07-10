@@ -25,7 +25,7 @@ export class DiscordPublisherService {
 
     await this.ensureChannelPermissions(guild, textChannel);
 
-    const payload = this.renderer.render(panel, guild);
+    const payload = await this.renderer.render(panel, guild);
     this.validatePublishPayload(panel, payload);
 
     try {

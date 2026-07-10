@@ -5,7 +5,7 @@ import { FormEvent, useState } from 'react';
 import type { Panel } from '@/lib/types';
 
 type ChannelOption = { id: string; name: string };
-type PanelType = 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT';
+type PanelType = 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT' | 'LEADERBOARD';
 
 type Draft = {
   name: string;
@@ -54,6 +54,15 @@ const TEMPLATES: Record<string, Partial<Draft>> = {
     description: '**New update**\n\nWrite your server announcement here. You can add a banner, thumbnail, and Discord markdown formatting.',
     color: '#18181B',
     style: 'MINIMAL',
+  },
+  leaderboard: {
+    type: 'LEADERBOARD',
+    name: 'Leaderboard Panel',
+    title: '✦ Server Leaderboard',
+    accentText: 'Most active members',
+    description: 'Pesan ini akan otomatis ter-update setiap 5 menit dengan data keaktifan member server terbaru.',
+    color: '#18181B',
+    style: 'PREMIUM',
   },
 };
 
@@ -229,10 +238,11 @@ export function PanelForm({
         {state.error && <div className="notice notice-error mb-4">{state.error}</div>}
         {state.success && <div className="notice notice-success mb-4">{state.success}</div>}
 
-        <div className="mb-6 grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-2 sm:grid-cols-3">
+        <div className="mb-6 grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-2 sm:grid-cols-4">
           <button type="button" onClick={() => applyTemplate('rules')} className="btn border-transparent bg-[var(--panel)]">Rules Template</button>
           <button type="button" onClick={() => applyTemplate('selfRole')} className="btn border-transparent bg-[var(--panel)]">Self Role Template</button>
           <button type="button" onClick={() => applyTemplate('announcement')} className="btn border-transparent bg-[var(--panel)]">Announcement Template</button>
+          <button type="button" onClick={() => applyTemplate('leaderboard')} className="btn border-transparent bg-[var(--panel)]">Leaderboard Template</button>
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">
@@ -242,6 +252,7 @@ export function PanelForm({
               <option value="RULES">Rules / Info</option>
               <option value="SELF_ROLE">Self Role</option>
               <option value="ANNOUNCEMENT">Announcement</option>
+              <option value="LEADERBOARD">Leaderboard</option>
             </select>
           </label>
 

@@ -28,6 +28,12 @@ const OPTIONS: Array<{
     description: 'Publish server updates, events, maintenance notes, and changelogs.',
     bullets: ['Rich embed', 'Banner support', 'Official update style'],
   },
+  {
+    type: 'LEADERBOARD',
+    title: 'Leaderboard',
+    description: 'Create an auto-updating leaderboard panel that renders active guild rankings.',
+    bullets: ['Auto-updates every 5 min', 'Custom podium style', 'No role buttons required'],
+  },
 ];
 
 export function PanelTypePicker({ selected, onSelect }: { selected: PanelType; onSelect: (type: PanelType) => void }) {
@@ -38,7 +44,7 @@ export function PanelTypePicker({ selected, onSelect }: { selected: PanelType; o
         <h2 className="text-2xl font-bold tracking-tight text-[var(--text)]">What do you want to create?</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">Choose a panel type. The form, template, and preview will adapt automatically.</p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         {OPTIONS.map((option) => {
           const active = selected === option.type;
           return (

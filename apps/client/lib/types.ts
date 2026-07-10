@@ -28,7 +28,7 @@ export type Panel = {
   title: string;
   accentText?: string | null;
   description?: string | null;
-  type: 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT';
+  type: 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT' | 'LEADERBOARD';
   mode: 'BUTTONS' | 'MENU';
   style: 'PREMIUM' | 'MINIMAL' | 'COLORFUL' | 'NEON';
   color: string;

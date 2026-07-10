@@ -26,7 +26,9 @@ export function PanelEditorWorkspace({
     <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.05fr)_440px]">
       <div className="space-y-5">
         <PanelForm guildId={guildId} panel={panel} channels={channels} onPreviewChange={(draft) => setPreviewPanel((current) => ({ ...current, ...draft }))} />
-        <RoleOptionList guildId={guildId} panel={previewPanel} availableRoles={availableRoles} />
+        {previewPanel.type !== 'LEADERBOARD' && (
+          <RoleOptionList guildId={guildId} panel={previewPanel} availableRoles={availableRoles} />
+        )}
       </div>
       <EmbedPreview panel={previewPanel} />
     </div>

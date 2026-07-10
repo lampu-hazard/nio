@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "PanelType" ADD VALUE 'LEADERBOARD';

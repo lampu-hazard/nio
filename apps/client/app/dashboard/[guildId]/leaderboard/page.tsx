@@ -37,9 +37,10 @@ export default async function LeaderboardPage({
     return `${score} msg`;
   };
 
-  const getAvatarUrl = (userId: string, avatarHash: string | null) => {
-    if (!avatarHash) return 'https://cdn.discordapp.com/embed/avatars/0.png';
-    return `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png`;
+  const getAvatarUrl = (userId: string, avatar: string | null) => {
+    if (!avatar) return 'https://cdn.discordapp.com/embed/avatars/0.png';
+    if (avatar.startsWith('http')) return avatar;
+    return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.png`;
   };
 
   // Top 3 Podium mapping

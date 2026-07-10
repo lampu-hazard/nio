@@ -59,6 +59,21 @@ const PREVIEW_BY_TYPE: Record<PanelType, Panel> = {
     status: 'DRAFT',
     roles: [],
   },
+  LEADERBOARD: {
+    id: 'preview',
+    guildId: 'preview',
+    name: 'Leaderboard Panel',
+    title: '✦ Server Leaderboard',
+    accentText: 'Most active members',
+    description: 'Pesan ini akan otomatis ter-update setiap 5 menit dengan data keaktifan member server terbaru.',
+    type: 'LEADERBOARD',
+    mode: 'BUTTONS',
+    style: 'PREMIUM',
+    color: '#18181B',
+    maxRoles: 0,
+    status: 'DRAFT',
+    roles: [],
+  },
 };
 
 export function NewPanelWizard({ guildId, channels }: { guildId: string; channels: Channel[] }) {

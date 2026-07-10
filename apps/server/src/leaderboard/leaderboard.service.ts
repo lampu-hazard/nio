@@ -1,9 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DiscordBotService } from '../discord/discord-bot.service';
 
 @Injectable()
 export class LeaderboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => DiscordBotService))
+    private readonly bot: DiscordBotService,
+  ) {}
 
   async getChatLeaderboard(guildId: string, days: string, limit: number) {
     const gteDate = days === 'all' ? undefined : new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
@@ -24,15 +29,13 @@ export class LeaderboardService {
 
     const leaderboards = await Promise.all(
       aggregates.map(async (row, idx) => {
-        const user = await this.prisma.user.findUnique({
-          where: { id: row.authorId },
-        });
+        const liveUser = await this.resolveLiveUser(row.authorId);
         return {
           rank: idx + 1,
           userId: row.authorId,
-          username: user?.username || `User#${row.authorId.slice(0, 4)}`,
-          displayName: user?.globalName || user?.username || `User#${row.authorId.slice(0, 4)}`,
-          avatar: user?.avatar || null,
+          username: liveUser.username,
+          displayName: liveUser.displayName,
+          avatar: liveUser.avatar,
           score: row._count.id,
         };
       })
@@ -60,20 +63,71 @@ export class LeaderboardService {
 
     const leaderboards = await Promise.all(
       aggregates.map(async (row, idx) => {
-        const user = await this.prisma.user.findUnique({
-          where: { id: row.userId },
-        });
+        const liveUser = await this.resolveLiveUser(row.userId);
         return {
           rank: idx + 1,
           userId: row.userId,
-          username: user?.username || `User#${row.userId.slice(0, 4)}`,
-          displayName: user?.globalName || user?.username || `User#${row.userId.slice(0, 4)}`,
-          avatar: user?.avatar || null,
+          username: liveUser.username,
+          displayName: liveUser.displayName,
+          avatar: liveUser.avatar,
           score: row._sum.duration || 0, // duration in seconds
         };
       })
     );
 
     return leaderboards;
+  }
+
+  private async resolveLiveUser(userId: string): Promise<{ username: string; displayName: string; avatar: string | null }> {
+    // 1. Try Discord Client Cache
+    try {
+      const cachedUser = this.bot?.client?.users?.cache?.get(userId);
+      if (cachedUser) {
+        return {
+          username: cachedUser.username,
+          displayName: cachedUser.globalName || cachedUser.username,
+          avatar: cachedUser.displayAvatarURL({ size: 128 }),
+        };
+      }
+    } catch {
+      // Ignored
+    }
+
+    // 2. Try Fetching from Discord API
+    try {
+      const fetchedUser = await this.bot?.client?.users?.fetch(userId).catch(() => null);
+      if (fetchedUser) {
+        return {
+          username: fetchedUser.username,
+          displayName: fetchedUser.globalName || fetchedUser.username,
+          avatar: fetchedUser.displayAvatarURL({ size: 128 }),
+        };
+      }
+    } catch {
+      // Ignored
+    }
+
+    // 3. Try Local DB Lookup
+    try {
+      const localUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+      if (localUser) {
+        return {
+          username: localUser.username,
+          displayName: localUser.globalName || localUser.username,
+          avatar: localUser.avatar || null,
+        };
+      }
+    } catch {
+      // Ignored
+    }
+
+    // 4. Fallback values
+    return {
+      username: `User#${userId.slice(0, 4)}`,
+      displayName: `User#${userId.slice(0, 4)}`,
+      avatar: null,
+    };
   }
 }

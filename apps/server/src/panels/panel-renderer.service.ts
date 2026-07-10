@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Guild, StringSelectMenuBuilder } from 'discord.js';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
 
 const BUTTON_STYLES: Record<string, ButtonStyle> = {
   PRIMARY: ButtonStyle.Primary,
@@ -12,17 +13,23 @@ const TYPE_LABELS: Record<string, string> = {
   SELF_ROLE: 'Self-role panel',
   RULES: 'Rules panel',
   ANNOUNCEMENT: 'Announcement panel',
+  LEADERBOARD: 'Leaderboard panel',
 };
 
 @Injectable()
 export class PanelRendererService {
-  render(panel: any, guild: Guild) {
+  constructor(
+    @Inject(forwardRef(() => LeaderboardService))
+    private readonly leaderboard: LeaderboardService,
+  ) {}
+
+  async render(panel: any, guild: Guild) {
     const isMinimal = panel.style === 'MINIMAL';
 
     const embed = new EmbedBuilder()
       .setColor(this.parseColor(panel.color))
       .setTitle(panel.title || this.defaultTitle(panel.type))
-      .setDescription(this.description(panel));
+      .setDescription(await this.description(panel));
 
     if (!isMinimal) {
       embed.setAuthor({ name: guild.name, iconURL: guild.iconURL({ size: 128 }) || undefined });
@@ -52,6 +59,7 @@ export class PanelRendererService {
   private defaultTitle(type?: string) {
     if (type === 'RULES') return 'Server Rules';
     if (type === 'ANNOUNCEMENT') return 'Announcement';
+    if (type === 'LEADERBOARD') return '✦ Server Leaderboard';
     return '✦ Self Roles';
   }
 
@@ -63,10 +71,41 @@ export class PanelRendererService {
     return type;
   }
 
-  private description(panel: any) {
-    const roles = panel.roles || [];
+  private async description(panel: any) {
     const isMinimal = panel.style === 'MINIMAL';
     const lines = [!isMinimal && panel.accentText, panel.description].filter(Boolean) as string[];
+
+    if (panel.type === 'LEADERBOARD') {
+      lines.push('✦ ━━━━━━━━━━━━━━━━━━━━━━ ✦');
+      const isVoice = panel.name?.toLowerCase().includes('voice');
+      if (isVoice) {
+        lines.push('🎙️ **VOICE LEADERBOARD (7 HARI TERAKHIR)**\n');
+        const data = await this.leaderboard.getVoiceLeaderboard(panel.guildId, '7', 10);
+        if (!data || !data.length) {
+          lines.push('*Belum ada aktivitas voice session tercatat.*');
+        } else {
+          data.forEach((row) => {
+            const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
+            const durationFormatted = this.formatVoiceDuration(row.score);
+            lines.push(`${medal} <@${row.userId}> — \`${durationFormatted}\``);
+          });
+        }
+      } else {
+        lines.push('💬 **CHAT LEADERBOARD (7 HARI TERAKHIR)**\n');
+        const data = await this.leaderboard.getChatLeaderboard(panel.guildId, '7', 10);
+        if (!data || !data.length) {
+          lines.push('*Belum ada aktivitas pesan tercatat.*');
+        } else {
+          data.forEach((row) => {
+            const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
+            lines.push(`${medal} <@${row.userId}> — \`${row.score} pesan\``);
+          });
+        }
+      }
+      return lines.join('\n');
+    }
+
+    const roles = panel.roles || [];
     if ((panel.type || 'SELF_ROLE') === 'SELF_ROLE' && roles.length) {
       lines.push('✦ ━━━━━━━━━━━━━━━━━━━━━━ ✦');
       for (const role of roles) {
@@ -74,6 +113,16 @@ export class PanelRendererService {
       }
     }
     return lines.join('\n') || 'No content configured yet.';
+  }
+
+  private formatVoiceDuration(seconds: number): string {
+    if (seconds <= 0) return '0m';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
   }
 
   private components(panel: any) {

@@ -4,6 +4,7 @@ const TYPE_LABELS = {
   SELF_ROLE: 'Self Role',
   RULES: 'Rules',
   ANNOUNCEMENT: 'Announcement',
+  LEADERBOARD: 'Leaderboard',
 };
 
 export function PanelCard({ guildId, panel }: { guildId: string; panel: Panel }) {

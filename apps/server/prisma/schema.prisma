@@ -152,6 +152,7 @@ enum PanelType {
   SELF_ROLE
   RULES
   ANNOUNCEMENT
+  LEADERBOARD
 }
 
 enum PanelMode {

@@ -24,6 +24,7 @@ type FormState = {
   error?: string;
   success?: string;
   loading: boolean;
+  publishing?: boolean;
   uploading?: 'banner' | 'thumbnail';
 };
 
@@ -172,6 +173,25 @@ export function PanelForm({
     }
   }
 
+  async function publishPanel() {
+    if (!panel) return;
+    setState({ loading: false, publishing: true });
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/panels/${panel.id}/publish`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'Failed to publish panel');
+      setState({ loading: false, success: isPublished ? 'Discord message updated.' : `Panel published. Message ID: ${data.messageId}` });
+      router.refresh();
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : 'Failed to publish panel' });
+    }
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState({ loading: true });
@@ -209,6 +229,21 @@ export function PanelForm({
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || 'Failed to save panel');
+
+      if (!panel && data.panel?.id && draft.type === 'LEADERBOARD') {
+        const publishResponse = await fetch(`/api/guilds/${guildId}/panels/${data.panel.id}/publish`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const publishData = await publishResponse.json().catch(() => ({}));
+        if (!publishResponse.ok) throw new Error(publishData.message || 'Panel saved, but failed to publish leaderboard');
+        setState({ loading: false, success: 'Leaderboard panel created and published.' });
+        router.push(`/dashboard/${guildId}/panels/${data.panel.id}`);
+        router.refresh();
+        return;
+      }
 
       setState({
         loading: false,
@@ -356,9 +391,16 @@ export function PanelForm({
 
       <div className="flex flex-col gap-3 border-t border-[var(--border)] bg-[var(--bg-subtle)] px-6 py-5 sm:flex-row sm:items-center sm:justify-between md:px-7">
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Save stores the dashboard draft. Publish or update to sync with Discord.</p>
-        <button disabled={state.loading} className="btn btn-primary">
-          {state.loading ? 'Saving...' : panel ? 'Save Changes' : 'Create Panel'}
-        </button>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          {panel && draft.type === 'LEADERBOARD' && (
+            <button type="button" onClick={publishPanel} disabled={state.publishing} className="btn btn-primary">
+              {state.publishing ? 'Publishing...' : isPublished ? 'Update Discord Message' : 'Publish Panel'}
+            </button>
+          )}
+          <button disabled={state.loading} className="btn btn-primary">
+            {state.loading ? 'Saving...' : panel ? 'Save Changes' : draft.type === 'LEADERBOARD' ? 'Create & Publish Panel' : 'Create Panel'}
+          </button>
+        </div>
       </div>
     </form>
   );

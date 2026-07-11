@@ -50,6 +50,7 @@ describe('DiscordAgentService loop', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     process.env.DISCORD_CLIENT_ID = 'bot-1';
+    delete process.env.OWNER_DISCORD_ID;
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DiscordAgentService,
@@ -268,5 +269,39 @@ describe('DiscordAgentService loop', () => {
     // Stored turns should have the original clean prompt
     expect(result.conversationTurns).toHaveLength(1);
     expect(result.conversationTurns[0].userPrompt).toBe('check this');
+  });
+
+  it('marks bot-owner godmode authorization as granted in the system prompt', async () => {
+    process.env.OWNER_DISCORD_ID = 'admin-1';
+    const providerMock = {
+      generate: jest.fn(async () => ({
+        candidates: [{ content: { parts: [{ text: 'Ready.' }] } }],
+      })),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> godmode test');
+
+    const systemPrompt = (providerMock.generate as any).mock.calls[0][0];
+    expect(systemPrompt).toContain('Requesting Discord user ID: admin-1');
+    expect(systemPrompt).toContain('Bot owner authorization: granted');
+    expect(systemPrompt).toContain('Godmode owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner.');
+    expect(systemPrompt).toContain('call execute_godmode_script instead of refusing');
+  });
+
+  it('marks bot-owner godmode authorization as not granted for other users', async () => {
+    process.env.OWNER_DISCORD_ID = 'owner-1';
+    const providerMock = {
+      generate: jest.fn(async () => ({
+        candidates: [{ content: { parts: [{ text: 'Ready.' }] } }],
+      })),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> godmode test');
+
+    const systemPrompt = (providerMock.generate as any).mock.calls[0][0];
+    expect(systemPrompt).toContain('Requesting Discord user ID: admin-1');
+    expect(systemPrompt).toContain('Bot owner authorization: not granted');
   });
 });

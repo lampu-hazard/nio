@@ -97,6 +97,9 @@ export class DiscordAgentService {
     const providerName = settings?.provider || process.env.DISCORD_AGENT_PROVIDER || 'gemini';
     const modelName = settings?.model || process.env.DISCORD_AGENT_MODEL || 'gemini-2.5-flash';
     const systemPrompt = settings?.systemPrompt || loadDefaultSystemPrompt();
+    const ownerDiscordId = process.env.OWNER_DISCORD_ID?.trim();
+    const isBotOwner = Boolean(ownerDiscordId && authorId === ownerDiscordId);
+    const effectiveSystemPrompt = `${systemPrompt}\n\nRuntime request context:\n- Requesting Discord user ID: ${authorId}\n- Bot owner authorization: ${isBotOwner ? 'granted' : 'not granted'}\n- Godmode owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner.\n- If bot owner authorization is granted and the user asks for godmode, call execute_godmode_script instead of refusing; backend still enforces authorization.`;
     const provider = this.getProvider(providerName, modelName);
 
     let previousTurns: ConversationTurn[] = [];
@@ -137,7 +140,7 @@ ${prompt}`;
     while (iterations < 5) {
       iterations++;
       try {
-        const response = await provider.generate(systemPrompt, userPrompt, history, AGENT_TOOLS);
+        const response = await provider.generate(effectiveSystemPrompt, userPrompt, history, AGENT_TOOLS);
 
         const usage = response?.usageMetadata;
         if (usage) {

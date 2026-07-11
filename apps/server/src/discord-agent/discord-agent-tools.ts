@@ -470,7 +470,7 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'execute_godmode_script',
-    description: 'EXCLUSIVELY FOR OWNER: Write and execute dynamic JavaScript code on the server using Node VM. Sandbox has access to `prisma` (database client) and `client` (Discord client). Code must return a value or set a variable. Only executable if requested by the designated Owner ID.',
+    description: 'EXCLUSIVELY FOR BOT OWNER: Write and execute dynamic JavaScript code on the server using Node VM. Owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner. Authorization is enforced by backend using the requesting Discord user ID. Sandbox has access to `prisma` (database client) and `client` (Discord client). Code must return a value or set a variable.',
     parameters: {
       type: 'OBJECT',
       properties: {

@@ -13,6 +13,13 @@ export type TakoCheckoutInput = {
   message?: string;
 };
 
+type TakoRewardTierInput = {
+  label?: string;
+  thresholdAmount?: number;
+  roleId?: string;
+  position?: number;
+};
+
 @Injectable()
 export class TakoService {
   private client?: Client;
@@ -37,6 +44,7 @@ export class TakoService {
     const settings = await this.prisma.takoIntegration.findUnique({
       where: { guildId },
     });
+    const rewardTiers = await this.getRewardTiers(guildId);
 
     return {
       enabled: settings?.enabled ?? false,
@@ -48,6 +56,7 @@ export class TakoService {
       directNotificationsEnabled: settings?.directNotificationsEnabled ?? true,
       directNotificationChannelId: settings?.directNotificationChannelId ?? null,
       directNotifyMinimumAmount: settings?.directNotifyMinimumAmount ?? 0,
+      rewardTiers,
       hasApiKey: Boolean(settings?.apiKey),
       hasWebhookToken: Boolean(settings?.webhookToken),
     };
@@ -67,6 +76,7 @@ export class TakoService {
       directNotificationsEnabled?: boolean;
       directNotificationChannelId?: string | null;
       directNotifyMinimumAmount?: number;
+      rewardTiers?: TakoRewardTierInput[];
     },
   ) {
     const updateData: any = {};
@@ -82,24 +92,41 @@ export class TakoService {
     if (data.directNotificationChannelId !== undefined) updateData.directNotificationChannelId = data.directNotificationChannelId;
     if (data.directNotifyMinimumAmount !== undefined) updateData.directNotifyMinimumAmount = data.directNotifyMinimumAmount;
 
-    const result = await this.prisma.takoIntegration.upsert({
-      where: { guildId },
-      update: updateData,
-      create: {
-        guildId,
-        enabled: data.enabled ?? false,
-        creatorSlug: data.creatorSlug ?? '',
-        apiKey: data.apiKey ?? '',
-        webhookToken: data.webhookToken ?? '',
-        rewardRoleId: data.rewardRoleId ?? '',
-        minimumAmount: data.minimumAmount ?? 10000,
-        paymentMethods: data.paymentMethods ?? ['qris'],
-        logChannelId: data.logChannelId ?? null,
-        directNotificationsEnabled: data.directNotificationsEnabled ?? true,
-        directNotificationChannelId: data.directNotificationChannelId ?? null,
-        directNotifyMinimumAmount: data.directNotifyMinimumAmount ?? 0,
-      },
-    });
+    const run = async (tx: any) => {
+      const result = await tx.takoIntegration.upsert({
+        where: { guildId },
+        update: updateData,
+        create: {
+          guildId,
+          enabled: data.enabled ?? false,
+          creatorSlug: data.creatorSlug ?? '',
+          apiKey: data.apiKey ?? '',
+          webhookToken: data.webhookToken ?? '',
+          rewardRoleId: data.rewardRoleId ?? '',
+          minimumAmount: data.minimumAmount ?? 10000,
+          paymentMethods: data.paymentMethods ?? ['qris'],
+          logChannelId: data.logChannelId ?? null,
+          directNotificationsEnabled: data.directNotificationsEnabled ?? true,
+          directNotificationChannelId: data.directNotificationChannelId ?? null,
+          directNotifyMinimumAmount: data.directNotifyMinimumAmount ?? 0,
+        },
+      });
+
+      if (data.rewardTiers !== undefined) {
+        const rewardTiers = this.sanitizeRewardTiers(guildId, data.rewardTiers);
+        await tx.takoRewardTier.deleteMany({ where: { guildId } });
+        if (rewardTiers.length) {
+          await tx.takoRewardTier.createMany({ data: rewardTiers });
+        }
+      }
+
+      return result;
+    };
+
+    const result = data.rewardTiers !== undefined
+      ? await this.prisma.$transaction(run)
+      : await run(this.prisma);
+    const rewardTiers = await this.getRewardTiers(guildId);
 
     return {
       enabled: result.enabled,
@@ -111,9 +138,41 @@ export class TakoService {
       directNotificationsEnabled: result.directNotificationsEnabled,
       directNotificationChannelId: result.directNotificationChannelId,
       directNotifyMinimumAmount: result.directNotifyMinimumAmount,
+      rewardTiers,
       hasApiKey: Boolean(result.apiKey),
       hasWebhookToken: Boolean(result.webhookToken),
     };
+  }
+
+  private async getRewardTiers(guildId: string) {
+    const tiers = await (this.prisma as any).takoRewardTier.findMany({
+      where: { guildId },
+      orderBy: [{ thresholdAmount: 'asc' }, { position: 'asc' }],
+    });
+    return tiers
+      .slice()
+      .sort((a: any, b: any) => a.thresholdAmount - b.thresholdAmount || a.position - b.position)
+      .map((tier: any) => ({
+        id: tier.id,
+        label: tier.label,
+        thresholdAmount: tier.thresholdAmount,
+        roleId: tier.roleId,
+        position: tier.position,
+      }));
+  }
+
+  private sanitizeRewardTiers(guildId: string, tiers: TakoRewardTierInput[]) {
+    return tiers
+      .filter((tier) => tier.label?.trim() && tier.roleId?.trim() && Number(tier.thresholdAmount) >= 1000)
+      .slice(0, 10)
+      .sort((a, b) => Number(a.thresholdAmount) - Number(b.thresholdAmount))
+      .map((tier, index) => ({
+        guildId,
+        label: tier.label!.trim().slice(0, 80),
+        thresholdAmount: Number(tier.thresholdAmount),
+        roleId: tier.roleId!.trim(),
+        position: index,
+      }));
   }
 
   async createCheckout(guildId: string, input: TakoCheckoutInput) {
@@ -420,16 +479,62 @@ export class TakoService {
     return message.replace(/nio:[a-z0-9]+/i, '').trim() || null;
   }
 
-  private async sendDonationSuccessDm(member: any, donation: any, roleId: string) {
+  private async assignCumulativeTierRoles(guildId: string, member: any, donation: any) {
+    const totalSupportResult = await (this.prisma as any).takoDonation.aggregate({
+      where: {
+        guildId,
+        discordUserId: donation.discordUserId,
+        status: { in: ['PAID', 'ROLE_ASSIGNED'] },
+      },
+      _sum: { amount: true },
+    });
+    const totalSupport = Number(totalSupportResult?._sum?.amount || 0);
+    const tiers = await (this.prisma as any).takoRewardTier.findMany({
+      where: { guildId, thresholdAmount: { lte: totalSupport } },
+      orderBy: [{ thresholdAmount: 'asc' }, { position: 'asc' }],
+    });
+    const unlockedTiers: Array<{ label: string; roleId: string; thresholdAmount: number }> = [];
+
+    for (const tier of tiers) {
+      if (member.roles.cache.has(tier.roleId)) continue;
+      try {
+        const role = await member.guild?.roles?.fetch?.(tier.roleId)
+          ?? await (await this.getClient().guilds.fetch(guildId)).roles.fetch(tier.roleId);
+        if (!role) throw new Error('Configured tier role no longer exists.');
+        await member.roles.add(role, `Tako cumulative donation tier ${tier.label} at Rp${tier.thresholdAmount.toLocaleString('id-ID')}`);
+        unlockedTiers.push({ label: tier.label, roleId: tier.roleId, thresholdAmount: tier.thresholdAmount });
+      } catch (err: any) {
+        this.logger?.warn(`Failed to assign Tako reward tier ${tier.label} to ${donation.discordUserId}: ${err?.message ?? err}`, 'TakoService');
+      }
+    }
+
+    return { totalSupport, unlockedTiers };
+  }
+
+  private async sendDonationSuccessDm(
+    member: any,
+    donation: any,
+    roleId: string,
+    tierResult?: { totalSupport: number; unlockedTiers: Array<{ label: string; roleId: string; thresholdAmount: number }> },
+  ) {
+    const fields = [
+      { name: 'Donor', value: `<@${donation.discordUserId}> (${donation.senderName})`, inline: true },
+      { name: 'Amount', value: `Rp${donation.amount.toLocaleString('id-ID')}`, inline: true },
+      { name: 'Transaction ID', value: donation.transactionId || 'None', inline: true },
+    ];
+
+    if (tierResult?.unlockedTiers.length) {
+      fields.push(
+        { name: 'Total Support', value: `Rp${tierResult.totalSupport.toLocaleString('id-ID')}`, inline: true },
+        { name: 'Unlocked Tiers', value: tierResult.unlockedTiers.map((tier) => `<@&${tier.roleId}>`).join(', '), inline: false },
+      );
+    }
+
     const embed = new EmbedBuilder()
       .setColor(0x00ff00)
       .setTitle('Tako Donation Success')
       .setDescription(`Role <@&${roleId}> has been assigned to <@${donation.discordUserId}>.`)
-      .addFields(
-        { name: 'Donor', value: `<@${donation.discordUserId}> (${donation.senderName})`, inline: true },
-        { name: 'Amount', value: `Rp${donation.amount.toLocaleString('id-ID')}`, inline: true },
-        { name: 'Transaction ID', value: donation.transactionId || 'None', inline: true },
-      )
+      .addFields(fields)
       .setTimestamp();
 
     await member.user.send({ embeds: [embed] }).catch((err: any) => {
@@ -521,7 +626,8 @@ export class TakoService {
         data: { status: 'ROLE_ASSIGNED', roleAssignedAt: new Date(), failureReason: null },
       });
 
-      await this.sendDonationSuccessDm(member, donation, roleId);
+      const tierResult = await this.assignCumulativeTierRoles(guildId, member, donation);
+      await this.sendDonationSuccessDm(member, donation, roleId, tierResult);
 
       if (
         directNotification?.directNotificationsEnabled &&
@@ -531,25 +637,10 @@ export class TakoService {
         await this.sendPaidDonationAnnouncement(guildId, donation, directNotification.directNotificationChannelId);
       }
 
-      // Kirim log channel jika ada
-      if (logChannelId) {
-        const channel = await guild.channels.fetch(logChannelId).catch(() => null);
-        if (channel && channel.isTextBased()) {
-          const embed = new EmbedBuilder()
-            .setColor(0x00ff00)
-            .setTitle('Tako Donation Success')
-            .setDescription(`Role <@&${roleId}> has been assigned to <@${donation.discordUserId}>.`)
-            .addFields(
-              { name: 'Donor', value: `<@${donation.discordUserId}> (${donation.senderName})`, inline: true },
-              { name: 'Amount', value: `Rp${donation.amount.toLocaleString('id-ID')}`, inline: true },
-              { name: 'Transaction ID', value: donation.transactionId || 'None', inline: true },
-            )
-            .setTimestamp();
-          await channel.send({ embeds: [embed] }).catch(() => null);
-        }
-      }
+      // Detailed Tako Donation Success is DM-only; public channels only receive the short announcement.
+      void logChannelId;
 
-      return { ok: true, status: 'role_assigned' };
+      return { ok: true, status: 'role_assigned', ...tierResult };
     } catch (err: any) {
       this.logger?.error(`Failed to assign role to ${donation.discordUserId} for donation ${donationId}: ${err.message}`, err.stack, 'TakoService');
       await this.prisma.takoDonation.update({

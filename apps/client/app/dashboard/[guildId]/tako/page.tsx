@@ -7,6 +7,14 @@ import { DashboardNav } from '@/components/dashboard/DashboardNav';
 type ChannelOption = { id: string; name: string };
 type RoleOption = { id: string; name: string; color: string; manageable: boolean };
 
+type TakoRewardTier = {
+  id?: string;
+  label: string;
+  thresholdAmount: number;
+  roleId: string;
+  position: number;
+};
+
 type TakoSettings = {
   enabled: boolean;
   creatorSlug: string | null;
@@ -17,6 +25,7 @@ type TakoSettings = {
   directNotificationsEnabled: boolean;
   directNotificationChannelId: string | null;
   directNotifyMinimumAmount: number;
+  rewardTiers: TakoRewardTier[];
   hasApiKey: boolean;
   hasWebhookToken: boolean;
 };
@@ -79,6 +88,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
     directNotificationsEnabled: true,
     directNotificationChannelId: null,
     directNotifyMinimumAmount: 0,
+    rewardTiers: [],
     hasApiKey: false,
     hasWebhookToken: false,
   });
@@ -148,6 +158,12 @@ export default function TakoDashboardPage({ params }: PageProps) {
         directNotificationsEnabled: settings.directNotificationsEnabled,
         directNotificationChannelId: settings.directNotificationChannelId || null,
         directNotifyMinimumAmount: settings.directNotifyMinimumAmount,
+        rewardTiers: settings.rewardTiers.map((tier, index) => ({
+          label: tier.label,
+          thresholdAmount: tier.thresholdAmount,
+          roleId: tier.roleId,
+          position: index,
+        })),
       };
 
       if (apiKeyInput && apiKeyInput !== '__masked__') payload.apiKey = apiKeyInput;
@@ -201,6 +217,30 @@ export default function TakoDashboardPage({ params }: PageProps) {
           : [...prev.paymentMethods, method],
       };
     });
+  };
+
+  const updateRewardTier = (index: number, patch: Partial<TakoRewardTier>) => {
+    setSettings((prev) => ({
+      ...prev,
+      rewardTiers: prev.rewardTiers.map((tier, idx) => idx === index ? { ...tier, ...patch } : tier),
+    }));
+  };
+
+  const addRewardTier = () => {
+    setSettings((prev) => ({
+      ...prev,
+      rewardTiers: [
+        ...prev.rewardTiers,
+        { label: '', thresholdAmount: prev.minimumAmount, roleId: '', position: prev.rewardTiers.length },
+      ],
+    }));
+  };
+
+  const removeRewardTier = (index: number) => {
+    setSettings((prev) => ({
+      ...prev,
+      rewardTiers: prev.rewardTiers.filter((_, idx) => idx !== index).map((tier, idx) => ({ ...tier, position: idx })),
+    }));
   };
 
   const webhookUrl = `${backendUrl}/guilds/${guildId}/tako/webhook`;
@@ -372,6 +412,65 @@ export default function TakoDashboardPage({ params }: PageProps) {
                       })}
                     </div>
                   </div>
+
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--text)]">Cumulative Reward Tiers</p>
+                        <p className="mt-1 text-xs text-[var(--muted)]">Assign stacked Discord roles when a donor reaches total donation thresholds.</p>
+                      </div>
+                      <button type="button" onClick={addRewardTier} className="btn btn-secondary h-9 px-3 text-xs" disabled={settings.rewardTiers.length >= 10}>
+                        Add Tier
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {settings.rewardTiers.length === 0 ? (
+                        <p className="text-xs text-[var(--muted)]">No cumulative tiers configured yet.</p>
+                      ) : settings.rewardTiers.map((tier, index) => (
+                        <div key={tier.id || index} className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                          <label className="block">
+                            <span className="field-label">Threshold (Rp)</span>
+                            <input
+                              type="number"
+                              min="1000"
+                              className="input"
+                              value={tier.thresholdAmount}
+                              onChange={(e) => updateRewardTier(index, { thresholdAmount: parseInt(e.target.value) || 1000 })}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="field-label">Label</span>
+                            <input
+                              type="text"
+                              className="input"
+                              value={tier.label}
+                              onChange={(e) => updateRewardTier(index, { label: e.target.value })}
+                              placeholder="VIP Donatur"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="field-label">Tier Role</span>
+                            <select
+                              value={tier.roleId}
+                              onChange={(e) => updateRewardTier(index, { roleId: e.target.value })}
+                              className="input"
+                            >
+                              <option value="">Select a role...</option>
+                              {roles.map((role) => (
+                                <option key={role.id} value={role.id}>
+                                  {role.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button type="button" onClick={() => removeRewardTier(index)} className="btn btn-secondary h-11 self-end px-3 text-xs">
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </section>
 
                 <section className="card p-6 space-y-5">
@@ -379,23 +478,6 @@ export default function TakoDashboardPage({ params }: PageProps) {
                     <h2 className="text-lg font-bold text-[var(--text)]">Notifications</h2>
                     <p className="mt-1 text-sm text-[var(--muted)]">Configure internal reward logs and clean public notifications for direct Tako donations.</p>
                   </div>
-
-                  <label className="block">
-                    <span className="field-label">Reward Logs Channel</span>
-                    <select
-                      value={settings.logChannelId || 'none'}
-                      onChange={(e) => setSettings((prev) => ({ ...prev, logChannelId: e.target.value === 'none' ? null : e.target.value }))}
-                      className="input"
-                    >
-                      <option value="none">Disabled</option>
-                      {channels.map((ch) => (
-                        <option key={ch.id} value={ch.id}>
-                          #{ch.name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1.5 text-xs text-[var(--muted)]">Private/admin-style log when a checkout donation successfully assigns a role.</p>
-                  </label>
 
                   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
                     <div className="flex items-center justify-between gap-4">

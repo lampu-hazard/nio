@@ -102,6 +102,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creatingRole, setCreatingRole] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -243,6 +244,25 @@ export default function TakoDashboardPage({ params }: PageProps) {
     }));
   };
 
+  const createCustomRole = async (name: string, apply: (roleId: string) => void, key: string) => {
+    try {
+      setCreatingRole(key);
+      setError('');
+      setSuccess('');
+      const res = await api<{ ok: boolean; role: RoleOption }>(`/guilds/${guildId}/roles`, {
+        method: 'POST',
+        body: JSON.stringify({ name, color: '#F59E0B' }),
+      });
+      setRoles((prev) => [res.role, ...prev.filter((role) => role.id !== res.role.id)]);
+      apply(res.role.id);
+      setSuccess(`Created role ${res.role.name}. Save settings to use it.`);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create custom role. Check bot Manage Roles permission and role hierarchy.');
+    } finally {
+      setCreatingRole(null);
+    }
+  };
+
   const webhookUrl = `${backendUrl}/guilds/${guildId}/tako/webhook`;
 
   return (
@@ -378,6 +398,14 @@ export default function TakoDashboardPage({ params }: PageProps) {
                           </option>
                         ))}
                       </select>
+                      <button
+                        type="button"
+                        className="btn btn-secondary mt-2 h-9 px-3 text-xs"
+                        disabled={creatingRole === 'base'}
+                        onClick={() => createCustomRole('Tako Supporter', (roleId) => setSettings((prev) => ({ ...prev, rewardRoleId: roleId })), 'base')}
+                      >
+                        {creatingRole === 'base' ? 'Creating...' : 'Create custom reward role'}
+                      </button>
                     </label>
 
                     <label className="block">
@@ -463,6 +491,14 @@ export default function TakoDashboardPage({ params }: PageProps) {
                                 </option>
                               ))}
                             </select>
+                            <button
+                              type="button"
+                              className="btn btn-secondary mt-2 h-9 px-3 text-xs"
+                              disabled={creatingRole === `tier-${index}`}
+                              onClick={() => createCustomRole(tier.label || `Tako Tier ${index + 1}`, (roleId) => updateRewardTier(index, { roleId }), `tier-${index}`)}
+                            >
+                              {creatingRole === `tier-${index}` ? 'Creating...' : 'Create custom tier role'}
+                            </button>
                           </label>
                           <button type="button" onClick={() => removeRewardTier(index)} className="btn btn-secondary h-11 self-end px-3 text-xs">
                             Remove

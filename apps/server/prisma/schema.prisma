@@ -31,6 +31,7 @@ model Guild {
   takoIntegration TakoIntegration?
   takoDonations   TakoDonation[]
   takoRewardTiers TakoRewardTier[]
+  embedTemplates  EmbedTemplate[]
   userNotes       UserNote[]
   voiceSessions   VoiceSession[]
 }
@@ -284,6 +285,21 @@ model TakoRewardTier {
 
   @@index([guildId])
   @@unique([guildId, thresholdAmount])
+}
+
+model EmbedTemplate {
+  id        String   @id @default(cuid())
+  guildId   String
+  category  String
+  name      String
+  template  Json
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  guild     Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, category])
+  @@index([guildId])
 }
 
 model DiscordAgentSettings {

@@ -15,6 +15,7 @@ export function Sidebar({ guildId }: SidebarProps) {
         { label: 'Moderation', href: `/dashboard/${guildId}/moderation` },
         { label: 'Booster Roles', href: `/dashboard/${guildId}/booster-roles` },
         { label: 'Tako Rewards', href: `/dashboard/${guildId}/tako` },
+        { label: 'Embed Studio', href: `/dashboard/${guildId}/embed-templates` },
         { label: 'Analytics', href: `/dashboard/${guildId}/analytics` },
         { label: 'Leaderboard', href: `/leaderboard/${guildId}` },
         { label: 'Audit Logs', href: `/dashboard/${guildId}/audit-logs` },

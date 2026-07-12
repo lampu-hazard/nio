@@ -14,6 +14,7 @@ import { BoosterRoleModule } from './booster-role/booster-role.module';
 import { TakoModule } from './tako/tako.module';
 import { DiscordAgentModule } from './discord-agent/discord-agent.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { EmbedTemplateModule } from './embed-templates/embed-template.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
     TakoModule,
     DiscordAgentModule,
     LeaderboardModule,
+    EmbedTemplateModule,
   ],
 })
 export class AppModule {}

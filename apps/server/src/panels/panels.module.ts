@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { DiscordModule } from '../discord/discord.module';
+import { EmbedTemplateModule } from '../embed-templates/embed-template.module';
 import { DiscordPublisherService } from './discord-publisher.service';
 import { PanelRendererService } from './panel-renderer.service';
 import { PanelsController } from './panels.controller';
@@ -8,7 +9,7 @@ import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 import { LeaderboardUpdaterService } from './leaderboard-updater.service';
 
 @Module({
-  imports: [DiscordModule, forwardRef(() => LeaderboardModule)],
+  imports: [DiscordModule, forwardRef(() => LeaderboardModule), EmbedTemplateModule],
   controllers: [PanelsController],
   providers: [PanelsService, PanelRendererService, DiscordPublisherService, LeaderboardUpdaterService],
   exports: [PanelsService, PanelRendererService, LeaderboardUpdaterService],

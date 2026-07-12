@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Interaction, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
 import { ModerationService } from '../moderation/moderation.service';
@@ -6,6 +6,8 @@ import { BoosterRoleService } from '../booster-role/booster-role.service';
 import { TakoService } from '../tako/tako.service';
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 import { AgentActionRendererService } from '../discord-agent/agent-action-renderer.service';
+import { EmbedTemplateService } from '../embed-templates/embed-template.service';
+import { EmbedTemplateRendererService } from '../embed-templates/embed-template-renderer.service';
 
 @Injectable()
 export class DiscordInteractionService {
@@ -16,6 +18,8 @@ export class DiscordInteractionService {
     private readonly tako: TakoService,
     private readonly agentProposals: AgentActionProposalService,
     private readonly agentActionRenderer: AgentActionRendererService,
+    @Optional() private readonly embedTemplates?: EmbedTemplateService,
+    @Optional() private readonly embedRenderer?: EmbedTemplateRendererService,
   ) {}
 
   async handle(interaction: Interaction) {
@@ -130,7 +134,22 @@ export class DiscordInteractionService {
           embed.addFields({ name: 'Auto Penalty Status', value: `Failed to timeout: ${timeoutError}` });
         }
 
-        await interaction.reply({ embeds: [embed] });
+        // Try custom MODERATION_WARNING template
+        const rendered = await this.renderModeration('MODERATION_WARNING', guildId, {
+          'moderation.title': 'Warning Issued',
+          'moderation.description': `A warning has been recorded for <@${user.id}>.`,
+          'moderation.reason': reason,
+          'moderator.mention': `<@${interaction.user.id}>`,
+          'target.mention': `<@${user.id}>`,
+          'user.mention': `<@${user.id}>`,
+          'user.username': user.username,
+          'guild.name': interaction.guild?.name || '',
+        });
+        if (rendered) {
+          await interaction.reply(rendered);
+        } else {
+          await interaction.reply({ embeds: [embed] });
+        }
         return;
       }
 
@@ -164,7 +183,17 @@ export class DiscordInteractionService {
           embed.setDescription('This member has a clean record on this server.');
         }
 
-        await interaction.reply({ embeds: [embed] });
+        const rendered = await this.renderModeration('MODERATION_STATUS', guildId, {
+          'moderation.title': `Warnings Status: ${user.username}`,
+          'moderation.description': warnings.length > 0 ? `Active warnings: ${activeCount}\nTotal violations: ${warnings.length}` : 'This member has a clean record on this server.',
+          'moderation.reason': warnings[0]?.reason || '',
+          'moderator.mention': '',
+          'target.mention': `<@${user.id}>`,
+          'user.mention': `<@${user.id}>`,
+          'user.username': user.username,
+          'guild.name': interaction.guild?.name || '',
+        });
+        await interaction.reply(rendered || { embeds: [embed] });
         return;
       }
 
@@ -204,9 +233,10 @@ export class DiscordInteractionService {
           ? await this.agentProposals.approveAndExecute(proposalId, interaction.user.id)
           : await this.agentProposals.cancelProposal(proposalId, interaction.user.id);
 
-        await interaction.update(this.agentActionRenderer.renderExecutionResult(
+        await interaction.update(await this.agentActionRenderer.renderExecutionResult(
           action === 'approve' ? 'Proposal Executed' : 'Proposal Cancelled',
           result.message,
+          interaction.guildId || undefined,
         ));
       } catch (err: any) {
         console.error('Agent interaction handling error:', err);
@@ -237,5 +267,15 @@ export class DiscordInteractionService {
       .setTitle(title)
       .setDescription(description)
       .setTimestamp();
+  }
+
+  // ponytail: template rendering for moderation embeds. Only used when admin has customized the template.
+  private async renderModeration(category: string, guildId: string, variables: Record<string, unknown>) {
+    if (!this.embedTemplates || !this.embedRenderer) return null;
+    try {
+      const tpl = await this.embedTemplates.getTemplate(guildId, category as any);
+      if (tpl?.isDefault) return null;
+      return this.embedRenderer.render(tpl.template, variables);
+    } catch { return null; }
   }
 }

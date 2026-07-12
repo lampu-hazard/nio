@@ -222,7 +222,7 @@ ${prompt}`;
     if (proposalId) {
       const proposal = await this.prisma.agentActionProposal.findUnique({ where: { id: proposalId } });
       if (proposal) {
-        const rendered = this.renderer.renderProposalMessage(proposal);
+        const rendered = await this.renderer.renderProposalMessage(proposal);
         embeds = rendered.embeds;
         components = rendered.components;
       }

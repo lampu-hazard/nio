@@ -1,6 +1,9 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, Optional, forwardRef } from '@nestjs/common';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Guild, StringSelectMenuBuilder } from 'discord.js';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { EmbedTemplateService } from '../embed-templates/embed-template.service';
+import { EmbedTemplateRendererService } from '../embed-templates/embed-template-renderer.service';
+import { EmbedTemplateCategory } from '../embed-templates/embed-template.types';
 
 const BUTTON_STYLES: Record<string, ButtonStyle> = {
   PRIMARY: ButtonStyle.Primary,
@@ -16,15 +19,38 @@ const TYPE_LABELS: Record<string, string> = {
   LEADERBOARD: 'Leaderboard panel',
 };
 
+// ponytail: map panel type → template category. Extend when new panel types are added.
+const PANEL_TYPE_CATEGORY: Record<string, EmbedTemplateCategory> = {
+  SELF_ROLE: 'PANEL_SELF_ROLE',
+  RULES: 'PANEL_RULES',
+  ANNOUNCEMENT: 'PANEL_ANNOUNCEMENT',
+  LEADERBOARD: 'PANEL_LEADERBOARD',
+};
+
 @Injectable()
 export class PanelRendererService {
   constructor(
     @Inject(forwardRef(() => LeaderboardService))
     private readonly leaderboard: LeaderboardService,
+    @Optional() private readonly templates?: EmbedTemplateService,
+    @Optional() private readonly templateRenderer?: EmbedTemplateRendererService,
   ) {}
 
   async render(panel: any, guild: Guild) {
     const isMinimal = panel.style === 'MINIMAL';
+    const category = PANEL_TYPE_CATEGORY[panel.type || 'SELF_ROLE'];
+
+    // Try custom template first
+    if (category && this.templates && this.templateRenderer) {
+      try {
+        const tpl = await this.templates.getTemplate(panel.guildId, category);
+        if (tpl && !tpl.isDefault) {
+          const variables = await this.panelVariables(panel, guild);
+          const rendered = this.templateRenderer.render(tpl.template, variables);
+          return { ...rendered, components: this.components(panel) };
+        }
+      } catch { /* fall through to default */ }
+    }
 
     const embed = new EmbedBuilder()
       .setColor(this.parseColor(panel.color))
@@ -45,6 +71,36 @@ export class PanelRendererService {
     }
 
     return { embeds: [embed], components: this.components(panel) };
+  }
+
+  private async panelVariables(panel: any, guild: Guild): Promise<Record<string, unknown>> {
+    return {
+      'guild.name': guild.name,
+      'panel.name': panel.name || '',
+      'panel.title': panel.title || this.defaultTitle(panel.type),
+      'panel.accentText': panel.accentText || '',
+      'panel.description': panel.description || '',
+      'panel.role_count': (panel.roles?.length || 0).toString(),
+      'leaderboard.lines': panel.type === 'LEADERBOARD' ? await this.leaderboardLines(panel) : '',
+    };
+  }
+
+  private async leaderboardLines(panel: any): Promise<string> {
+    const isVoice = panel.name?.toLowerCase().includes('voice');
+    if (isVoice) {
+      const data = await this.leaderboard.getVoiceLeaderboard(panel.guildId, '7', 10);
+      if (!data?.length) return '*Belum ada aktivitas voice session tercatat.*';
+      return data.map((row) => {
+        const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
+        return `${medal} <@${row.userId}> — \`${this.formatVoiceDuration(row.score)}\``;
+      }).join('\n');
+    }
+    const data = await this.leaderboard.getChatLeaderboard(panel.guildId, '7', 10);
+    if (!data?.length) return '*Belum ada aktivitas pesan tercatat.*';
+    return data.map((row) => {
+      const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
+      return `${medal} <@${row.userId}> — \`${row.score} pesan\``;
+    }).join('\n');
   }
 
   private parseColor(color?: string | null): number {

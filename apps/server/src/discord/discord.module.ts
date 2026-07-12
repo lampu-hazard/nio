@@ -4,6 +4,7 @@ import { StickersModule } from '../stickers/stickers.module';
 import { ModerationModule } from '../moderation/moderation.module';
 import { BoosterRoleModule } from '../booster-role/booster-role.module';
 import { TakoModule } from '../tako/tako.module';
+import { EmbedTemplateModule } from '../embed-templates/embed-template.module';
 import { DiscordBotService } from './discord-bot.service';
 import { DiscordInteractionService } from './discord-interaction.service';
 import { DiscordPermissionService } from './discord-permission.service';
@@ -14,7 +15,7 @@ import { DiscordAnomalyService } from './discord-anomaly.service';
 import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
 
 @Module({
-  imports: [SelfRolesModule, StickersModule, ModerationModule, BoosterRoleModule, TakoModule, DiscordAgentModule],
+  imports: [SelfRolesModule, StickersModule, ModerationModule, BoosterRoleModule, TakoModule, DiscordAgentModule, EmbedTemplateModule],
   providers: [
     DiscordBotService,
     DiscordInteractionService,

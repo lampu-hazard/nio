@@ -124,7 +124,7 @@ export function TemplateStudio({ guildId }: { guildId: string }) {
             </div>
           </div>
           <VariableChips variables={meta?.variables || []} onInsert={insertVariable} />
-          <TemplateEditor template={draft} onChange={setDraft} onFocusPath={setFocusPath} />
+          <TemplateEditor guildId={guildId} template={draft} onChange={setDraft} onFocusPath={setFocusPath} />
         </section>
 
         <section className="space-y-4">

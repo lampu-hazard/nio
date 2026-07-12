@@ -10,6 +10,7 @@ export type TakoCheckoutInput = {
   paymentMethod: string;
   discordUserId: string;
   discordUsername: string;
+  message?: string;
 };
 
 @Injectable()
@@ -136,6 +137,8 @@ export class TakoService {
       throw new BadRequestException('Selected payment method is not allowed.');
     }
 
+    const donorMessage = input.message?.trim().slice(0, 200) || null;
+
     // Buat donation record PENDING di DB
     const donation = await this.prisma.takoDonation.create({
       data: {
@@ -145,6 +148,7 @@ export class TakoService {
         paymentMethod: input.paymentMethod,
         senderName: input.discordUsername,
         email: input.email,
+        message: donorMessage,
         status: 'PENDING',
       },
     });
@@ -163,7 +167,7 @@ export class TakoService {
           email: input.email,
           amount: input.amount,
           paymentMethod: input.paymentMethod,
-          message: `nio:${donation.id}`,
+          message: donorMessage ? `nio:${donation.id}\n${donorMessage}` : `nio:${donation.id}`,
         }),
       });
 
@@ -324,6 +328,8 @@ export class TakoService {
       return { ok: true, status: 'already_processed' };
     }
 
+    const cleanMessage = this.cleanTakoMessage(message) || donation.message;
+
     // Update data donasi dari payload webhook
     await this.prisma.takoDonation.update({
       where: { id: donation.id },
@@ -332,7 +338,7 @@ export class TakoService {
         amount: amount || donation.amount,
         senderName: senderName || donation.senderName,
         email: email || donation.email,
-        message: message || donation.message,
+        message: cleanMessage,
         status: 'PAID',
       },
     });
@@ -354,7 +360,11 @@ export class TakoService {
     }
 
     // Berikan Role Discord
-    return this.assignDonationRole(guildId, donation.id, integration.rewardRoleId, integration.logChannelId);
+    return this.assignDonationRole(guildId, donation.id, integration.rewardRoleId, integration.logChannelId, {
+      directNotificationsEnabled: integration.directNotificationsEnabled,
+      directNotificationChannelId: integration.directNotificationChannelId,
+      directNotifyMinimumAmount: integration.directNotifyMinimumAmount,
+    });
   }
 
   async listDonations(guildId: string) {
@@ -406,6 +416,44 @@ export class TakoService {
     });
   }
 
+  private cleanTakoMessage(message: string) {
+    return message.replace(/nio:[a-z0-9]+/i, '').trim() || null;
+  }
+
+  private async sendDonationSuccessDm(member: any, donation: any, roleId: string) {
+    const embed = new EmbedBuilder()
+      .setColor(0x00ff00)
+      .setTitle('Tako Donation Success')
+      .setDescription(`Role <@&${roleId}> has been assigned to <@${donation.discordUserId}>.`)
+      .addFields(
+        { name: 'Donor', value: `<@${donation.discordUserId}> (${donation.senderName})`, inline: true },
+        { name: 'Amount', value: `Rp${donation.amount.toLocaleString('id-ID')}`, inline: true },
+        { name: 'Transaction ID', value: donation.transactionId || 'None', inline: true },
+      )
+      .setTimestamp();
+
+    await member.user.send({ embeds: [embed] }).catch((err: any) => {
+      this.logger?.warn(`Failed to DM Tako donation success to ${donation.discordUserId}: ${err?.message ?? err}`, 'TakoService');
+    });
+  }
+
+  private async sendPaidDonationAnnouncement(guildId: string, donation: any, channelId: string) {
+    const guild = await this.getClient().guilds.fetch(guildId);
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+
+    const amount = Number(donation.amount || 0).toLocaleString('id-ID');
+    const donorMessage = donation.message?.trim();
+    const description = `<@${donation.discordUserId}> baru saja memberikan Rp${amount}!${donorMessage ? ` ${donorMessage}` : ''}`;
+    const embed = new EmbedBuilder()
+      .setColor(0xf59e0b)
+      .setDescription(description.length > 4096 ? `${description.slice(0, 4093)}...` : description);
+
+    await channel.send({ embeds: [embed] }).catch((err) => {
+      this.logger?.warn(`Failed to send Tako paid donation announcement: ${err?.message ?? err}`, 'TakoService');
+    });
+  }
+
   async retryRoleAssignment(guildId: string, donationId: string) {
     const integration = await this.prisma.takoIntegration.findUnique({
       where: { guildId },
@@ -423,7 +471,11 @@ export class TakoService {
       throw new NotFoundException('Donation record not found.');
     }
 
-    return this.assignDonationRole(guildId, donationId, integration.rewardRoleId, integration.logChannelId);
+    return this.assignDonationRole(guildId, donationId, integration.rewardRoleId, integration.logChannelId, {
+      directNotificationsEnabled: integration.directNotificationsEnabled,
+      directNotificationChannelId: integration.directNotificationChannelId,
+      directNotifyMinimumAmount: integration.directNotifyMinimumAmount,
+    });
   }
 
   private async assignDonationRole(
@@ -431,6 +483,11 @@ export class TakoService {
     donationId: string,
     roleId: string,
     logChannelId?: string | null,
+    directNotification?: {
+      directNotificationsEnabled?: boolean;
+      directNotificationChannelId?: string | null;
+      directNotifyMinimumAmount?: number;
+    },
   ) {
     const donation = await this.prisma.takoDonation.findUnique({ where: { id: donationId } });
     if (!donation) throw new Error('Donation not found');
@@ -463,6 +520,16 @@ export class TakoService {
         where: { id: donationId },
         data: { status: 'ROLE_ASSIGNED', roleAssignedAt: new Date(), failureReason: null },
       });
+
+      await this.sendDonationSuccessDm(member, donation, roleId);
+
+      if (
+        directNotification?.directNotificationsEnabled &&
+        directNotification.directNotificationChannelId &&
+        donation.amount >= (directNotification.directNotifyMinimumAmount ?? 0)
+      ) {
+        await this.sendPaidDonationAnnouncement(guildId, donation, directNotification.directNotificationChannelId);
+      }
 
       // Kirim log channel jika ada
       if (logChannelId) {

@@ -61,6 +61,7 @@ export class TakoController {
       paymentMethod: dto.paymentMethod,
       discordUserId: userId,
       discordUsername: username,
+      message: dto.message,
     });
     return { ok: true, ...checkout };
   }

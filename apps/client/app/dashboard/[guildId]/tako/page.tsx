@@ -268,10 +268,15 @@ export default function TakoDashboardPage({ params }: PageProps) {
   return (
     <main className="px-6 py-8">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Support & Donate</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Tako Role Rewards</h1>
-          <p className="mt-1 text-[var(--muted)]">Configure automatic role assignment for members supporting via Tako donations.</p>
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Support & Donate</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Tako Role Rewards</h1>
+            <p className="mt-1 text-[var(--muted)]">Configure automatic role assignment for members supporting via Tako donations.</p>
+          </div>
+          <a href={`/dashboard/${guildId}/embed-templates`} className="btn btn-secondary w-fit px-4">
+            Custom Embed Templates
+          </a>
         </div>
 
         <DashboardNav guildId={guildId} activeTab="booster-roles" /> {/* Sementera gunakan navigasi list yang sama */}
@@ -510,9 +515,14 @@ export default function TakoDashboardPage({ params }: PageProps) {
                 </section>
 
                 <section className="card p-6 space-y-5">
-                  <div>
-                    <h2 className="text-lg font-bold text-[var(--text)]">Notifications</h2>
-                    <p className="mt-1 text-sm text-[var(--muted)]">Configure internal reward logs and clean public notifications for direct Tako donations.</p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h2 className="text-lg font-bold text-[var(--text)]">Notifications</h2>
+                      <p className="mt-1 text-sm text-[var(--muted)]">Configure notification channels here. Customize the embed text and layout in Embed Studio.</p>
+                    </div>
+                    <a href={`/dashboard/${guildId}/embed-templates`} className="btn btn-secondary h-9 w-fit px-3 text-xs">
+                      Customize embeds
+                    </a>
                   </div>
 
                   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">

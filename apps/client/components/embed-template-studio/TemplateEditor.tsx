@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { api } from '@/lib/api';
 import type { ReactNode } from 'react';
 import type { EmbedTemplatePayload } from './template-types';
 
@@ -29,11 +31,13 @@ function SortableFieldRow({ id, children }: SortableFieldRowProps) {
   return <div ref={setNodeRef} style={style}>{children(handle)}</div>;
 }
 
-export function TemplateEditor({ template, onChange, onFocusPath }: {
+export function TemplateEditor({ guildId, template, onChange, onFocusPath }: {
+  guildId: string;
   template: EmbedTemplatePayload;
   onChange: (template: EmbedTemplatePayload) => void;
   onFocusPath: (path: Path) => void;
 }) {
+  const [uploading, setUploading] = useState<string | null>(null);
   const updateEmbed = (index: number, patch: any) => {
     onChange({ ...template, embeds: template.embeds.map((embed, idx) => idx === index ? { ...embed, ...patch } : embed) });
   };
@@ -62,6 +66,31 @@ export function TemplateEditor({ template, onChange, onFocusPath }: {
     if (Number.isNaN(oldIndex) || Number.isNaN(newIndex)) return;
     updateEmbed(embedIndex, { fields: arrayMove(template.embeds[embedIndex].fields || [], oldIndex, newIndex) });
   };
+  const uploadImage = async (embedIndex: number, key: 'imageUrl' | 'thumbnailUrl', file?: File) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type)) {
+      alert('Upload PNG, JPG, GIF, or WEBP only.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be 5MB or smaller.');
+      return;
+    }
+    const uploadKey = `${embedIndex}-${key}`;
+    setUploading(uploadKey);
+    try {
+      const res = await api<{ ok: boolean; uploadUrl: string; url: string }>(`/guilds/${guildId}/panels/upload-url`, {
+        method: 'POST',
+        body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+      });
+      await fetch(res.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      updateEmbed(embedIndex, { [key]: res.url });
+    } catch (err: any) {
+      alert(err?.message || 'Upload failed.');
+    } finally {
+      setUploading(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -84,8 +113,37 @@ export function TemplateEditor({ template, onChange, onFocusPath }: {
             </div>
             <label className="block"><span className="field-label">Description</span><textarea className="input min-h-28" value={embed.description || ''} onFocus={() => onFocusPath({ kind: 'embed', index, key: 'description' })} onChange={(e) => updateEmbed(index, { description: e.target.value })} /></label>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block"><span className="field-label">Image URL</span><input className="input" value={embed.imageUrl || ''} onFocus={() => onFocusPath({ kind: 'embed', index, key: 'imageUrl' })} onChange={(e) => updateEmbed(index, { imageUrl: e.target.value })} /></label>
-              <label className="block"><span className="field-label">Thumbnail URL</span><input className="input" value={embed.thumbnailUrl || ''} onFocus={() => onFocusPath({ kind: 'embed', index, key: 'thumbnailUrl' })} onChange={(e) => updateEmbed(index, { thumbnailUrl: e.target.value })} /></label>
+              {(['imageUrl', 'thumbnailUrl'] as const).map((key) => {
+                const label = key === 'imageUrl' ? 'Main Image' : 'Thumbnail';
+                const value = embed[key] || '';
+                const uploadKey = `${index}-${key}`;
+                return (
+                  <div key={key} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="field-label">{label}</span>
+                      {value && <button type="button" className="text-xs font-semibold text-red-500 hover:underline" onClick={() => updateEmbed(index, { [key]: '' })}>Remove</button>}
+                    </div>
+                    {value ? (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel-strong)]">
+                        <img src={value} alt="" className={key === 'thumbnailUrl' ? 'h-24 w-full object-cover' : 'h-36 w-full object-cover'} />
+                      </div>
+                    ) : (
+                      <label className="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--panel-strong)] px-4 py-5 text-center hover:border-indigo-500/60">
+                        <span className="text-sm font-bold text-[var(--text)]">Upload {label}</span>
+                        <span className="mt-1 text-xs text-[var(--muted)]">PNG, JPG, GIF, WEBP · max 5MB · saved to R2</span>
+                        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" onChange={(e) => uploadImage(index, key, e.target.files?.[0])} />
+                      </label>
+                    )}
+                    <div className="mt-2 flex gap-2">
+                      <input className="input text-xs" value={value} placeholder="Or paste image URL" onFocus={() => onFocusPath({ kind: 'embed', index, key })} onChange={(e) => updateEmbed(index, { [key]: e.target.value })} />
+                      <label className="btn btn-secondary flex h-11 cursor-pointer items-center px-3 text-xs">
+                        {uploading === uploadKey ? 'Uploading...' : 'Upload'}
+                        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" disabled={uploading === uploadKey} onChange={(e) => uploadImage(index, key, e.target.files?.[0])} />
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <label className="block"><span className="field-label">Footer</span><input className="input" value={embed.footer?.text || ''} onFocus={() => onFocusPath({ kind: 'embed', index, key: 'footer' })} onChange={(e) => updateEmbed(index, { footer: { ...(embed.footer || {}), text: e.target.value } })} /></label>
             <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">

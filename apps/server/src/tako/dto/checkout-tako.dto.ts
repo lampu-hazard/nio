@@ -18,4 +18,8 @@ export class CheckoutTakoDto {
   @IsOptional()
   @IsString()
   discordUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  message?: string;
 }

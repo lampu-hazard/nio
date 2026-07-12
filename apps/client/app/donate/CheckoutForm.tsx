@@ -20,6 +20,7 @@ export function CheckoutForm({ guildId, userId, username }: { guildId: string; u
   const [settings, setSettings] = useState<TakoSettings | null>(null);
   const [amount, setAmount] = useState<number>(10000);
   const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('qris');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -73,6 +74,7 @@ export function CheckoutForm({ guildId, userId, username }: { guildId: string; u
           amount,
           email,
           paymentMethod,
+          message: message.trim() || undefined,
           ...(userId ? { discordUserId: userId } : {}),
           ...(username ? { discordUsername: username } : {}),
         }),
@@ -171,6 +173,18 @@ export function CheckoutForm({ guildId, userId, username }: { guildId: string; u
             </option>
           ))}
         </select>
+      </label>
+
+      <label className="block">
+        <span className="field-label">Donation Message</span>
+        <textarea
+          className="input min-h-24 resize-y"
+          value={message}
+          maxLength={200}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="semangat bang!"
+        />
+        <p className="mt-1.5 text-xs text-[var(--muted)]">Optional message shown in the public donation announcement.</p>
       </label>
 
       <button type="submit" disabled={submitting} className="btn btn-primary w-full py-3">

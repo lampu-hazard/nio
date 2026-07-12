@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Inject, forwardRef } from '@nestjs/common';
 import { ChannelType, PermissionsBitField } from 'discord.js';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
@@ -59,6 +59,19 @@ export class GuildsService {
       position: r.position,
       manageable: me.permissions.has(PermissionsBitField.Flags.ManageRoles) && r.position < me.roles.highest.position,
     })).sort((a, b) => b.position - a.position);
+  }
+
+  async createRewardRole(guildId: string, input: { name?: string; color?: string }) {
+    const guild = await this.getGuild(guildId);
+    const me = guild.members.me || await guild.members.fetchMe();
+    if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+      throw new ForbiddenException('Bot needs Manage Roles permission to create reward roles.');
+    }
+    const name = input.name?.trim().slice(0, 100) || 'Tako Supporter';
+    if (name.length < 2) throw new BadRequestException('Role name must be at least 2 characters.');
+    const color = /^#[0-9a-fA-F]{6}$/.test(input.color || '') ? input.color as `#${string}` : '#F59E0B';
+    const role = await guild.roles.create({ name, color, reason: 'nio Tako reward role' });
+    return { id: role.id, name: role.name, color: role.hexColor, position: role.position, manageable: role.position < me.roles.highest.position };
   }
 
   inviteUrl(guildId: string) {

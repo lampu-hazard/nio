@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Req, UseGuards, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Query } from '@nestjs/common';
 import { Request } from 'express';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { GuildAccessGuard } from './guards/guild-access.guard';
@@ -23,6 +23,12 @@ export class GuildsController {
   @Get(':guildId/roles')
   async roles(@Param('guildId') guildId: string) {
     return { ok: true, roles: await this.guilds.getRoles(guildId) };
+  }
+
+  @UseGuards(GuildAccessGuard)
+  @Post(':guildId/roles')
+  async createRole(@Param('guildId') guildId: string, @Body() body: { name?: string; color?: string }) {
+    return { ok: true, role: await this.guilds.createRewardRole(guildId, body || {}) };
   }
 
   @UseGuards(GuildAccessGuard)

@@ -1,4 +1,25 @@
-import { IsBoolean, IsInt, IsOptional, IsString, IsArray, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, IsString, IsArray, Min, ValidateNested } from 'class-validator';
+
+export class TakoRewardTierDto {
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  thresholdAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  roleId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  position?: number;
+}
 
 export class UpdateTakoSettingsDto {
   @IsOptional()
@@ -47,4 +68,10 @@ export class UpdateTakoSettingsDto {
   @IsInt()
   @Min(0)
   directNotifyMinimumAmount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TakoRewardTierDto)
+  rewardTiers?: TakoRewardTierDto[];
 }

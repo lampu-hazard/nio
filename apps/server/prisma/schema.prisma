@@ -30,6 +30,7 @@ model Guild {
   warnings        Warning[]
   takoIntegration TakoIntegration?
   takoDonations   TakoDonation[]
+  takoRewardTiers TakoRewardTier[]
   userNotes       UserNote[]
   voiceSessions   VoiceSession[]
 }
@@ -268,6 +269,21 @@ model TakoDonation {
   @@index([guildId])
   @@index([discordUserId])
   @@index([status])
+}
+
+model TakoRewardTier {
+  id              String   @id @default(cuid())
+  guildId         String
+  label           String
+  thresholdAmount Int
+  roleId          String
+  position        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  guild           Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+  @@unique([guildId, thresholdAmount])
 }
 
 model DiscordAgentSettings {

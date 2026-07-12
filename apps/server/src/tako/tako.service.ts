@@ -2,6 +2,10 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { Client, EmbedBuilder, PermissionsBitField } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../logger/logger.service';
+import { DEFAULT_EMBED_TEMPLATES } from '../embed-templates/embed-template-defaults';
+import { EmbedTemplateRendererService } from '../embed-templates/embed-template-renderer.service';
+import { EmbedTemplateService } from '../embed-templates/embed-template.service';
+import { EmbedTemplateCategory, EmbedTemplatePayload } from '../embed-templates/embed-template.types';
 import * as crypto from 'node:crypto';
 
 export type TakoCheckoutInput = {
@@ -27,6 +31,8 @@ export class TakoService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly logger?: AppLogger,
+    @Optional() private readonly templates?: EmbedTemplateService,
+    @Optional() private readonly templateRenderer?: EmbedTemplateRendererService,
   ) {}
 
   setClient(client: Client) {
@@ -457,10 +463,44 @@ export class TakoService {
     );
   }
 
+  private takoVariables(donation: any, roleId?: string, tierResult?: { totalSupport: number; unlockedTiers: Array<{ roleId: string }> }) {
+    return {
+      'user.mention': donation.discordUserId && donation.discordUserId !== 'unknown' ? `<@${donation.discordUserId}>` : donation.senderName || 'Anonymous',
+      'user.id': donation.discordUserId || '',
+      'user.username': donation.senderName || '',
+      'donation.amount': Number(donation.amount || 0).toLocaleString('id-ID'),
+      'donation.message': donation.message || '',
+      'donation.senderName': donation.senderName || 'Anonymous',
+      'donation.total': tierResult?.totalSupport ? tierResult.totalSupport.toLocaleString('id-ID') : '',
+      'transaction.id': donation.transactionId || 'None',
+      'role.mention': roleId ? `<@&${roleId}>` : '',
+      'tier.unlocked_roles': tierResult?.unlockedTiers.map((tier) => `<@&${tier.roleId}>`).join(', ') || '',
+    };
+  }
+
+  private async renderTemplateOrDefault(category: EmbedTemplateCategory, guildId: string, fallback: EmbedTemplatePayload, variables: Record<string, unknown>) {
+    if (!this.templates || !this.templateRenderer) return null;
+    const row = await this.templates.getTemplate(guildId, category).catch(() => null);
+    return this.templateRenderer.render((row?.template as EmbedTemplatePayload) || fallback, variables);
+  }
+
   private async sendDirectDonationNotification(guildId: string, donation: any, channelId: string) {
     const guild = await this.getClient().guilds.fetch(guildId);
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
+
+    const rendered = await this.renderTemplateOrDefault(
+      'TAKO_DIRECT_DONATION',
+      guildId,
+      DEFAULT_EMBED_TEMPLATES.TAKO_DIRECT_DONATION,
+      this.takoVariables(donation),
+    );
+    if (rendered) {
+      await channel.send(rendered).catch((err) => {
+        this.logger?.warn(`Failed to send direct Tako donation notification: ${err?.message ?? err}`, 'TakoService');
+      });
+      return;
+    }
 
     const senderName = donation.senderName || 'Anonymous';
     const amount = Number(donation.amount || 0).toLocaleString('id-ID');
@@ -517,6 +557,19 @@ export class TakoService {
     roleId: string,
     tierResult?: { totalSupport: number; unlockedTiers: Array<{ label: string; roleId: string; thresholdAmount: number }> },
   ) {
+    const rendered = await this.renderTemplateOrDefault(
+      'TAKO_SUCCESS_DM',
+      donation.guildId,
+      DEFAULT_EMBED_TEMPLATES.TAKO_SUCCESS_DM,
+      this.takoVariables(donation, roleId, tierResult),
+    );
+    if (rendered) {
+      await member.user.send(rendered).catch((err: any) => {
+        this.logger?.warn(`Failed to DM Tako donation success to ${donation.discordUserId}: ${err?.message ?? err}`, 'TakoService');
+      });
+      return;
+    }
+
     const fields = [
       { name: 'Donor', value: `<@${donation.discordUserId}> (${donation.senderName})`, inline: true },
       { name: 'Amount', value: `Rp${donation.amount.toLocaleString('id-ID')}`, inline: true },
@@ -546,6 +599,19 @@ export class TakoService {
     const guild = await this.getClient().guilds.fetch(guildId);
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
+
+    const rendered = await this.renderTemplateOrDefault(
+      'TAKO_PUBLIC_ANNOUNCEMENT',
+      guildId,
+      DEFAULT_EMBED_TEMPLATES.TAKO_PUBLIC_ANNOUNCEMENT,
+      this.takoVariables(donation),
+    );
+    if (rendered) {
+      await channel.send(rendered).catch((err) => {
+        this.logger?.warn(`Failed to send Tako paid donation announcement: ${err?.message ?? err}`, 'TakoService');
+      });
+      return;
+    }
 
     const amount = Number(donation.amount || 0).toLocaleString('id-ID');
     const donorMessage = donation.message?.trim();

@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { EmbedTemplateService } from '../embed-templates/embed-template.service';
+import { EmbedTemplateRendererService } from '../embed-templates/embed-template-renderer.service';
 
 type ActionTheme = {
   color: number;
@@ -9,8 +11,14 @@ type ActionTheme = {
 
 @Injectable()
 export class AgentActionRendererService {
-  renderProposalMessage(proposal: {
+  constructor(
+    @Optional() private readonly templates?: EmbedTemplateService,
+    @Optional() private readonly templateRenderer?: EmbedTemplateRendererService,
+  ) {}
+
+  async renderProposalMessage(proposal: {
     id: string;
+    guildId?: string;
     actionType: string;
     targetUserId: string | null;
     payload: any;
@@ -20,6 +28,27 @@ export class AgentActionRendererService {
     const theme = this.getActionTheme(proposal.actionType);
     const description = this.formatProposalDescription(proposal, reason, theme);
 
+    // Try custom AGENT_PROPOSAL template
+    if (proposal.guildId && this.templates && this.templateRenderer) {
+      try {
+        const tpl = await this.templates.getTemplate(proposal.guildId, 'AGENT_PROPOSAL');
+        if (tpl && !tpl.isDefault) {
+          const variables: Record<string, unknown> = {
+            'agent.title': theme.label,
+            'agent.description': description,
+            'agent.action': proposal.actionType,
+            'agent.reason': reason,
+            'target.mention': proposal.targetUserId ? `<@${proposal.targetUserId}>` : '',
+            'user.mention': proposal.targetUserId ? `<@${proposal.targetUserId}>` : '',
+            'guild.name': '',
+          };
+          const rendered = this.templateRenderer.render(tpl.template, variables);
+          const row = this.proposalButtons(proposal.id);
+          return { ...rendered, components: [row] };
+        }
+      } catch { /* fall through to default */ }
+    }
+
     const embed = new EmbedBuilder()
       .setColor(theme.color)
       .setTitle(theme.label)
@@ -27,29 +56,41 @@ export class AgentActionRendererService {
       .setFooter({ text: `Proposal ${proposal.id} · Expires ${proposal.expiresAt.toISOString()}` })
       .setTimestamp();
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`agent:approve:${proposal.id}`)
-        .setLabel('Execute')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`agent:cancel:${proposal.id}`)
-        .setLabel('Dismiss')
-        .setStyle(ButtonStyle.Secondary),
-    );
+    const row = this.proposalButtons(proposal.id);
 
     return { embeds: [embed], components: [row] };
   }
 
-  renderExecutionResult(title: string, description: string) {
+  async renderExecutionResult(title: string, description: string, guildId?: string) {
     const isCancelled = /cancel|dismiss/i.test(title);
     const isExecuted = /executed|success|berhasil/i.test(title);
+    const displayTitle = isExecuted ? 'Action Executed' : isCancelled ? 'Proposal Dismissed' : title;
+
+    if (guildId && this.templates && this.templateRenderer) {
+      try {
+        const tpl = await this.templates.getTemplate(guildId, 'AGENT_EXECUTION_RESULT');
+        if (tpl && !tpl.isDefault) {
+          return {
+            ...this.templateRenderer.render(tpl.template, {
+              'agent.title': displayTitle,
+              'agent.description': description,
+              'agent.action': title,
+              'agent.reason': description,
+              'target.mention': '',
+              'user.mention': '',
+              'guild.name': '',
+            }),
+            components: [],
+          };
+        }
+      } catch { /* fall through to default */ }
+    }
 
     return {
       embeds: [
         new EmbedBuilder()
           .setColor(isExecuted ? 0x2ecc71 : isCancelled ? 0x7f8c8d : 0x2b2d31)
-          .setTitle(isExecuted ? 'Action Executed' : isCancelled ? 'Proposal Dismissed' : title)
+          .setTitle(displayTitle)
           .setDescription(description)
           .setTimestamp(),
       ],
@@ -220,5 +261,18 @@ export class AgentActionRendererService {
     if (Array.isArray(value)) return value.length ? value.join(', ') : '[]';
     if (value === null) return 'null';
     return String(value);
+  }
+
+  private proposalButtons(proposalId: string) {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`agent:approve:${proposalId}`)
+        .setLabel('Execute')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`agent:cancel:${proposalId}`)
+        .setLabel('Dismiss')
+        .setStyle(ButtonStyle.Secondary),
+    );
   }
 }

@@ -29,18 +29,35 @@ export function TradingViewChart({
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#9ca3af',
+        fontFamily: 'inherit',
       },
       grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        vertLines: { visible: false },
+        horzLines: { color: 'rgba(255, 255, 255, 0.03)' },
+      },
+      crosshair: {
+        vertLine: {
+          color: 'rgba(99, 102, 241, 0.2)',
+          labelBackgroundColor: '#18181b',
+        },
+        horzLine: {
+          color: 'rgba(99, 102, 241, 0.2)',
+          labelBackgroundColor: '#18181b',
+        },
       },
       width: container.clientWidth,
       height: 300,
       timeScale: {
         borderVisible: false,
+        timeVisible: true,
+        secondsVisible: false,
       },
       rightPriceScale: {
         borderVisible: false,
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.1,
+        },
       },
     });
 

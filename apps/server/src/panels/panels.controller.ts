@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { CurrentUser, SessionUser } from '../common/decorators/current-user.decorator';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
@@ -133,8 +133,8 @@ export class PanelsController {
   }
 
   @Get('analytics')
-  async analytics(@Param('guildId') guildId: string) {
-    return { ok: true, analytics: await this.panels.analytics(guildId) };
+  async analytics(@Param('guildId') guildId: string, @Query('days') days?: string) {
+    return { ok: true, analytics: await this.panels.analytics(guildId, days) };
   }
 
   @Get('analytics/chart-data')

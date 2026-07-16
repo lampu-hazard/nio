@@ -197,14 +197,40 @@ export class PanelsService {
     return updated;
   }
 
-  async analytics(guildId: string) {
+  async analytics(guildId: string, days?: string) {
+    const cutoff = days && days !== 'all' ? new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000) : undefined;
+
     const [adds, removes, recent, topRoles] = await Promise.all([
-      this.prisma.roleLog.count({ where: { guildId, action: 'ADD' } }),
-      this.prisma.roleLog.count({ where: { guildId, action: 'REMOVE' } }),
-      this.prisma.roleLog.findMany({ where: { guildId }, orderBy: { createdAt: 'desc' }, take: 20 }),
-      this.prisma.roleLog.groupBy({ by: ['roleId'], where: { guildId, action: 'ADD' }, _count: { roleId: true }, orderBy: { _count: { roleId: 'desc' } }, take: 10 }),
+      this.prisma.roleLog.count({ where: { guildId, action: 'ADD', createdAt: cutoff ? { gte: cutoff } : undefined } }),
+      this.prisma.roleLog.count({ where: { guildId, action: 'REMOVE', createdAt: cutoff ? { gte: cutoff } : undefined } }),
+      this.prisma.roleLog.findMany({
+        where: { guildId, createdAt: cutoff ? { gte: cutoff } : undefined },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      this.prisma.roleLog.groupBy({
+        by: ['roleId'],
+        where: { guildId, action: 'ADD', createdAt: cutoff ? { gte: cutoff } : undefined },
+        _count: { roleId: true },
+        orderBy: { _count: { roleId: 'desc' } },
+        take: 10,
+      }),
     ]);
-    return { adds, removes, total: adds + removes, recent, topRoles };
+
+    // Resolve user and role names for recent logs
+    const resolvedRecent = await Promise.all(
+      recent.map(async (log) => {
+        const username = await this.resolveDiscordUsername(log.userId);
+        const roleName = await this.resolveDiscordRoleName(guildId, log.roleId);
+        return {
+          ...log,
+          username,
+          roleName,
+        };
+      })
+    );
+
+    return { adds, removes, total: adds + removes, recent: resolvedRecent, topRoles };
   }
 
   async chartData(guildId: string) {
@@ -254,7 +280,7 @@ export class PanelsService {
       }
     }
 
-    // 3. Top roles distribution for Pie Chart
+    // 3. Top roles distribution for Pie Chart (Resolve names)
     const roleLogs = await this.prisma.roleLog.groupBy({
       by: ['roleId'],
       where: { guildId, action: 'ADD' },
@@ -263,16 +289,48 @@ export class PanelsService {
       take: 5,
     });
 
-    const pieData = roleLogs.map((log) => ({
-      name: `Role #${log.roleId.slice(0, 4)}`,
-      value: log._count.roleId,
-      roleId: log.roleId,
-    }));
+    const pieData = await Promise.all(
+      roleLogs.map(async (log) => {
+        const name = await this.resolveDiscordRoleName(guildId, log.roleId);
+        return {
+          name,
+          value: log._count.roleId,
+          roleId: log.roleId,
+        };
+      })
+    );
 
     return {
       history: Object.values(chartMap).sort((a, b) => a.time.localeCompare(b.time)),
       pieData,
     };
+  }
+
+  private async resolveDiscordUsername(userId: string): Promise<string> {
+    try {
+      const cached = this.bot.client.users.cache.get(userId);
+      if (cached) return cached.username;
+      const fetched = await this.bot.client.users.fetch(userId).catch(() => null);
+      if (fetched) return fetched.username;
+    } catch {}
+
+    const localUser = await this.prisma.user.findUnique({ where: { id: userId } }).catch(() => null);
+    if (localUser) return localUser.username;
+
+    return `User#${userId.slice(0, 4)}`;
+  }
+
+  private async resolveDiscordRoleName(guildId: string, roleId: string): Promise<string> {
+    try {
+      const guild = this.bot.client.guilds.cache.get(guildId) || await this.bot.client.guilds.fetch(guildId).catch(() => null);
+      if (guild) {
+        await guild.roles.fetch().catch(() => null);
+        const role = guild.roles.cache.get(roleId);
+        if (role) return role.name;
+      }
+    } catch {}
+
+    return `Role#${roleId.slice(0, 4)}`;
   }
 
   private async auditLog(guildId: string, userId: string, action: string, panelId?: string, metadata?: any) {

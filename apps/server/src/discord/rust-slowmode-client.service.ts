@@ -38,7 +38,7 @@ export class RustSlowmodeClientService {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 200); // 200ms timeout limit
+    const timeoutId = setTimeout(() => controller.abort(), 500); // Increased to 500ms timeout limit
 
     try {
       const response = await fetch(`${this.engineUrl}/v1/slowmode/analyze`, {
@@ -66,7 +66,10 @@ export class RustSlowmodeClientService {
         return null;
       }
 
-      return (await response.json()) as RustAnalyzeResponse;
+      // Safe JSON parse to prevent crash on empty/truncated response bodies
+      const text = await response.text();
+      if (!text || text.trim() === '') return null;
+      return JSON.parse(text) as RustAnalyzeResponse;
     } catch (err: any) {
       clearTimeout(timeoutId);
       this.logger.error(

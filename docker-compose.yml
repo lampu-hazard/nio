@@ -27,6 +27,24 @@ services:
     networks:
       - private
 
+  analytics-engine:
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-analytics-engine:${IMAGE_TAG:-latest}
+    build:
+      context: ./services/analytics-engine
+      dockerfile: Dockerfile
+    container_name: nio-analytics-engine
+    restart: unless-stopped
+    ports:
+      - "50053:50053"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://nio:nio-server@db:5432/nio-db
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - private
+
   db:
     image: postgres:16-alpine
     container_name: nio-db
@@ -63,12 +81,15 @@ services:
         condition: service_started
       anomaly-engine:
         condition: service_started
+      analytics-engine:
+        condition: service_started
     env_file:
       - ./apps/server/.env
     environment:
       - NODE_ENV=production
       - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
       - ANOMALY_ENGINE_URL=anomaly-engine:50051
+      - ANALYTICS_ENGINE_URL=analytics-engine:50053
 
     networks:
       - private

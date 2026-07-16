@@ -27,12 +27,14 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
-COPY services/anomaly-engine/proto ./proto
+COPY services/anomaly-engine/proto/anomaly ./proto/anomaly
+COPY apps/server/proto/analytics ./proto/analytics
 
 EXPOSE 3002
 
 ENV PORT=3002
 ENV NODE_ENV=production
 ENV ANOMALY_PROTO_PATH=/app/proto/anomaly/v1/anomaly.proto
+ENV ANALYTICS_PROTO_PATH=/app/proto/analytics/v1/analytics.proto
 
 CMD ["bun", "dist/main.js"]

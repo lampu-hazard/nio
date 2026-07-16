@@ -2,10 +2,10 @@ import { describe, expect, it } from '@jest/globals';
 import { AgentActionRendererService } from './agent-action-renderer.service';
 
 describe('AgentActionRendererService', () => {
-  it('renders premium approve and dismiss buttons for a pending proposal', () => {
+  it('renders premium approve and dismiss buttons for a pending proposal', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderProposalMessage({
+    const payload = await service.renderProposalMessage({
       id: 'proposal-1',
       actionType: 'WARN',
       targetUserId: '123456789012345678',
@@ -23,10 +23,10 @@ describe('AgentActionRendererService', () => {
     expect((payload.components[0].components[1].data as any).label).toBe('Dismiss');
   });
 
-  it('renders action-specific details in the proposal embed', () => {
+  it('renders action-specific details in the proposal embed', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderProposalMessage({
+    const payload = await service.renderProposalMessage({
       id: 'proposal-2',
       actionType: 'ADD_ROLE',
       targetUserId: '123456789012345678',
@@ -40,10 +40,10 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('<@&987654321098765432>');
   });
 
-  it('renders mass moderation proposal details', () => {
+  it('renders mass moderation proposal details', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderProposalMessage({
+    const payload = await service.renderProposalMessage({
       id: 'proposal-3',
       actionType: 'MASS_BAN',
       targetUserId: null,
@@ -58,10 +58,10 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('<@222>');
   });
 
-  it('renders manage sticker proposal details', () => {
+  it('renders manage sticker proposal details', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderProposalMessage({
+    const payload = await service.renderProposalMessage({
       id: 'proposal-4',
       actionType: 'MANAGE_STICKER',
       targetUserId: null,
@@ -75,10 +75,10 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('`cool`');
   });
 
-  it('renders rich announcement proposal details', () => {
+  it('renders rich announcement proposal details', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderProposalMessage({
+    const payload = await service.renderProposalMessage({
       id: 'proposal-5',
       actionType: 'SEND_ANNOUNCEMENT',
       targetUserId: null,
@@ -105,10 +105,10 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('Footer: footer text');
   });
 
-  it('renders purge user messages proposal details', () => {
+  it('renders purge user messages proposal details', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderProposalMessage({
+    const payload = await service.renderProposalMessage({
       id: 'proposal-6',
       actionType: 'PURGE_USER_MESSAGES',
       targetUserId: 'user-1',
@@ -124,10 +124,10 @@ describe('AgentActionRendererService', () => {
     expect(description).toContain('<#channel-2>');
   });
 
-  it('renders polished execution results', () => {
+  it('renders polished execution results', async () => {
     const service = new AgentActionRendererService();
 
-    const payload = service.renderExecutionResult('Proposal Executed', 'Done.');
+    const payload = await service.renderExecutionResult('Proposal Executed', 'Done.');
 
     expect(payload.components).toEqual([]);
     expect(payload.embeds[0].data.title).toBe('Action Executed');

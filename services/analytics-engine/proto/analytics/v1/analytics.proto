@@ -58,4 +58,3 @@ message ResetLeaderboardRequest {
 message ResetLeaderboardResponse {
   bool success = 1;
 }
-```

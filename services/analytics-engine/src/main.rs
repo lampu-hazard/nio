@@ -35,7 +35,7 @@ impl AnalyticsEngine for AnalyticsEngineService {
 
         self.aggregator.record_message(&req.guild_id, &req.author_id);
 
-        let created_at = Utc.timestamp_millis_opt(req.timestamp_ms).unwrap_or_else(Utc::now);
+        let created_at = Utc.timestamp_millis_opt(req.timestamp_ms).single().unwrap_or_else(Utc::now);
 
         let _ = self.db_tx.send(DatabaseOp::InsertMessage {
             id: req.message_id,
@@ -54,7 +54,7 @@ impl AnalyticsEngine for AnalyticsEngineService {
         request: Request<IngestVoiceStateRequest>,
     ) -> Result<Response<IngestVoiceStateResponse>, Status> {
         let req = request.into_inner();
-        let time = Utc.timestamp_millis_opt(req.timestamp_ms).unwrap_or_else(Utc::now);
+        let time = Utc.timestamp_millis_opt(req.timestamp_ms).single().unwrap_or_else(Utc::now);
 
         match req.event_type {
             1 => {

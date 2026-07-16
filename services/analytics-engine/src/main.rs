@@ -170,7 +170,6 @@ impl AnalyticsEngine for AnalyticsEngineService {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    // Check configuration and environment
     let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgresql://wign:postgres@localhost:5432/nio".to_string()
     });
@@ -190,10 +189,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (db_tx, db_rx) = unbounded_channel::<DatabaseOp>();
 
-    // Start background flusher thread
     tokio::spawn(db_client.run_flusher_worker(db_rx));
 
-    // Start background pruner thread (runs every 1 hour)
     let agg_clone = aggregator.clone();
     tokio::spawn(async move {
         let mut pruner_interval = tokio::time::interval(std::time::Duration::from_secs(3600));

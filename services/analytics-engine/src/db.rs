@@ -3,7 +3,7 @@ use std::time::Duration;
 use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use tokio::sync::mpsc::UnboundedReceiver;
-use chrono::{DateTime, Utc, Duration as ChronoDuration};
+use chrono::{DateTime, Utc, Duration as ChronoDuration, NaiveDateTime};
 use crate::aggregator::{Aggregator, MessageEvent, VoiceEvent};
 
 pub enum DatabaseOp {
@@ -66,7 +66,8 @@ impl DbClient {
         for row in chat_event_rows {
             let guild_id: String = row.get("guildId");
             let author_id: String = row.get("authorId");
-            let created_at: DateTime<Utc> = row.get("createdAt");
+            let naive_dt: NaiveDateTime = row.get("createdAt");
+            let created_at = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
 
             let mut events = aggregator.chat_events.entry(guild_id).or_default();
             events.push(MessageEvent {
@@ -109,7 +110,8 @@ impl DbClient {
             let guild_id: String = row.get("guildId");
             let user_id: String = row.get("userId");
             let duration: i32 = row.get("duration");
-            let joined_at: DateTime<Utc> = row.get("joinedAt");
+            let naive_dt: NaiveDateTime = row.get("joinedAt");
+            let joined_at = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
 
             let mut events = aggregator.voice_events.entry(guild_id).or_default();
             events.push(VoiceEvent {
@@ -199,7 +201,7 @@ impl DbClient {
                         "INSERT INTO \"VoiceSession\" (id, \"guildId\", \"userId\", \"channelId\", \"joinedAt\")
                          VALUES ($1, $2, $3, $4, $5)
                          ON CONFLICT DO NOTHING",
-                        &[&id, &guild_id, &user_id, &channel_id, &joined_at],
+                        &[&id, &guild_id, &user_id, &channel_id, &joined_at.naive_utc()],
                     ).await?;
                 }
                 DatabaseOp::CloseVoiceSession { guild_id, user_id, left_at, duration_secs } => {
@@ -213,7 +215,7 @@ impl DbClient {
                              ORDER BY \"joinedAt\" DESC
                              LIMIT 1
                          )",
-                        &[&left_at, &duration_secs, &guild_id, &user_id],
+                        &[&left_at.naive_utc(), &duration_secs, &guild_id, &user_id],
                     ).await?;
                 }
             }
@@ -221,15 +223,12 @@ impl DbClient {
 
         // Multi-row INSERT message logs optimization
         if !messages.is_empty() {
-            // Because we're writing a dynamic multi-row query, we build the parameters list dynamically.
-            // For safety and efficiency, we can insert sequentially inside a transaction or construct a batch statement.
-            // Let's perform sequential inserts inside the transaction — it is still extremely fast in a transaction pool (single roundtrip for commit).
             for msg in messages {
                 tx.execute(
                     "INSERT INTO \"DiscordMessageLog\" (id, \"guildId\", \"channelId\", \"authorId\", content, \"createdAt\")
                      VALUES ($1, $2, $3, $4, $5, $6)
                      ON CONFLICT (id) DO NOTHING",
-                    &[&msg.0, &msg.1, &msg.2, &msg.3, &msg.4, &msg.5],
+                    &[&msg.0, &msg.1, &msg.2, &msg.3, &msg.4, &msg.5.naive_utc()],
                 ).await?;
             }
         }

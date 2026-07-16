@@ -334,6 +334,7 @@ export class PanelsService {
   }
 
   private async auditLog(guildId: string, userId: string, action: string, panelId?: string, metadata?: any) {
+    if (userId === 'system') return;
     try {
       await this.prisma.auditLog.create({
         data: {

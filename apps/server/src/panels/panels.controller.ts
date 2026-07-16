@@ -136,4 +136,9 @@ export class PanelsController {
   async analytics(@Param('guildId') guildId: string) {
     return { ok: true, analytics: await this.panels.analytics(guildId) };
   }
+
+  @Get('analytics/chart-data')
+  async chartData(@Param('guildId') guildId: string) {
+    return { ok: true, ...(await this.panels.chartData(guildId)) };
+  }
 }

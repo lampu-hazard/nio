@@ -16,7 +16,7 @@ export class LeaderboardService {
     if (this.rustAnalytics) {
       try {
         const entries = await this.rustAnalytics.getChatLeaderboard(guildId, days, limit);
-        if (entries) {
+        if (entries && entries.length > 0) {
           return await Promise.all(
             entries.map(async (row) => {
               const liveUser = await this.resolveLiveUser(row.userId);
@@ -73,7 +73,7 @@ export class LeaderboardService {
     if (this.rustAnalytics) {
       try {
         const entries = await this.rustAnalytics.getVoiceLeaderboard(guildId, days, limit);
-        if (entries) {
+        if (entries && entries.length > 0) {
           return await Promise.all(
             entries.map(async (row) => {
               const liveUser = await this.resolveLiveUser(row.userId);

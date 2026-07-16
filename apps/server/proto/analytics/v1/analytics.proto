@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package analytics.v1;
+
+service AnalyticsEngine {
+  rpc IngestMessage (IngestMessageRequest) returns (IngestMessageResponse);
+  rpc IngestVoiceState (IngestVoiceStateRequest) returns (IngestVoiceStateResponse);
+  rpc GetChatLeaderboard (GetLeaderboardRequest) returns (GetLeaderboardResponse);
+  rpc GetVoiceLeaderboard (GetLeaderboardRequest) returns (GetLeaderboardResponse);
+  rpc ResetLeaderboard (ResetLeaderboardRequest) returns (ResetLeaderboardResponse);
+}
+
+message IngestMessageRequest {
+  string message_id = 1;
+  string guild_id = 2;
+  string channel_id = 3;
+  string author_id = 4;
+  string content = 5;
+  int64 timestamp_ms = 6;
+}
+
+message IngestMessageResponse {
+  bool success = 1;
+}
+
+message IngestVoiceStateRequest {
+  string guild_id = 1;
+  string user_id = 2;
+  string channel_id = 3;
+  int32 event_type = 4; // 1 = JOIN, 2 = LEAVE, 3 = MOVE
+  int64 timestamp_ms = 5;
+}
+
+message IngestVoiceStateResponse {
+  bool success = 1;
+}
+
+message GetLeaderboardRequest {
+  string guild_id = 1;
+  string days = 2; // "7", "30", "all"
+  int32 limit = 3;
+}
+
+message LeaderboardEntry {
+  int32 rank = 1;
+  string user_id = 2;
+  int64 score = 3;
+}
+
+message GetLeaderboardResponse {
+  repeated LeaderboardEntry entries = 1;
+}
+
+message ResetLeaderboardRequest {
+  string guild_id = 1;
+}
+
+message ResetLeaderboardResponse {
+  bool success = 1;
+}

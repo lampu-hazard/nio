@@ -13,6 +13,7 @@ import { RustSlowmodeClientService } from './rust-slowmode-client.service';
 import { RustAnomalyClientService } from './rust-anomaly-client.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
 import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
+import { RustAnalyticsClientService } from './rust-analytics-client.service';
 
 @Module({
   imports: [SelfRolesModule, StickersModule, ModerationModule, BoosterRoleModule, TakoModule, DiscordAgentModule, EmbedTemplateModule],
@@ -24,6 +25,7 @@ import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
     RustSlowmodeClientService,
     RustAnomalyClientService,
     DiscordAnomalyService,
+    RustAnalyticsClientService,
   ],
   exports: [
     DiscordBotService,
@@ -32,6 +34,7 @@ import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
     RustSlowmodeClientService,
     RustAnomalyClientService,
     DiscordAnomalyService,
+    RustAnalyticsClientService,
   ],
 })
 export class DiscordModule {}

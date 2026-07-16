@@ -13,6 +13,7 @@ import { DiscordMessageLogService } from '../discord-agent/discord-message-log.s
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
 import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
+import { RustAnalyticsClientService } from './rust-analytics-client.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -41,6 +42,7 @@ export class DiscordBotService implements OnModuleInit {
     private readonly actionProposals: AgentActionProposalService,
     private readonly agentToolExecutor: DiscordAgentToolExecutorService,
     private readonly conversationMemory: ConversationMemoryService,
+    private readonly rustAnalytics: RustAnalyticsClientService,
   ) {}
 
   async onModuleInit() {
@@ -185,21 +187,33 @@ export class DiscordBotService implements OnModuleInit {
   private async handleAgentMessage(message: Message) {
     if (!message.guild) return;
 
-    await this.messageLogs.logCreate({
-      id: message.id,
+    // Send to Rust Analytics Engine, fallback to local DB on failure/absence
+    const sentToRust = await this.rustAnalytics.ingestMessage({
+      messageId: message.id,
       guildId: message.guild.id,
       channelId: message.channel.id,
       authorId: message.author.id,
       content: message.content || '',
-      attachments: message.attachments.map((attachment) => ({
-        id: attachment.id,
-        name: attachment.name,
-        url: attachment.url,
-        contentType: attachment.contentType,
-      })),
-      embeds: message.embeds.map((embed) => embed.toJSON()),
-      createdAt: message.createdAt,
+      timestampMs: message.createdTimestamp,
     });
+
+    if (!sentToRust) {
+      await this.messageLogs.logCreate({
+        id: message.id,
+        guildId: message.guild.id,
+        channelId: message.channel.id,
+        authorId: message.author.id,
+        content: message.content || '',
+        attachments: message.attachments.map((attachment) => ({
+          id: attachment.id,
+          name: attachment.name,
+          url: attachment.url,
+          contentType: attachment.contentType,
+        })),
+        embeds: message.embeds.map((embed) => embed.toJSON()),
+        createdAt: message.createdAt,
+      }).catch(() => null);
+    }
 
     if (!this.client.user) return;
 
@@ -425,30 +439,57 @@ export class DiscordBotService implements OnModuleInit {
 
     // Case 1: Join Voice
     if (!oldChannelId && newChannelId) {
-      await this.messageLogs.prisma.voiceSession.create({
-        data: {
-          guildId,
-          userId,
-          channelId: newChannelId,
-          joinedAt: new Date(),
-        },
-      }).catch(() => null);
+      const sent = await this.rustAnalytics.ingestVoiceState({
+        guildId,
+        userId,
+        channelId: newChannelId,
+        eventType: 1,
+        timestampMs: Date.now(),
+      });
+      if (!sent) {
+        await this.messageLogs.prisma.voiceSession.create({
+          data: {
+            guildId,
+            userId,
+            channelId: newChannelId,
+            joinedAt: new Date(),
+          },
+        }).catch(() => null);
+      }
     }
     // Case 2: Leave Voice
     else if (oldChannelId && !newChannelId) {
-      await this.closeActiveVoiceSession(guildId, userId);
+      const sent = await this.rustAnalytics.ingestVoiceState({
+        guildId,
+        userId,
+        channelId: oldChannelId,
+        eventType: 2,
+        timestampMs: Date.now(),
+      });
+      if (!sent) {
+        await this.closeActiveVoiceSession(guildId, userId);
+      }
     }
     // Case 3: Move Channels
     else if (oldChannelId && newChannelId && oldChannelId !== newChannelId) {
-      await this.closeActiveVoiceSession(guildId, userId);
-      await this.messageLogs.prisma.voiceSession.create({
-        data: {
-          guildId,
-          userId,
-          channelId: newChannelId,
-          joinedAt: new Date(),
-        },
-      }).catch(() => null);
+      const sent = await this.rustAnalytics.ingestVoiceState({
+        guildId,
+        userId,
+        channelId: newChannelId,
+        eventType: 3,
+        timestampMs: Date.now(),
+      });
+      if (!sent) {
+        await this.closeActiveVoiceSession(guildId, userId);
+        await this.messageLogs.prisma.voiceSession.create({
+          data: {
+            guildId,
+            userId,
+            channelId: newChannelId,
+            joinedAt: new Date(),
+          },
+        }).catch(() => null);
+      }
     }
   }
 

@@ -47,6 +47,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push analytics engine
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/analytics-engine
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-analytics-engine:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-analytics-engine:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build and push server
         uses: docker/build-push-action@v5
         with:
@@ -82,7 +93,7 @@ jobs:
           script: |
             cd ${{ secrets.VPS_PROJECT_PATH || './nio-server' }}
             git pull origin main
-            docker comose down
+            docker compose down
             docker compose pull
             docker compose up -d
             docker image prune -f

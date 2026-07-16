@@ -175,7 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "postgresql://wign:postgres@localhost:5432/nio".to_string()
     });
     let port = env::var("ANALYTICS_ENGINE_PORT").unwrap_or_else(|_| "50053".to_string());
-    let addr = format!("127.0.0.1:{}", port).parse()?;
+    let addr = format!("0.0.0.0:{}", port).parse()?;
 
     println!("Initializing Database Pool...");
     let db_client = Arc::new(DbClient::new(&database_url));

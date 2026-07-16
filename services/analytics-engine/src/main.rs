@@ -32,10 +32,9 @@ impl AnalyticsEngine for AnalyticsEngineService {
         request: Request<IngestMessageRequest>,
     ) -> Result<Response<IngestMessageResponse>, Status> {
         let req = request.into_inner();
-
-        self.aggregator.record_message(&req.guild_id, &req.author_id);
-
         let created_at = Utc.timestamp_millis_opt(req.timestamp_ms).single().unwrap_or_else(Utc::now);
+
+        self.aggregator.record_message(&req.guild_id, &req.author_id, created_at);
 
         let _ = self.db_tx.send(DatabaseOp::InsertMessage {
             id: req.message_id,
@@ -117,8 +116,7 @@ impl AnalyticsEngine for AnalyticsEngineService {
         let req = request.into_inner();
         let limit = if req.limit <= 0 { 10 } else { req.limit as usize };
 
-        // For now, we aggregate simply on the DashMap cache
-        let entries = self.aggregator.get_leaderboard(false, &req.guild_id, limit);
+        let entries = self.aggregator.get_leaderboard(false, &req.guild_id, &req.days, limit);
 
         let response_entries = entries
             .into_iter()
@@ -140,7 +138,7 @@ impl AnalyticsEngine for AnalyticsEngineService {
         let req = request.into_inner();
         let limit = if req.limit <= 0 { 10 } else { req.limit as usize };
 
-        let entries = self.aggregator.get_leaderboard(true, &req.guild_id, limit);
+        let entries = self.aggregator.get_leaderboard(true, &req.guild_id, &req.days, limit);
 
         let response_entries = entries
             .into_iter()
@@ -160,8 +158,10 @@ impl AnalyticsEngine for AnalyticsEngineService {
         request: Request<ResetLeaderboardRequest>,
     ) -> Result<Response<ResetLeaderboardResponse>, Status> {
         let req = request.into_inner();
-        self.aggregator.chat_leaderboard.remove(&req.guild_id);
-        self.aggregator.voice_leaderboard.remove(&req.guild_id);
+        self.aggregator.chat_events.remove(&req.guild_id);
+        self.aggregator.voice_events.remove(&req.guild_id);
+        self.aggregator.chat_all_time.remove(&req.guild_id);
+        self.aggregator.voice_all_time.remove(&req.guild_id);
         Ok(Response::new(ResetLeaderboardResponse { success: true }))
     }
 }
@@ -192,6 +192,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start background flusher thread
     tokio::spawn(db_client.run_flusher_worker(db_rx));
+
+    // Start background pruner thread (runs every 1 hour)
+    let agg_clone = aggregator.clone();
+    tokio::spawn(async move {
+        let mut pruner_interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            pruner_interval.tick().await;
+            agg_clone.prune_old_events();
+        }
+    });
 
     let service = AnalyticsEngineService {
         aggregator,

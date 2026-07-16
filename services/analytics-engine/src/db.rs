@@ -4,7 +4,7 @@ use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use tokio::sync::mpsc::UnboundedReceiver;
 use chrono::{DateTime, Utc, Duration as ChronoDuration};
-use crate::aggregator::Aggregator;
+use crate::aggregator::{Aggregator, MessageEvent, VoiceEvent};
 
 pub enum DatabaseOp {
     InsertMessage {
@@ -53,44 +53,90 @@ impl DbClient {
         let client = self.pool.get().await?;
         let thirty_days_ago = Utc::now() - ChronoDuration::days(30);
 
-        // 1. Hydrate chat stats
-        let chat_rows = client
+        // 1. Hydrate raw chat events for the last 30 days
+        let chat_event_rows = client
             .query(
-                "SELECT \"guildId\", \"authorId\", COUNT(id)::int8 as count
+                "SELECT \"guildId\", \"authorId\", \"createdAt\"
                  FROM \"DiscordMessageLog\"
-                 WHERE \"deletedAt\" IS NULL AND \"createdAt\" >= $1
-                 GROUP BY \"guildId\", \"authorId\"",
+                 WHERE \"deletedAt\" IS NULL AND \"createdAt\" >= $1",
                 &[&thirty_days_ago],
             )
             .await?;
 
-        for row in chat_rows {
+        for row in chat_event_rows {
+            let guild_id: String = row.get("guildId");
+            let author_id: String = row.get("authorId");
+            let created_at: DateTime<Utc> = row.get("createdAt");
+
+            let mut events = aggregator.chat_events.entry(guild_id).or_default();
+            events.push(MessageEvent {
+                author_id,
+                created_at,
+            });
+        }
+
+        // 2. Hydrate all-time chat stats
+        let chat_all_rows = client
+            .query(
+                "SELECT \"guildId\", \"authorId\", COUNT(id)::int8 as count
+                 FROM \"DiscordMessageLog\"
+                 WHERE \"deletedAt\" IS NULL
+                 GROUP BY \"guildId\", \"authorId\"",
+                &[],
+            )
+            .await?;
+
+        for row in chat_all_rows {
             let guild_id: String = row.get("guildId");
             let author_id: String = row.get("authorId");
             let count: i64 = row.get("count");
 
-            let guild_map = aggregator.chat_leaderboard.entry(guild_id).or_default();
-            guild_map.insert(author_id, count as u64);
+            let guild_all = aggregator.chat_all_time.entry(guild_id).or_default();
+            guild_all.insert(author_id, count as u64);
         }
 
-        // 2. Hydrate voice stats
-        let voice_rows = client
+        // 3. Hydrate raw voice events for the last 30 days
+        let voice_event_rows = client
             .query(
-                "SELECT \"guildId\", \"userId\", SUM(duration)::int8 as sum_dur
+                "SELECT \"guildId\", \"userId\", duration, \"joinedAt\"
                  FROM \"VoiceSession\"
-                 WHERE \"leftAt\" IS NOT NULL AND \"joinedAt\" >= $1
-                 GROUP BY \"guildId\", \"userId\"",
+                 WHERE \"leftAt\" IS NOT NULL AND \"joinedAt\" >= $1",
                 &[&thirty_days_ago],
             )
             .await?;
 
-        for row in voice_rows {
+        for row in voice_event_rows {
+            let guild_id: String = row.get("guildId");
+            let user_id: String = row.get("userId");
+            let duration: i32 = row.get("duration");
+            let joined_at: DateTime<Utc> = row.get("joinedAt");
+
+            let mut events = aggregator.voice_events.entry(guild_id).or_default();
+            events.push(VoiceEvent {
+                user_id,
+                duration_secs: duration as u64,
+                joined_at,
+            });
+        }
+
+        // 4. Hydrate all-time voice stats
+        let voice_all_rows = client
+            .query(
+                "SELECT \"guildId\", \"userId\", SUM(duration)::int8 as sum_dur
+                 FROM \"VoiceSession\"
+                 WHERE \"leftAt\" IS NOT NULL
+                 GROUP BY \"guildId\", \"userId\"",
+                &[],
+            )
+            .await?;
+
+        for row in voice_all_rows {
             let guild_id: String = row.get("guildId");
             let user_id: String = row.get("userId");
             let sum_dur: i64 = row.get("sum_dur");
 
-            let guild_map = aggregator.voice_leaderboard.entry(guild_id).or_default();
-            guild_map.insert(user_id, sum_dur as u64);
+            let guild_all = aggregator.voice_all_time.entry(guild_id).or_default();
+            guild_all.insert(user_id, sum_dur as u64);
         }
 
         Ok(())

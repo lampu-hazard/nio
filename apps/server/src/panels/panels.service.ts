@@ -207,6 +207,74 @@ export class PanelsService {
     return { adds, removes, total: adds + removes, recent, topRoles };
   }
 
+  async chartData(guildId: string) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // 1. Group messages per day
+    const messages = await this.prisma.discordMessageLog.groupBy({
+      by: ['createdAt'],
+      where: {
+        guildId,
+        createdAt: { gte: sevenDaysAgo },
+        deletedAt: null,
+      },
+      _count: { id: true },
+    });
+
+    // 2. Group voice sessions per day
+    const voice = await this.prisma.voiceSession.groupBy({
+      by: ['joinedAt'],
+      where: {
+        guildId,
+        joinedAt: { gte: sevenDaysAgo },
+        leftAt: { not: null },
+      },
+      _sum: { duration: true },
+    });
+
+    // Aggregate values by date string YYYY-MM-DD
+    const chartMap: Record<string, { time: string; messages: number; voice: number }> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().split('T')[0];
+      chartMap[dateStr] = { time: dateStr, messages: 0, voice: 0 };
+    }
+
+    for (const row of messages) {
+      const dateStr = row.createdAt.toISOString().split('T')[0];
+      if (chartMap[dateStr]) {
+        chartMap[dateStr].messages += row._count.id;
+      }
+    }
+
+    for (const row of voice) {
+      const dateStr = row.joinedAt.toISOString().split('T')[0];
+      if (chartMap[dateStr]) {
+        chartMap[dateStr].voice += Math.floor((row._sum.duration || 0) / 60); // in minutes
+      }
+    }
+
+    // 3. Top roles distribution for Pie Chart
+    const roleLogs = await this.prisma.roleLog.groupBy({
+      by: ['roleId'],
+      where: { guildId, action: 'ADD' },
+      _count: { roleId: true },
+      orderBy: { _count: { roleId: 'desc' } },
+      take: 5,
+    });
+
+    const pieData = roleLogs.map((log) => ({
+      name: `Role #${log.roleId.slice(0, 4)}`,
+      value: log._count.roleId,
+      roleId: log.roleId,
+    }));
+
+    return {
+      history: Object.values(chartMap).sort((a, b) => a.time.localeCompare(b.time)),
+      pieData,
+    };
+  }
+
   private async auditLog(guildId: string, userId: string, action: string, panelId?: string, metadata?: any) {
     try {
       await this.prisma.auditLog.create({

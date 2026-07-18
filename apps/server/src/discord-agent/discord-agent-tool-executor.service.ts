@@ -6,9 +6,46 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
-import { AgentSettingsUpdate } from './agent-action.types';
+import { AgentActionRecommendation, AgentActionType, AgentSettingsUpdate } from './agent-action.types';
 
 const MAX_READ_LIMIT = 100;
+const MAX_BATCH_ITEMS = 25;
+const QUARANTINE_SNAPSHOT_PREFIX = '[Quarantine Snapshot]';
+const DISCORD_ACTION_TOOLS: Record<string, AgentActionType> = {
+  create_channel: 'CREATE_CHANNEL',
+  edit_channel: 'EDIT_CHANNEL',
+  delete_channel: 'DELETE_CHANNEL',
+  move_channel: 'MOVE_CHANNEL',
+  set_channel_permissions: 'SET_CHANNEL_PERMISSIONS',
+  create_category_with_channels: 'CREATE_CATEGORY_WITH_CHANNELS',
+  clone_channel_permissions: 'CLONE_CHANNEL_PERMISSIONS',
+  sync_category_permissions: 'SYNC_CATEGORY_PERMISSIONS',
+  rename_channel_batch: 'RENAME_CHANNEL_BATCH',
+  cleanup_empty_channels: 'CLEANUP_EMPTY_CHANNELS',
+  create_role: 'CREATE_ROLE',
+  edit_role: 'EDIT_ROLE',
+  delete_role: 'DELETE_ROLE',
+  move_role: 'MOVE_ROLE',
+  snapshot_member_roles: 'SNAPSHOT_MEMBER_ROLES',
+  restore_member_roles: 'RESTORE_MEMBER_ROLES',
+  quarantine_member: 'QUARANTINE_MEMBER',
+  send_plain_message: 'SEND_PLAIN_MESSAGE',
+  send_embed_message: 'SEND_EMBED_MESSAGE',
+  edit_bot_message: 'EDIT_BOT_MESSAGE',
+  delete_bot_message: 'DELETE_BOT_MESSAGE',
+  create_thread: 'CREATE_THREAD',
+  archive_thread: 'ARCHIVE_THREAD',
+  lock_thread: 'LOCK_THREAD',
+  pin_message: 'PIN_MESSAGE',
+  unpin_message: 'UNPIN_MESSAGE',
+  react_to_message: 'REACT_TO_MESSAGE',
+  remove_reaction: 'REMOVE_REACTION',
+  move_member_voice: 'MOVE_MEMBER_VOICE',
+  disconnect_member_voice: 'DISCONNECT_MEMBER_VOICE',
+  set_voice_channel_status: 'SET_VOICE_CHANNEL_STATUS',
+  create_invite: 'CREATE_INVITE',
+  delete_invite: 'DELETE_INVITE',
+};
 
 @Injectable()
 export class DiscordAgentToolExecutorService {
@@ -31,6 +68,11 @@ export class DiscordAgentToolExecutorService {
     args: any,
     context: { guildId: string; channelId: string; requestedById: string },
   ): Promise<any> {
+    const discordActionType = DISCORD_ACTION_TOOLS[name];
+    if (discordActionType) {
+      return this.createDiscordActionProposal(discordActionType, args, context);
+    }
+
     switch (name) {
       case 'get_user_warnings':
         return this.moderation.listWarnings(context.guildId, { search: this.requireString(args.targetUserId, 'targetUserId') });
@@ -55,6 +97,31 @@ export class DiscordAgentToolExecutorService {
 
       case 'get_channel_slowmode':
         return this.getChannelSlowmode(context.guildId, args.channelId || context.channelId);
+
+      case 'get_guild_overview':
+        return this.getGuildOverview(context.guildId);
+
+      case 'get_channel_info':
+        return this.getChannelInfo(context.guildId, args.channelId || context.channelId);
+
+      case 'get_member_permissions':
+        return this.getMemberPermissions(
+          context.guildId,
+          this.requireString(args.targetUserId, 'targetUserId'),
+          args.channelId || context.channelId,
+        );
+
+      case 'get_bot_permissions':
+        return this.getBotPermissions(context.guildId, args.channelId || context.channelId, args.targetUserId, args.roleId);
+
+      case 'get_role_info':
+        return this.getRoleInfo(context.guildId, this.requireString(args.roleId, 'roleId'));
+
+      case 'get_voice_state':
+        return this.getVoiceState(context.guildId, this.requireString(args.targetUserId, 'targetUserId'));
+
+      case 'preview_embed_message':
+        return this.previewEmbedMessage(args);
 
       case 'warn_user': {
         const warnProposal = await this.proposals.createProposal({
@@ -393,6 +460,7 @@ export class DiscordAgentToolExecutorService {
         return { proposalCreated: true, proposalId: stickerProposal.id, actionType: 'MANAGE_STICKER' };
       }
 
+
       case 'execute_godmode_script':
         return this.executeGodmodeScript(
           this.requireString(args.code, 'code'),
@@ -505,6 +573,222 @@ export class DiscordAgentToolExecutorService {
       channelId: channel.id,
       rateLimitPerUser: (channel as any).rateLimitPerUser,
     };
+  }
+
+  private async getGuildOverview(guildId: string) {
+    const guild = await this.getGuild(guildId);
+    await Promise.all([guild.channels.fetch().catch(() => null), guild.roles.fetch().catch(() => null)]);
+    const me = guild.members.me ?? await guild.members.fetchMe();
+    return {
+      id: guild.id,
+      name: guild.name,
+      ownerId: guild.ownerId || null,
+      memberCount: guild.memberCount,
+      premiumTier: guild.premiumTier ?? null,
+      premiumSubscriptionCount: guild.premiumSubscriptionCount || 0,
+      channelCount: guild.channels.cache.size,
+      roleCount: guild.roles.cache.size,
+      bot: this.formatMemberSummary(me),
+    };
+  }
+
+  private async getChannelInfo(guildId: string, channelId: string) {
+    const guild = await this.getGuild(guildId);
+    const channel = await guild.channels.fetch(this.requireString(channelId, 'channelId')).catch(() => null) as any;
+    if (!channel) throw new BadRequestException('Channel is not available.');
+    return {
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      parentId: channel.parentId || null,
+      position: channel.position ?? null,
+      topic: channel.topic || null,
+      nsfw: channel.nsfw ?? null,
+      rateLimitPerUser: channel.rateLimitPerUser ?? null,
+      bitrate: channel.bitrate ?? null,
+      userLimit: channel.userLimit ?? null,
+      permissionOverwrites: channel.permissionOverwrites?.cache?.map((overwrite: any) => ({
+        id: overwrite.id,
+        type: overwrite.type,
+        allow: overwrite.allow?.toArray?.() || [],
+        deny: overwrite.deny?.toArray?.() || [],
+      })) || [],
+    };
+  }
+
+  private async getMemberPermissions(guildId: string, targetUserId: string, channelId?: string) {
+    const guild = await this.getGuild(guildId);
+    const member = await guild.members.fetch(targetUserId).catch(() => null) as any;
+    if (!member) throw new BadRequestException('Member is not available in this server.');
+    const me = guild.members.me ?? await guild.members.fetchMe();
+    const channel = channelId ? await guild.channels.fetch(channelId).catch(() => null) as any : null;
+    const permissions = channel && typeof member.permissionsIn === 'function' ? member.permissionsIn(channel.id) : member.permissions;
+    return {
+      member: this.formatMemberSummary(member),
+      guildPermissions: member.permissions?.toArray?.() || [],
+      channelId: channel?.id || null,
+      channelPermissions: permissions?.toArray?.() || [],
+      manageableByBot: member.roles.highest.position < me.roles.highest.position,
+    };
+  }
+
+  private async getBotPermissions(guildId: string, channelId?: string, targetUserId?: string, roleId?: string) {
+    const guild = await this.getGuild(guildId);
+    const me = guild.members.me ?? await guild.members.fetchMe();
+    const channel = channelId ? await guild.channels.fetch(channelId).catch(() => null) as any : null;
+    const permissions = channel && typeof me.permissionsIn === 'function' ? me.permissionsIn(channel.id) : me.permissions;
+    const target = typeof targetUserId === 'string' && targetUserId.trim()
+      ? await guild.members.fetch(targetUserId.trim()).catch(() => null) as any
+      : null;
+    const role = typeof roleId === 'string' && roleId.trim()
+      ? await guild.roles.fetch(roleId.trim()).catch(() => null) as any
+      : null;
+    return {
+      bot: this.formatMemberSummary(me),
+      channelId: channel?.id || null,
+      permissions: permissions?.toArray?.() || [],
+      canManageTargetMember: target ? target.roles.highest.position < me.roles.highest.position : null,
+      canManageRole: role ? !role.managed && role.position < me.roles.highest.position : null,
+    };
+  }
+
+  private async getRoleInfo(guildId: string, roleId: string) {
+    const guild = await this.getGuild(guildId);
+    const role = await guild.roles.fetch(roleId).catch(() => null) as any;
+    if (!role) throw new BadRequestException('Role is not available in this server.');
+    const me = guild.members.me ?? await guild.members.fetchMe();
+    return {
+      id: role.id,
+      name: role.name,
+      color: role.hexColor,
+      position: role.position,
+      managed: role.managed,
+      mentionable: role.mentionable,
+      hoist: role.hoist,
+      permissions: role.permissions?.toArray?.() || [],
+      memberCount: role.members?.size ?? null,
+      manageableByBot: !role.managed && role.position < me.roles.highest.position,
+    };
+  }
+
+  private async getVoiceState(guildId: string, targetUserId: string) {
+    const guild = await this.getGuild(guildId);
+    const member = await guild.members.fetch(targetUserId).catch(() => null) as any;
+    if (!member) throw new BadRequestException('Member is not available in this server.');
+    return {
+      targetUserId,
+      channelId: member.voice?.channelId || null,
+      channelName: member.voice?.channel?.name || null,
+      selfMute: member.voice?.selfMute ?? null,
+      selfDeaf: member.voice?.selfDeaf ?? null,
+      serverMute: member.voice?.serverMute ?? null,
+      serverDeaf: member.voice?.serverDeaf ?? null,
+      streaming: member.voice?.streaming ?? null,
+      suppress: member.voice?.suppress ?? null,
+    };
+  }
+
+  private previewEmbedMessage(args: any) {
+    const title = typeof args.title === 'string' ? args.title : '';
+    const description = typeof args.description === 'string' ? args.description : '';
+    const footer = typeof args.footer === 'string' ? args.footer : '';
+    const fields = Array.isArray(args.fields) ? args.fields.slice(0, 50) : [];
+    const warnings: string[] = [];
+    if (title.length > 256) warnings.push('Title exceeds 256 characters.');
+    if (description.length > 4096) warnings.push('Description exceeds 4096 characters.');
+    if (footer.length > 2048) warnings.push('Footer exceeds 2048 characters.');
+    if (fields.length > 25) warnings.push('Embed has more than 25 fields.');
+    for (const [index, field] of fields.entries()) {
+      if (String(field?.name || '').length > 256) warnings.push(`Field ${index + 1} name exceeds 256 characters.`);
+      if (String(field?.value || '').length > 1024) warnings.push(`Field ${index + 1} value exceeds 1024 characters.`);
+    }
+    const totalLength = title.length + description.length + footer.length + fields.reduce((sum: number, field: any) => sum + String(field?.name || '').length + String(field?.value || '').length, 0);
+    if (totalLength > 6000) warnings.push('Combined embed text exceeds 6000 characters.');
+    return { valid: warnings.length === 0, totalLength, warnings };
+  }
+
+  private formatMemberSummary(member: any) {
+    return {
+      id: member.id,
+      tag: member.user?.tag || null,
+      username: member.user?.username || null,
+      displayName: member.displayName || member.user?.globalName || member.user?.username || null,
+      highestRole: member.roles?.highest ? { id: member.roles.highest.id, name: member.roles.highest.name, position: member.roles.highest.position } : null,
+      roles: member.roles?.cache?.map?.((role: any) => ({ id: role.id, name: role.name, position: role.position })) || [],
+    };
+  }
+
+  private async createDiscordActionProposal(
+    type: AgentActionType,
+    args: any,
+    context: { guildId: string; channelId: string; requestedById: string },
+  ) {
+    const recommendation = this.buildDiscordRecommendation(type, args, context);
+    const proposal = await this.proposals.createProposal({
+      guildId: context.guildId,
+      channelId: context.channelId,
+      requestedById: context.requestedById,
+      targetUserId: typeof args.targetUserId === 'string' && args.targetUserId.trim() ? args.targetUserId.trim() : null,
+      recommendation,
+    });
+    return { proposalCreated: true, proposalId: proposal.id, actionType: type };
+  }
+
+  private buildDiscordRecommendation(
+    type: AgentActionType,
+    args: any,
+    context: { channelId: string },
+  ): AgentActionRecommendation {
+    const rec: AgentActionRecommendation = {
+      type,
+      reason: this.requireString(args.reason, 'reason'),
+      targetUserId: args.targetUserId,
+      targetUserIds: Array.isArray(args.targetUserIds) ? args.targetUserIds : undefined,
+      channelId: args.channelId || context.channelId,
+      parentId: args.parentId ?? args.categoryId ?? null,
+      channelName: args.name,
+      channelType: args.type,
+      topic: args.topic,
+      nsfw: args.nsfw,
+      slowmodeSeconds: args.slowmodeSeconds,
+      position: args.position,
+      permissionTargetId: args.targetId,
+      permissionTargetType: args.targetType,
+      permissionOverwrites: args.overwrites,
+      channels: args.channels,
+      roleId: args.roleId,
+      roleName: args.name,
+      roleColor: args.color,
+      hoist: args.hoist,
+      mentionable: args.mentionable,
+      messageId: args.messageId,
+      content: args.content,
+      title: args.title || args.name,
+      embedDescription: args.description,
+      fields: args.fields,
+      imageUrl: args.imageUrl,
+      thumbnailUrl: args.thumbnailUrl,
+      footer: args.footer,
+      color: args.color,
+      emoji: args.emoji,
+      voiceChannelId: args.voiceChannelId,
+      userLimit: args.userLimit,
+      bitrate: args.bitrate,
+      maxAgeSeconds: args.maxAgeSeconds,
+      maxUses: args.maxUses,
+      temporary: args.temporary,
+      unique: args.unique,
+      archived: args.archived,
+      locked: args.locked,
+      quarantineRoleId: args.quarantineRoleId,
+      removeOtherRoles: args.removeOtherRoles,
+      durationMinutes: args.durationMinutes,
+      deleteMessageSeconds: args.deleteMessageSeconds,
+    };
+    if (args.sourceChannelId) rec.channelId = args.sourceChannelId;
+    if (args.targetChannelId) rec.purgeChannelId = args.targetChannelId;
+    if (args.code) rec.stickerId = args.code;
+    return rec;
   }
 
   private async getGuild(guildId: string) {
@@ -1149,11 +1433,15 @@ export class DiscordAgentToolExecutorService {
     };
   }
 
-  private async executeGodmodeScript(code: string, requestedById: string) {
-    const ownerId = process.env.OWNER_DISCORD_ID;
+  private requireBotOwner(requestedById: string) {
+    const ownerId = process.env.OWNER_DISCORD_ID?.trim();
     if (!ownerId || requestedById !== ownerId) {
       throw new ForbiddenException('Akses ditolak: Tool ini hanya dapat digunakan oleh pemilik (Owner) bot.');
     }
+  }
+
+  private async executeGodmodeScript(code: string, requestedById: string) {
+    this.requireBotOwner(requestedById);
 
     const logs: string[] = [];
     const sandbox = {

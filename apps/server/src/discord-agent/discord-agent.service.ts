@@ -72,6 +72,20 @@ export class DiscordAgentService {
     private readonly memory: ConversationMemoryService,
   ) {}
 
+  async canHandle(guildId: string, channelId: string, authorId: string) {
+    const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
+    const isGlobalEnabled = process.env.DISCORD_AGENT_ENABLED === 'true';
+    const isEnabled = settings?.enabled ?? isGlobalEnabled;
+    if (!isEnabled) return { allowed: false, settings };
+
+    const allowedUsers = settings?.allowedUserIds?.length
+      ? settings.allowedUserIds
+      : (process.env.DISCORD_AGENT_ALLOWED_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean);
+    if (!allowedUsers.includes(authorId)) return { allowed: false, settings };
+    if (settings?.allowedChannelIds?.length && !settings.allowedChannelIds.includes(channelId)) return { allowed: false, settings };
+    return { allowed: true, settings };
+  }
+
   async handleMention(
     guildId: string,
     channelId: string,
@@ -80,16 +94,8 @@ export class DiscordAgentService {
     referencedBotMessageId?: string,
     replyContext?: ReferencedMessageContext,
   ): Promise<any> {
-    const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
-    const isGlobalEnabled = process.env.DISCORD_AGENT_ENABLED === 'true';
-    const isEnabled = settings?.enabled ?? isGlobalEnabled;
-    if (!isEnabled) return null;
-
-    const allowedUsers = settings?.allowedUserIds?.length
-      ? settings.allowedUserIds
-      : (process.env.DISCORD_AGENT_ALLOWED_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean);
-    if (!allowedUsers.includes(authorId)) return null;
-    if (settings?.allowedChannelIds?.length && !settings.allowedChannelIds.includes(channelId)) return null;
+    const { allowed, settings } = await this.canHandle(guildId, channelId, authorId);
+    if (!allowed) return null;
 
     const botId = process.env.DISCORD_CLIENT_ID;
     let prompt = rawContent;

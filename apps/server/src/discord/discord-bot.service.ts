@@ -249,6 +249,8 @@ export class DiscordBotService implements OnModuleInit {
     const isMentioningBot = message.mentions.has(this.client.user);
     if (!isMentioningBot && !referencedBotMessageId) return;
 
+    if (!await this.canUseAgent(message)) return;
+
     if (message.channel && typeof (message.channel as any).sendTyping === 'function') {
       await (message.channel as any).sendTyping().catch(() => null);
     }
@@ -301,6 +303,12 @@ export class DiscordBotService implements OnModuleInit {
         response.conversationTurns,
       ).catch(() => null);
     }
+  }
+
+  private async canUseAgent(message: Message) {
+    if (!message.guild) return false;
+    const result = await this.agent.canHandle(message.guild.id, message.channel.id, message.author.id).catch(() => ({ allowed: false }));
+    return result.allowed;
   }
 
   private async handleMessageDelete(message: any) {

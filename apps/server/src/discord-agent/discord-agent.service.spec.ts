@@ -66,6 +66,23 @@ describe('DiscordAgentService loop', () => {
     service = module.get(DiscordAgentService);
   });
 
+  it('returns null before AI work when requester is not allowed', async () => {
+    (mockPrisma.discordAgentSettings.findUnique as any).mockResolvedValueOnce({
+      enabled: true,
+      allowedUserIds: ['admin-1'],
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+    });
+    const providerMock = { generate: jest.fn() };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'regular-1', '<@bot-1> hello');
+
+    expect(result).toBeNull();
+    expect(providerMock.generate).not.toHaveBeenCalled();
+    expect(mockPrisma.agentInteractionLog.create).not.toHaveBeenCalled();
+  });
+
   it('runs tool execution loop and returns final reply accumulating tokens', async () => {
     const mockResponses = [
       {

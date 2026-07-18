@@ -469,8 +469,208 @@ export const AGENT_TOOLS = [
     },
   },
   {
+    name: 'get_guild_overview',
+    description: 'Read Discord guild overview: member count, boost data, channel/role counts, owner ID, and bot summary. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'get_channel_info',
+    description: 'Read detailed Discord channel information including type, category, slowmode, topic, position, and permission overwrites. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING', description: 'Discord channel ID. Defaults to current channel.' } } },
+  },
+  {
+    name: 'get_member_permissions',
+    description: 'Read member roles, guild permissions, effective channel permissions, and role hierarchy manageability. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING', description: 'Discord member ID.' }, channelId: { type: 'STRING', description: 'Optional channel ID for channel-specific permissions.' } }, required: ['targetUserId'] },
+  },
+  {
+    name: 'get_bot_permissions',
+    description: 'Read bot guild/channel permissions and whether bot can manage a target member or role. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING', description: 'Optional channel ID.' }, targetUserId: { type: 'STRING', description: 'Optional member ID to check hierarchy.' }, roleId: { type: 'STRING', description: 'Optional role ID to check hierarchy.' } } },
+  },
+  {
+    name: 'get_role_info',
+    description: 'Read role details including permissions, position, managed status, member count, and bot manageability. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: { roleId: { type: 'STRING', description: 'Discord role ID.' } }, required: ['roleId'] },
+  },
+  {
+    name: 'get_voice_state',
+    description: 'Read a member voice state: channel, mute/deaf/stream/suppress status. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING', description: 'Discord member ID.' } }, required: ['targetUserId'] },
+  },
+  {
+    name: 'preview_embed_message',
+    description: 'Validate an embed-like message payload against Discord limits without sending it. Read-only; executed immediately.',
+    parameters: { type: 'OBJECT', properties: { title: { type: 'STRING' }, description: { type: 'STRING' }, fields: { type: 'ARRAY', items: { type: 'OBJECT' } }, footer: { type: 'STRING' }, color: { type: 'STRING' }, imageUrl: { type: 'STRING' }, thumbnailUrl: { type: 'STRING' } } },
+  },
+  {
+    name: 'create_channel',
+    description: 'Create a proposal to create a Discord channel/category. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { name: { type: 'STRING' }, type: { type: 'STRING', description: 'text, announcement, voice, forum, category, or stage.' }, parentId: { type: 'STRING' }, topic: { type: 'STRING' }, nsfw: { type: 'BOOLEAN' }, slowmodeSeconds: { type: 'INTEGER' }, reason: { type: 'STRING' } }, required: ['name', 'reason'] },
+  },
+  {
+    name: 'edit_channel',
+    description: 'Create a proposal to edit a Discord channel name/topic/category/nsfw/slowmode. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, name: { type: 'STRING' }, parentId: { type: 'STRING' }, topic: { type: 'STRING' }, nsfw: { type: 'BOOLEAN' }, slowmodeSeconds: { type: 'INTEGER' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
+  },
+  {
+    name: 'delete_channel',
+    description: 'Create a proposal to delete a Discord channel. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
+  },
+  {
+    name: 'move_channel',
+    description: 'Create a proposal to move a channel position or parent category. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, parentId: { type: 'STRING' }, position: { type: 'INTEGER' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
+  },
+  {
+    name: 'set_channel_permissions',
+    description: 'Create a proposal to edit channel permission overwrites for a role or user. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, targetId: { type: 'STRING' }, targetType: { type: 'STRING', enum: ['role', 'user'] }, overwrites: { type: 'OBJECT', description: 'Permission overwrite map, e.g. SendMessages false, ViewChannel true, Connect null.' }, reason: { type: 'STRING' } }, required: ['channelId', 'targetId', 'targetType', 'overwrites', 'reason'] },
+  },
+  {
+    name: 'create_category_with_channels',
+    description: 'Create a proposal to create a category and child channels from a small template. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { name: { type: 'STRING' }, channels: { type: 'ARRAY', items: { type: 'OBJECT' } }, reason: { type: 'STRING' } }, required: ['name', 'channels', 'reason'] },
+  },
+  {
+    name: 'clone_channel_permissions',
+    description: 'Create a proposal to copy permission overwrites from one channel to another. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { sourceChannelId: { type: 'STRING' }, targetChannelId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['sourceChannelId', 'targetChannelId', 'reason'] },
+  },
+  {
+    name: 'sync_category_permissions',
+    description: 'Create a proposal to sync permission overwrites for every child channel in a category. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { categoryId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['categoryId', 'reason'] },
+  },
+  {
+    name: 'rename_channel_batch',
+    description: 'Create a proposal to rename multiple channels. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channels: { type: 'ARRAY', items: { type: 'OBJECT', description: '{ id, name }' } }, reason: { type: 'STRING' } }, required: ['channels', 'reason'] },
+  },
+  {
+    name: 'cleanup_empty_channels',
+    description: 'Create a proposal to delete empty channels from a provided list or category. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channels: { type: 'ARRAY', items: { type: 'STRING' } }, categoryId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['reason'] },
+  },
+  {
+    name: 'create_role',
+    description: 'Create a proposal to create a Discord role. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { name: { type: 'STRING' }, color: { type: 'STRING' }, hoist: { type: 'BOOLEAN' }, mentionable: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['name', 'reason'] },
+  },
+  {
+    name: 'edit_role',
+    description: 'Create a proposal to edit a Discord role. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { roleId: { type: 'STRING' }, name: { type: 'STRING' }, color: { type: 'STRING' }, hoist: { type: 'BOOLEAN' }, mentionable: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['roleId', 'reason'] },
+  },
+  {
+    name: 'delete_role',
+    description: 'Create a proposal to delete a Discord role. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { roleId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['roleId', 'reason'] },
+  },
+  {
+    name: 'move_role',
+    description: 'Create a proposal to move a Discord role position. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { roleId: { type: 'STRING' }, position: { type: 'INTEGER' }, reason: { type: 'STRING' } }, required: ['roleId', 'position', 'reason'] },
+  },
+  {
+    name: 'snapshot_member_roles',
+    description: 'Create a proposal to save a member role snapshot for later restore. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['targetUserId', 'reason'] },
+  },
+  {
+    name: 'restore_member_roles',
+    description: 'Create a proposal to restore a member roles from the latest saved snapshot. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING' }, quarantineRoleId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['targetUserId', 'reason'] },
+  },
+  {
+    name: 'quarantine_member',
+    description: 'Create a proposal to snapshot a member, remove manageable roles, add a quarantine role, and optionally timeout. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING' }, quarantineRoleId: { type: 'STRING' }, durationMinutes: { type: 'INTEGER' }, removeOtherRoles: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['targetUserId', 'quarantineRoleId', 'reason'] },
+  },
+  {
+    name: 'send_plain_message',
+    description: 'Create a proposal to send a plain message to a Discord channel. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, content: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['content', 'reason'] },
+  },
+  {
+    name: 'send_embed_message',
+    description: 'Create a proposal to send an embed message to a Discord channel. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, content: { type: 'STRING' }, title: { type: 'STRING' }, description: { type: 'STRING' }, fields: { type: 'ARRAY', items: { type: 'OBJECT' } }, color: { type: 'STRING' }, imageUrl: { type: 'STRING' }, thumbnailUrl: { type: 'STRING' }, footer: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['reason'] },
+  },
+  {
+    name: 'edit_bot_message',
+    description: 'Create a proposal to edit a bot-owned message. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, content: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['messageId', 'content', 'reason'] },
+  },
+  {
+    name: 'delete_bot_message',
+    description: 'Create a proposal to delete a bot-owned message. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['messageId', 'reason'] },
+  },
+  {
+    name: 'create_thread',
+    description: 'Create a proposal to create a Discord thread. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, name: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['name', 'reason'] },
+  },
+  {
+    name: 'archive_thread',
+    description: 'Create a proposal to archive or unarchive a thread. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, archived: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
+  },
+  {
+    name: 'lock_thread',
+    description: 'Create a proposal to lock or unlock a thread. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, locked: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
+  },
+  {
+    name: 'pin_message',
+    description: 'Create a proposal to pin a message. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['messageId', 'reason'] },
+  },
+  {
+    name: 'unpin_message',
+    description: 'Create a proposal to unpin a message. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['messageId', 'reason'] },
+  },
+  {
+    name: 'react_to_message',
+    description: 'Create a proposal to add a reaction to a message. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, emoji: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['messageId', 'emoji', 'reason'] },
+  },
+  {
+    name: 'remove_reaction',
+    description: 'Create a proposal to remove the bot reaction from a message. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, messageId: { type: 'STRING' }, emoji: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['messageId', 'emoji', 'reason'] },
+  },
+  {
+    name: 'move_member_voice',
+    description: 'Create a proposal to move a member to a voice channel. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING' }, voiceChannelId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['targetUserId', 'voiceChannelId', 'reason'] },
+  },
+  {
+    name: 'disconnect_member_voice',
+    description: 'Create a proposal to disconnect a member from voice. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { targetUserId: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['targetUserId', 'reason'] },
+  },
+  {
+    name: 'set_voice_channel_status',
+    description: 'Create a proposal to update voice channel name/user limit/bitrate. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, name: { type: 'STRING' }, userLimit: { type: 'INTEGER' }, bitrate: { type: 'INTEGER' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
+  },
+  {
+    name: 'create_invite',
+    description: 'Create a proposal to create an invite link. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, maxAgeSeconds: { type: 'INTEGER' }, maxUses: { type: 'INTEGER' }, temporary: { type: 'BOOLEAN' }, unique: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['reason'] },
+  },
+  {
+    name: 'delete_invite',
+    description: 'Create a proposal to delete an invite code. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { code: { type: 'STRING' }, reason: { type: 'STRING' } }, required: ['code', 'reason'] },
+  },
+  {
     name: 'execute_godmode_script',
-    description: 'EXCLUSIVELY FOR BOT OWNER: Write and execute dynamic JavaScript code on the server using Node VM. Owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner. Authorization is enforced by backend using the requesting Discord user ID. Sandbox has access to `prisma` (database client) and `client` (Discord client). Code must return a value or set a variable.',
+    description: 'EXCLUSIVELY FOR BOT OWNER: Write and execute dynamic JavaScript code on the server using Node VM for custom Discord.js/Prisma actions not covered by safer standard tools. Prefer explicit Discord tools first. Owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner. Authorization is enforced by backend using the requesting Discord user ID. Sandbox has access to `prisma` (database client) and `client` (Discord client). Code must return a value or set a variable.',
     parameters: {
       type: 'OBJECT',
       properties: {

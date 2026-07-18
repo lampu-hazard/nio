@@ -223,6 +223,44 @@ export class AgentActionRendererService {
       lines.push(...(changes.length ? changes : ['> No supported settings provided.']));
     }
 
+    if (proposal.actionType.includes('CHANNEL') || proposal.actionType === 'SET_CHANNEL_PERMISSIONS' || proposal.actionType === 'CREATE_CATEGORY_WITH_CHANNELS') {
+      if (proposal.payload?.channelId) lines.push(`> Channel: <#${proposal.payload.channelId}>`);
+      if (proposal.payload?.targetChannelId) lines.push(`> Target Channel: <#${proposal.payload.targetChannelId}>`);
+      if (proposal.payload?.parentId) lines.push(`> Category/Parent: <#${proposal.payload.parentId}>`);
+      if (proposal.payload?.name) lines.push(`> Name: \`${proposal.payload.name}\``);
+      if (proposal.payload?.type) lines.push(`> Type: \`${proposal.payload.type}\``);
+      if (Array.isArray(proposal.payload?.channels)) lines.push(`> Batch Items: \`${proposal.payload.channels.length}\``);
+    }
+
+    if (proposal.actionType.includes('ROLE') || proposal.actionType === 'QUARANTINE_MEMBER') {
+      if (proposal.payload?.roleId) lines.push(`> Role: <@&${proposal.payload.roleId}>`);
+      if (proposal.payload?.quarantineRoleId) lines.push(`> Quarantine Role: <@&${proposal.payload.quarantineRoleId}>`);
+      if (proposal.payload?.name) lines.push(`> Name: \`${proposal.payload.name}\``);
+      if (proposal.payload?.color) lines.push(`> Color: \`${proposal.payload.color}\``);
+    }
+
+    if (proposal.actionType.includes('MESSAGE') || proposal.actionType.includes('THREAD') || proposal.actionType === 'PIN_MESSAGE' || proposal.actionType === 'UNPIN_MESSAGE' || proposal.actionType.includes('REACTION')) {
+      if (proposal.payload?.channelId) lines.push(`> Channel: <#${proposal.payload.channelId}>`);
+      if (proposal.payload?.messageId) lines.push(`> Message ID: \`${proposal.payload.messageId}\``);
+      if (proposal.payload?.title) lines.push(`> Title: **${proposal.payload.title}**`);
+      if (proposal.payload?.content) lines.push(`> Content: ${String(proposal.payload.content).slice(0, 500)}`);
+      if (proposal.payload?.emoji) lines.push(`> Emoji: ${proposal.payload.emoji}`);
+    }
+
+    if (proposal.actionType.includes('VOICE')) {
+      if (proposal.payload?.targetUserId) lines.push(`> Member: <@${proposal.payload.targetUserId}>`);
+      if (proposal.payload?.voiceChannelId) lines.push(`> Voice Channel: <#${proposal.payload.voiceChannelId}>`);
+      if (proposal.payload?.userLimit !== undefined) lines.push(`> User Limit: \`${proposal.payload.userLimit}\``);
+      if (proposal.payload?.bitrate !== undefined) lines.push(`> Bitrate: \`${proposal.payload.bitrate}\``);
+    }
+
+    if (proposal.actionType.includes('INVITE')) {
+      if (proposal.payload?.channelId) lines.push(`> Channel: <#${proposal.payload.channelId}>`);
+      if (proposal.payload?.code) lines.push(`> Code: \`${proposal.payload.code}\``);
+      if (proposal.payload?.maxUses !== undefined) lines.push(`> Max Uses: \`${proposal.payload.maxUses}\``);
+      if (proposal.payload?.maxAgeSeconds !== undefined) lines.push(`> Max Age: \`${proposal.payload.maxAgeSeconds} seconds\``);
+    }
+
     return lines.join('\n');
   }
 
@@ -253,6 +291,21 @@ export class AgentActionRendererService {
     }
     if (actionType === 'PURGE' || actionType === 'UPDATE_SETTINGS') {
       return { color: 0x7f8c8d, label: 'Server Operations Proposal', category: 'Server operations action' };
+    }
+    if (actionType.includes('CHANNEL')) {
+      return { color: 0x3498db, label: 'Channel Operations Proposal', category: 'Channel operation' };
+    }
+    if (actionType.includes('ROLE') || actionType === 'QUARANTINE_MEMBER') {
+      return { color: 0x5865f2, label: 'Role Operations Proposal', category: 'Role operation' };
+    }
+    if (actionType.includes('MESSAGE') || actionType.includes('THREAD') || actionType === 'PIN_MESSAGE' || actionType === 'UNPIN_MESSAGE' || actionType.includes('REACTION')) {
+      return { color: 0x2ecc71, label: 'Message Operations Proposal', category: 'Message/thread operation' };
+    }
+    if (actionType.includes('VOICE')) {
+      return { color: 0x9b59b6, label: 'Voice Operations Proposal', category: 'Voice operation' };
+    }
+    if (actionType.includes('INVITE')) {
+      return { color: 0xf1c40f, label: 'Invite Operations Proposal', category: 'Invite operation' };
     }
     return { color: 0x2b2d31, label: 'AI Action Proposal', category: 'AI action proposal' };
   }

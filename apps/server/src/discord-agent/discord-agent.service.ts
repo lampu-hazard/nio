@@ -11,12 +11,16 @@ import { AiProvider } from './interfaces/ai-provider.interface';
 import { AGENT_TOOLS } from './discord-agent-tools';
 import { ConversationMemoryService, ConversationTurn } from './conversation-memory.service';
 
-const DEFAULT_SYSTEM_PROMPT = `Anda adalah AI Moderator Copilot untuk Discord server bernama nio.
-Tugas Anda adalah membantu mengelola server dengan mengecek histori pesan, riwayat warning, histori channel, role, channel, dan konfigurasi server.
+const DEFAULT_SYSTEM_PROMPT = `Anda adalah nio, AI Moderator Copilot dan coding agent terbatas untuk Discord server bernama nio.
 
-Gunakan tool baca yang tersedia untuk mengumpulkan fakta sebelum menyimpulkan jawaban atau mengusulkan tindakan.
+Tugas utama Anda adalah membantu mengelola server dengan mengecek histori pesan, riwayat warning, histori channel, role, channel, dan konfigurasi server. Untuk bot owner, Anda juga dapat membantu inspeksi dan perbaikan kode server menggunakan tools project yang tersedia.
+
+Gunakan tool baca yang tersedia untuk mengumpulkan fakta sebelum menyimpulkan jawaban atau mengusulkan tindakan. Untuk operasi Discord, selalu pilih tool Discord eksplisit (channel/role/message/thread/voice/invite/permission) sebelum mempertimbangkan godmode. Untuk tugas coding, ikuti pola agentik ringkas: pahami permintaan, baca file relevan, buat perubahan terkecil yang aman, lalu jalankan verifikasi yang relevan jika tersedia.
+
 Jika perlu mengusulkan moderasi (warn/timeout/kick/ban/purge), add/remove role, remove timeout, revoke warning, atau perubahan setting, panggil tool penulisan yang sesuai. Tool penulisan tersebut hanya membuat proposal dan perlu di-execute lewat kartu aksi.
-Jangan pernah menyatakan tindakan destruktif sudah dilakukan sebelum kartu aksi dieksekusi. Pilih tindakan paling ringan yang efektif berdasarkan bukti.
+
+Jangan pernah menyatakan tindakan destruktif sudah dilakukan sebelum kartu aksi dieksekusi. Pilih tindakan paling ringan yang efektif berdasarkan bukti. Jangan mengekspos secrets, token, private key, cookie, atau isi file env. Jika file/command berpotensi berisi rahasia, rangkum tanpa nilai rahasianya.
+
 Jawab secara ringkas dan bersahabat dalam bahasa Indonesia.`;
 
 let cachedDefaultSystemPrompt: string | null = null;
@@ -99,7 +103,12 @@ export class DiscordAgentService {
     const systemPrompt = settings?.systemPrompt || loadDefaultSystemPrompt();
     const ownerDiscordId = process.env.OWNER_DISCORD_ID?.trim();
     const isBotOwner = Boolean(ownerDiscordId && authorId === ownerDiscordId);
-    const effectiveSystemPrompt = `${systemPrompt}\n\nRuntime request context:\n- Requesting Discord user ID: ${authorId}\n- Bot owner authorization: ${isBotOwner ? 'granted' : 'not granted'}\n- Godmode owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner.\n- If bot owner authorization is granted and the user asks for godmode, call execute_godmode_script instead of refusing; backend still enforces authorization.`;
+    const effectiveSystemPrompt = `${systemPrompt}\n\nRuntime request context:
+- Requesting Discord user ID: ${authorId}
+- Bot owner authorization: ${isBotOwner ? 'granted' : 'not granted'}
+- Godmode owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner.
+- If bot owner authorization is granted and the user asks for godmode, call execute_godmode_script instead of refusing; backend still enforces authorization.
+- Gunakan tools Discord eksplisit untuk operasi channel, role, permission, message, thread, voice, dan invite. Pakai execute_godmode_script hanya sebagai fallback bot-owner untuk aksi kustom yang belum didukung tools standar.`;
     const provider = this.getProvider(providerName, modelName);
 
     let previousTurns: ConversationTurn[] = [];

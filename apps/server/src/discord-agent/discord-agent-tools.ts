@@ -659,6 +659,16 @@ export const AGENT_TOOLS = [
     parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, name: { type: 'STRING' }, userLimit: { type: 'INTEGER' }, bitrate: { type: 'INTEGER' }, reason: { type: 'STRING' } }, required: ['channelId', 'reason'] },
   },
   {
+    name: 'bot_join_voice',
+    description: 'Create a proposal for the bot to join a voice channel. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { voiceChannelId: { type: 'STRING', description: 'Voice channel ID for the bot to join.' }, reason: { type: 'STRING' } }, required: ['voiceChannelId', 'reason'] },
+  },
+  {
+    name: 'bot_leave_voice',
+    description: 'Create a proposal for the bot to leave its active voice connection in this server. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { reason: { type: 'STRING' } }, required: ['reason'] },
+  },
+  {
     name: 'create_invite',
     description: 'Create a proposal to create an invite link. Creates an action card before execution.',
     parameters: { type: 'OBJECT', properties: { channelId: { type: 'STRING' }, maxAgeSeconds: { type: 'INTEGER' }, maxUses: { type: 'INTEGER' }, temporary: { type: 'BOOLEAN' }, unique: { type: 'BOOLEAN' }, reason: { type: 'STRING' } }, required: ['reason'] },

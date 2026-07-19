@@ -210,6 +210,25 @@ describe('DiscordAgentToolExecutorService', () => {
     }));
   });
 
+  it('creates bot voice connection proposals', async () => {
+    const joinRes = await service.execute('bot_join_voice', {
+      voiceChannelId: 'voice-1',
+      reason: 'join voice test',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const leaveRes = await service.execute('bot_leave_voice', {
+      reason: 'leave voice test',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(joinRes).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'BOT_JOIN_VOICE' });
+    expect(leaveRes).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'BOT_LEAVE_VOICE' });
+    (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
+      recommendation: expect.objectContaining({
+        type: 'BOT_JOIN_VOICE',
+        voiceChannelId: 'voice-1',
+      }),
+    }));
+  });
+
   it('gets deleted message history with filters', async () => {
     const res = await service.execute('get_deleted_message_history', { targetUserId: 'user-1', limit: 10 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'deleted-1', deletedAt: new Date('2026-01-01T00:01:00Z') })]));

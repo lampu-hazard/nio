@@ -21,6 +21,7 @@ const DISCORD_OP_ACTIONS = new Set<AgentActionType>([
   'CREATE_THREAD', 'ARCHIVE_THREAD', 'LOCK_THREAD', 'PIN_MESSAGE', 'UNPIN_MESSAGE', 'REACT_TO_MESSAGE', 'REMOVE_REACTION',
   'MOVE_MEMBER_VOICE', 'DISCONNECT_MEMBER_VOICE', 'SET_VOICE_CHANNEL_STATUS',
   'CREATE_INVITE', 'DELETE_INVITE',
+  'BOT_JOIN_VOICE', 'BOT_LEAVE_VOICE',
 ]);
 
 type SlowmodeCacheUpdater = {
@@ -44,11 +45,17 @@ type AnomalyCacheUpdater = {
   }) => void;
 };
 
+type VoiceConnectionManager = {
+  join: (guildId: string, channelId: string, adapterCreator: any) => { guildId: string; channelId: string };
+  leave: (guildId: string) => { guildId: string; left: boolean };
+};
+
 @Injectable()
 export class AgentActionProposalService {
   private client?: Client;
   private slowmode?: SlowmodeCacheUpdater;
   private anomaly?: AnomalyCacheUpdater;
+  private voice?: VoiceConnectionManager;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -67,6 +74,10 @@ export class AgentActionProposalService {
 
   setAnomalyService(anomaly: AnomalyCacheUpdater) {
     this.anomaly = anomaly;
+  }
+
+  setVoiceConnectionService(voice: VoiceConnectionManager) {
+    this.voice = voice;
   }
 
   async createProposal(input: CreateAgentActionProposalInput) {
@@ -516,6 +527,8 @@ export class AgentActionProposalService {
     if (actionType === 'SET_VOICE_CHANNEL_STATUS') return this.executeSetVoiceChannelStatus(guild, payload);
     if (actionType === 'CREATE_INVITE') return this.executeCreateInvite(guild, payload, fallbackChannelId);
     if (actionType === 'DELETE_INVITE') return this.executeDeleteInvite(guild, payload);
+    if (actionType === 'BOT_JOIN_VOICE') return this.executeBotJoinVoice(guild, payload);
+    if (actionType === 'BOT_LEAVE_VOICE') return this.executeBotLeaveVoice(guild);
     throw new BadRequestException(`Unsupported Discord operation: ${actionType}`);
   }
 
@@ -760,6 +773,27 @@ export class AgentActionProposalService {
     return `DELETE_INVITE executed for ${code}.`;
   }
 
+  private async executeBotJoinVoice(guild: any, payload: any) {
+    if (!this.voice) throw new ServiceUnavailableException('Voice connection service is not ready yet.');
+    const channel = await this.fetchChannel(guild, payload.voiceChannelId);
+    if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) {
+      throw new BadRequestException('Channel is not a voice/stage channel.');
+    }
+    const me = guild.members.me ?? await guild.members.fetchMe();
+    const permissions = typeof me.permissionsIn === 'function' ? me.permissionsIn(channel.id) : me.permissions;
+    if (!permissions.has(PermissionFlagsBits.ViewChannel) || !permissions.has(PermissionFlagsBits.Connect)) {
+      throw new ForbiddenException('Bot needs View Channel and Connect permission to join voice.');
+    }
+    const result = this.voice.join(guild.id, channel.id, guild.voiceAdapterCreator);
+    return `BOT_JOIN_VOICE executed for <#${result.channelId}>.`;
+  }
+
+  private async executeBotLeaveVoice(guild: any) {
+    if (!this.voice) throw new ServiceUnavailableException('Voice connection service is not ready yet.');
+    const result = this.voice.leave(guild.id);
+    return result.left ? 'BOT_LEAVE_VOICE executed.' : 'BOT_LEAVE_VOICE executed: bot was not connected.';
+  }
+
   private buildEmbed(payload: any) {
     const embed = new EmbedBuilder().setTimestamp();
     if (payload.title) embed.setTitle(String(payload.title).slice(0, 256));
@@ -808,6 +842,7 @@ export class AgentActionProposalService {
     const messageOps = ['SEND_PLAIN_MESSAGE', 'SEND_EMBED_MESSAGE', 'EDIT_BOT_MESSAGE', 'DELETE_BOT_MESSAGE', 'PIN_MESSAGE', 'UNPIN_MESSAGE', 'REACT_TO_MESSAGE', 'REMOVE_REACTION'];
     const threadOps = ['CREATE_THREAD', 'ARCHIVE_THREAD', 'LOCK_THREAD'];
     const inviteOps = ['CREATE_INVITE', 'DELETE_INVITE'];
+    const botVoiceOps = ['BOT_JOIN_VOICE', 'BOT_LEAVE_VOICE'];
 
     const hasPermission = permissions.has(PermissionFlagsBits.Administrator)
       || (['WARN', 'TIMEOUT', 'REMOVE_TIMEOUT', 'REVOKE_WARNING', 'MASS_TIMEOUT'].includes(actionType) && permissions.has(PermissionFlagsBits.ModerateMembers))
@@ -823,6 +858,7 @@ export class AgentActionProposalService {
       || (threadOps.includes(actionType) && (permissions.has(PermissionFlagsBits.ManageThreads) || permissions.has(PermissionFlagsBits.CreatePublicThreads)))
       || (['MOVE_MEMBER_VOICE', 'DISCONNECT_MEMBER_VOICE'].includes(actionType) && permissions.has(PermissionFlagsBits.MoveMembers))
       || (inviteOps.includes(actionType) && (permissions.has(PermissionFlagsBits.CreateInstantInvite) || permissions.has(PermissionFlagsBits.ManageGuild)))
+      || (botVoiceOps.includes(actionType) && permissions.has(PermissionFlagsBits.MoveMembers))
       || (['ADD_ROLE', 'REMOVE_ROLE', 'MANAGE_STICKER'].includes(actionType) && permissions.has(PermissionFlagsBits.ManageRoles));
 
     if (!hasPermission) {
@@ -886,6 +922,9 @@ export class AgentActionProposalService {
     }
     if (['CREATE_INVITE', 'DELETE_INVITE'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.CreateInstantInvite) && !me.permissions.has(PermissionFlagsBits.ManageGuild)) {
       throw new ForbiddenException('Bot needs Create Invite or Manage Guild permission to execute invite proposals.');
+    }
+    if (['BOT_JOIN_VOICE', 'BOT_LEAVE_VOICE'].includes(actionType) && !me.permissions.has(PermissionFlagsBits.Connect)) {
+      throw new ForbiddenException('Bot needs Connect permission to execute bot voice proposals.');
     }
 
     if (target && ['TIMEOUT', 'KICK', 'BAN', 'ADD_ROLE', 'REMOVE_ROLE', 'REMOVE_TIMEOUT', 'SNAPSHOT_MEMBER_ROLES', 'RESTORE_MEMBER_ROLES', 'QUARANTINE_MEMBER', 'MOVE_MEMBER_VOICE', 'DISCONNECT_MEMBER_VOICE'].includes(actionType) && target.roles.highest.position >= me.roles.highest.position) {

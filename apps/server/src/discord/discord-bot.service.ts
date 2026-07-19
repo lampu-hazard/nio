@@ -14,6 +14,7 @@ import { AgentActionProposalService } from '../discord-agent/agent-action-propos
 import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
 import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
 import { RustAnalyticsClientService } from './rust-analytics-client.service';
+import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 
 @Injectable()
 export class DiscordBotService implements OnModuleInit {
@@ -43,6 +44,7 @@ export class DiscordBotService implements OnModuleInit {
     private readonly agentToolExecutor: DiscordAgentToolExecutorService,
     private readonly conversationMemory: ConversationMemoryService,
     private readonly rustAnalytics: RustAnalyticsClientService,
+    private readonly voiceConnections: DiscordVoiceConnectionService,
   ) {}
 
   async onModuleInit() {
@@ -53,6 +55,7 @@ export class DiscordBotService implements OnModuleInit {
     this.actionProposals.setClient(this.client);
     this.actionProposals.setSlowmodeService(this.slowmode);
     this.actionProposals.setAnomalyService(this.anomaly);
+    this.actionProposals.setVoiceConnectionService(this.voiceConnections);
     this.agentToolExecutor.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;

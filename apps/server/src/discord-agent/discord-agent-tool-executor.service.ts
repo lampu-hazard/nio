@@ -45,6 +45,8 @@ const DISCORD_ACTION_TOOLS: Record<string, AgentActionType> = {
   set_voice_channel_status: 'SET_VOICE_CHANNEL_STATUS',
   create_invite: 'CREATE_INVITE',
   delete_invite: 'DELETE_INVITE',
+  bot_join_voice: 'BOT_JOIN_VOICE',
+  bot_leave_voice: 'BOT_LEAVE_VOICE',
 };
 
 @Injectable()

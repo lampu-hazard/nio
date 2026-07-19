@@ -726,6 +726,9 @@ export class DiscordAgentToolExecutorService {
     context: { guildId: string; channelId: string; requestedById: string },
   ) {
     const recommendation = this.buildDiscordRecommendation(type, args, context);
+    if (type === 'BOT_JOIN_VOICE' && !recommendation.voiceChannelId) {
+      recommendation.voiceChannelId = await this.getRequesterVoiceChannelId(context.guildId, context.requestedById);
+    }
     const proposal = await this.proposals.createProposal({
       guildId: context.guildId,
       channelId: context.channelId,
@@ -734,6 +737,16 @@ export class DiscordAgentToolExecutorService {
       recommendation,
     });
     return { proposalCreated: true, proposalId: proposal.id, actionType: type };
+  }
+
+  private async getRequesterVoiceChannelId(guildId: string, requestedById: string) {
+    const guild = await this.getGuild(guildId);
+    const requester = await guild.members.fetch(requestedById).catch(() => null) as any;
+    const voiceChannelId = requester?.voice?.channelId;
+    if (!voiceChannelId) {
+      throw new BadRequestException('Kamu belum masuk voice channel. Masuk voice dulu atau sebutkan voiceChannelId yang spesifik.');
+    }
+    return voiceChannelId;
   }
 
   private buildDiscordRecommendation(

@@ -660,8 +660,8 @@ export const AGENT_TOOLS = [
   },
   {
     name: 'bot_join_voice',
-    description: 'Create a proposal for the bot to join a voice channel. Creates an action card before execution.',
-    parameters: { type: 'OBJECT', properties: { voiceChannelId: { type: 'STRING', description: 'Voice channel ID for the bot to join.' }, reason: { type: 'STRING' } }, required: ['voiceChannelId', 'reason'] },
+    description: 'Create a proposal for the bot to join voice. If voiceChannelId is omitted, the backend uses the requesting user current voice channel. If the requester is not in voice, ask them to join voice or provide a specific voiceChannelId. Creates an action card before execution.',
+    parameters: { type: 'OBJECT', properties: { voiceChannelId: { type: 'STRING', description: 'Optional voice channel ID. Omit to use the requester current voice channel.' }, reason: { type: 'STRING' } }, required: ['reason'] },
   },
   {
     name: 'bot_leave_voice',

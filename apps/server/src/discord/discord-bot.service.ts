@@ -24,6 +24,7 @@ export class DiscordBotService implements OnModuleInit {
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildVoiceStates,
     ],
     partials: [Partials.GuildMember],
     allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },

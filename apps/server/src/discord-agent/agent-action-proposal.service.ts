@@ -1144,5 +1144,4 @@ export class AgentActionProposalService {
     return Math.min(Math.max(Math.floor(numberValue), min), max);
   }
 
-  
 }

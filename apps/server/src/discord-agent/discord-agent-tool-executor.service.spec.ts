@@ -97,6 +97,10 @@ describe('DiscordAgentToolExecutorService', () => {
           highest: { position: 10 },
         },
       })),
+      fetch: jest.fn(async () => ({
+        id: 'admin-1',
+        voice: { channelId: 'voice-current' },
+      })),
     },
     fetchAuditLogs: jest.fn(async (..._args: any[]): Promise<any> => ({
       entries: [
@@ -227,6 +231,28 @@ describe('DiscordAgentToolExecutorService', () => {
         voiceChannelId: 'voice-1',
       }),
     }));
+  });
+
+  it('defaults bot join voice to requester current voice channel', async () => {
+    const res = await service.execute('bot_join_voice', {
+      reason: 'join my voice',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'BOT_JOIN_VOICE' });
+    (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
+      recommendation: expect.objectContaining({
+        type: 'BOT_JOIN_VOICE',
+        voiceChannelId: 'voice-current',
+      }),
+    }));
+  });
+
+  it('asks for a specific voice channel when requester is not in voice', async () => {
+    mockGuild.members.fetch.mockResolvedValueOnce({ id: 'admin-1', voice: { channelId: null } } as any);
+
+    await expect(service.execute('bot_join_voice', {
+      reason: 'join my voice',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' })).rejects.toThrow('Kamu belum masuk voice channel.');
   });
 
   it('gets deleted message history with filters', async () => {

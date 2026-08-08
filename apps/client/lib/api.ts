@@ -4,10 +4,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isServer = typeof window === 'undefined';
   const targetUrl = isServer ? `${API_URL}${path}` : `/api${path}`;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(init.headers as Record<string, string> || {}),
-  };
+  const headers = new Headers(init.headers);
+  if (init.body != null && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
 
 
   if (isServer) {

@@ -16,7 +16,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       const cookieStore = await cookies();
       const cookieString = cookieStore.toString() || (await nextHeaders()).get('cookie') || '';
       if (cookieString) {
-        headers['Cookie'] = cookieString;
+        headers.set('Cookie', cookieString);
       }
     } catch (e) {
       // Outside request context

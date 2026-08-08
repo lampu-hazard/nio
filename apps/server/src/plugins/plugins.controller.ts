@@ -89,6 +89,10 @@ export class PluginsController {
   @Post(':pluginId/install')
   @UseGuards(GuildAccessGuard)
   install(@Param('guildId') guildId: string, @Param('pluginId') pluginId: string) {
+    this.logger.log(
+      `Plugin install request guild=${guildId} plugin=${pluginId}`,
+      'PluginsController',
+    );
     return this.mutate(guildId, () => this.access.install(guildId, pluginId));
   }
 

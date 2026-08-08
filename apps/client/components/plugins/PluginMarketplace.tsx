@@ -56,7 +56,10 @@ export function PluginMarketplace({ guildId }: { guildId: string }) {
       setSuccess('');
       const method = action === 'install' ? 'POST' : action === 'uninstall' ? 'DELETE' : 'PATCH';
       const suffix = action === 'install' ? 'install' : action;
-      await api(`/guilds/${guildId}/plugins/${plugin.id}${action === 'uninstall' ? '' : `/${suffix}`}`, { method });
+      await api(`/guilds/${guildId}/plugins/${plugin.id}${action === 'uninstall' ? '' : `/${suffix}`}`, {
+        method,
+        ...(action === 'install' ? { body: '{}' } : {}),
+      });
       await load();
       const pastTense = action === 'install' ? 'installed' : action === 'uninstall' ? 'uninstalled' : action === 'disable' ? 'disabled' : 'enabled';
       setSuccess(`${plugin.name} ${pastTense}.`);

@@ -97,6 +97,11 @@ export class ModerationService {
   }
 
   async createWarning(guildId: string, userId: string, moderatorId: string, reason: string) {
+    await this.prisma.guild.upsert({
+      where: { id: guildId },
+      update: {},
+      create: { id: guildId, name: guildId },
+    });
     const settings = await this.getSettings(guildId);
     const expiresAt =
       settings.warnExpiryDays > 0

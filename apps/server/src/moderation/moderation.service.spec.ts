@@ -16,9 +16,13 @@ describe('ModerationService', () => {
     prisma = {
       warning: {
         findMany: jest.fn(),
+        create: jest.fn(async ({ data }: any) => ({ id: 'warn-1', ...data })),
       },
       guildSettings: {
         findUnique: jest.fn(),
+      },
+      guild: {
+        upsert: jest.fn(),
       },
     };
 
@@ -28,6 +32,19 @@ describe('ModerationService', () => {
   afterEach(() => {
     process.env.DISCORD_BOT_TOKEN = originalToken;
     globalThis.fetch = originalFetch;
+  });
+
+  it('ensures the guild exists before creating a warning', async () => {
+    prisma.guildSettings.findUnique.mockResolvedValue({ warnExpiryDays: 30 });
+    prisma.guild.upsert.mockResolvedValue({ id: 'guild-1' });
+
+    await service.createWarning('guild-1', 'user-1', 'mod-1', 'reason');
+
+    expect(prisma.guild.upsert).toHaveBeenCalledWith({
+      where: { id: 'guild-1' },
+      update: {},
+      create: { id: 'guild-1', name: 'guild-1' },
+    });
   });
 
   it('returns warning logs enriched with offender and moderator profile details', async () => {

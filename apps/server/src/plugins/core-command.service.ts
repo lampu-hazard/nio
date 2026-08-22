@@ -1,5 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { ChatInputCommandInteraction, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { BoosterRoleService } from '../booster-role/booster-role.service';
 import { EmbedTemplateRendererService } from '../embed-templates/embed-template-renderer.service';
 import { EmbedTemplateService } from '../embed-templates/embed-template.service';
@@ -20,7 +20,7 @@ export class CoreCommandService {
     const guildId = interaction.guildId;
     if (name === 'dashboard') {
       const url = process.env.FRONTEND_URL || 'http://localhost:3000';
-      await interaction.reply({ content: `✦ Open nio dashboard: ${url}`, ephemeral: true });
+      await interaction.reply({ content: `✦ Open nio dashboard: ${url}`, flags: MessageFlags.Ephemeral });
       return;
     }
     if (!guildId) return;
@@ -31,10 +31,10 @@ export class CoreCommandService {
         const url = process.env.FRONTEND_URL || 'http://localhost:3000';
         await interaction.reply({
           embeds: [this.buildStatusEmbed('Custom Booster Role', `Open this private link to create or edit your custom booster role:\n${url}/booster-role?guildId=${guildId}&token=${claim.token}`)],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       } catch (err: any) {
-        await interaction.reply({ embeds: [this.buildStatusEmbed('Booster Role Unavailable', err?.message || 'Only active server boosters can use this feature.')], ephemeral: true });
+        await interaction.reply({ embeds: [this.buildStatusEmbed('Booster Role Unavailable', err?.message || 'Only active server boosters can use this feature.')], flags: MessageFlags.Ephemeral });
       }
       return;
     }
@@ -43,7 +43,7 @@ export class CoreCommandService {
       try {
         const settings = await this.tako.getSettings(guildId);
         if (!settings.enabled || !settings.rewardRoleId) {
-          await interaction.reply({ embeds: [this.buildStatusEmbed('Donation Unavailable', 'Tako donation rewards are not enabled on this server.')], ephemeral: true });
+          await interaction.reply({ embeds: [this.buildStatusEmbed('Donation Unavailable', 'Tako donation rewards are not enabled on this server.')], flags: MessageFlags.Ephemeral });
           return;
         }
         const url = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -52,7 +52,7 @@ export class CoreCommandService {
         const username = encodeURIComponent(interaction.user.username);
         await interaction.reply({ embeds: [this.buildStatusEmbed('Tako Donation Reward', `Donate minimal **Rp${minFormatted}** via Tako to automatically receive the <@&${settings.rewardRoleId}> role!\n\n✦ [Click here to open donation page](${url}/donate?guildId=${guildId}&userId=${userId}&username=${username})`)] });
       } catch (err: any) {
-        await interaction.reply({ embeds: [this.buildStatusEmbed('Error', err?.message || 'Failed to process donation request.')], ephemeral: true });
+        await interaction.reply({ embeds: [this.buildStatusEmbed('Error', err?.message || 'Failed to process donation request.')], flags: MessageFlags.Ephemeral });
       }
       return;
     }
@@ -61,7 +61,7 @@ export class CoreCommandService {
       const user = interaction.options.getUser('user', true);
       const reason = interaction.options.getString('reason', true);
       if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
-        await interaction.reply({ embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')], ephemeral: true });
+        await interaction.reply({ embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')], flags: MessageFlags.Ephemeral });
         return;
       }
       const settings = await this.moderation.getSettings(guildId);
@@ -138,14 +138,14 @@ export class CoreCommandService {
     if (name === 'unwarn') {
       const warnId = interaction.options.getString('id', true);
       if (!interaction.memberPermissions?.has([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers, PermissionFlagsBits.Administrator])) {
-        await interaction.reply({ embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')], ephemeral: true });
+        await interaction.reply({ embeds: [this.buildStatusEmbed('Permission Required', 'You need moderation permissions to run this command.')], flags: MessageFlags.Ephemeral });
         return;
       }
       try {
         await this.moderation.revokeWarning(guildId, warnId);
         await interaction.reply({ embeds: [this.buildStatusEmbed('Warning Revoked', `Successfully removed warning record \`${warnId}\`.`)] });
       } catch {
-        await interaction.reply({ embeds: [this.buildStatusEmbed('Warning Not Found', 'That warning could not be found or has already been revoked.')], ephemeral: true });
+        await interaction.reply({ embeds: [this.buildStatusEmbed('Warning Not Found', 'That warning could not be found or has already been revoked.')], flags: MessageFlags.Ephemeral });
       }
     }
   }

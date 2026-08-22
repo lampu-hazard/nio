@@ -147,6 +147,10 @@ Permintaan moderator:
 ${prompt}`;
     }
 
+    if (!userPrompt && history.length === 0) {
+      return 
+    }
+
     let iterations = 0;
     let finalContent = '';
     let proposalId: string | null = null;

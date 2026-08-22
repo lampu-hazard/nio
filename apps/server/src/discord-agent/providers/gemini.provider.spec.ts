@@ -28,6 +28,10 @@ describe('GeminiProvider with Tool Calling', () => {
     }
   });
 
+  it('rejects requests without history or a user prompt', async () => {
+    await expect(provider.generate('System', '', [], [])).rejects.toThrow('requires a user prompt or conversation history');
+  });
+
   it('handles model requesting function call', async () => {
     const mockResponse = {
       candidates: [

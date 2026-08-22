@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { NioPlugin } from '../nio-plugin.interface';
 import { KineticHostingService } from './kinetic-hosting.service';
 
@@ -18,21 +18,21 @@ export const createKineticHostingPlugin = (service: KineticHostingService): NioP
       name: 'kinetic-servers',
       data: new SlashCommandBuilder().setName('kinetic-servers').setDescription('List your Kinetic Hosting servers').setDMPermission(false).toJSON(),
       execute: async (interaction) => {
-        await interaction.reply({ content: `\`\`\`json\n${service.limit(await service.listServers(guildId(interaction)))}\n\`\`\``, ephemeral: true });
+        await interaction.reply({ content: `\`\`\`json\n${service.limit(await service.listServers(guildId(interaction)))}\n\`\`\``, flags: MessageFlags.Ephemeral });
       },
     },
     {
       name: 'kinetic-status',
       data: new SlashCommandBuilder().setName('kinetic-status').setDescription('Show Kinetic server status').addStringOption((option) => option.setName('server').setDescription('Server identifier').setRequired(true)).setDMPermission(false).toJSON(),
       execute: async (interaction) => {
-        await interaction.reply({ content: `\`\`\`json\n${service.limit(await service.serverStatus(guildId(interaction), interaction.options.getString('server', true)))}\n\`\`\``, ephemeral: true });
+        await interaction.reply({ content: `\`\`\`json\n${service.limit(await service.serverStatus(guildId(interaction), interaction.options.getString('server', true)))}\n\`\`\``, flags: MessageFlags.Ephemeral });
       },
     },
     {
       name: 'kinetic-players',
       data: new SlashCommandBuilder().setName('kinetic-players').setDescription('List online Kinetic server players').addStringOption((option) => option.setName('server').setDescription('Server identifier').setRequired(true)).setDMPermission(false).toJSON(),
       execute: async (interaction) => {
-        await interaction.reply({ content: `\`\`\`json\n${service.limit(await service.onlinePlayers(guildId(interaction), interaction.options.getString('server', true)))}\n\`\`\``, ephemeral: true });
+        await interaction.reply({ content: `\`\`\`json\n${service.limit(await service.onlinePlayers(guildId(interaction), interaction.options.getString('server', true)))}\n\`\`\``, flags: MessageFlags.Ephemeral });
       },
     },
   ],

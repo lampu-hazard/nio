@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Interaction } from 'discord.js';
+import { Interaction, MessageFlags } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 import { AgentActionRendererService } from '../discord-agent/agent-action-renderer.service';
@@ -22,7 +22,7 @@ export class DiscordInteractionService {
       if (!command) return;
       if (command.pluginId) {
         if (!interaction.guildId || !await this.pluginAccess.canUse(interaction.guildId, command.pluginId)) {
-          await interaction.reply({ content: 'Plugin belum terpasang atau entitlement-nya sudah kedaluwarsa.', ephemeral: true });
+          await interaction.reply({ content: 'Plugin belum terpasang atau entitlement-nya sudah kedaluwarsa.', flags: MessageFlags.Ephemeral });
           return;
         }
       }
@@ -45,7 +45,7 @@ export class DiscordInteractionService {
         console.error('Agent interaction handling error:', err);
         await interaction.reply({
           content: err?.message || 'Failed to process proposal.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
           allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
         });
       }

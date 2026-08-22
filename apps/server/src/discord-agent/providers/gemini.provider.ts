@@ -22,6 +22,9 @@ export class GeminiProvider implements AiProvider {
         parts: [{ text: userPrompt }],
       });
     }
+    if (requestContents.length === 0) {
+      throw new Error('Gemini request requires a user prompt or conversation history.');
+    }
 
     const payload: any = {
       contents: requestContents,
@@ -34,7 +37,7 @@ export class GeminiProvider implements AiProvider {
       payload.tools = [{ functionDeclarations: tools }];
     }
 
-    console.log('Gemini Request Payload:', JSON.stringify(payload, null, 2));
+    // console.log('Gemini Request Payload:', JSON.stringify(payload, null, 2));
 
     const response = await fetch(url, {
       method: 'POST',

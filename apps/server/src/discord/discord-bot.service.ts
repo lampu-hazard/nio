@@ -84,6 +84,11 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.client.once(Events.ClientReady, () => this.logger.log(`Discord bot online as ${this.client.user?.tag}`, 'DiscordBot'));
+    this.client.on(Events.GuildCreate, (guild) => {
+      this.ensureGuild(guild).then(() => this.commandSync.sync(guild.id)).catch((err) =>
+        this.logger.error(`Guild initialization error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
     this.client.on('interactionCreate', (interaction) => this.interactions.handle(interaction).catch(
       (err) => this.logger.error(`Interaction error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
     ));
@@ -179,9 +184,18 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Plugin reconciliation error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
     );
     for (const guild of this.client.guilds.cache.values()) {
+      await this.ensureGuild(guild).catch((err) => this.logger.error(`Guild initialization error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'));
       await this.commandSync.sync(guild.id).catch((err) => this.logger.error(`Guild command sync error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'));
     }
     this.logger.log('Guild slash commands synchronized', 'DiscordBot');
+  }
+
+  private async ensureGuild(guild: { id: string; name: string; icon: string | null }) {
+    await this.messageLogs.prisma.guild.upsert({
+      where: { id: guild.id },
+      update: { name: guild.name, icon: guild.icon },
+      create: { id: guild.id, name: guild.name, icon: guild.icon },
+    });
   }
 
   onModuleDestroy() {

@@ -35,7 +35,7 @@ const DEFAULT_SYSTEM_PROMPT = `Anda adalah nio, AI Moderator Copilot dan asisten
 Gunakan bahasa Indonesia yang ringkas, hangat, profesional, dan objektif secara default.
 Ikuti siklus 5 tahap: Understand -> Inspect -> Act -> Verify -> Report.
 
-Gunakan tag <thought>...</thought> untuk menuliskan proses berpikir dan rencana analisis Anda sebelum memanggil tool atau menjawab.
+Gunakan tag <thought>...</thought> untuk menuliskan proses berpikir dan rencana analisis Anda sebelum memanggil tool atau menjawab. Tag ini digunakan untuk penalaran internal dan tidak akan ditampilkan ke pengguna di akhir percakapan.
 Untuk memeriksa keaktifan member di voice atau chat, gunakan tool get_voice_leaderboard dan get_chat_leaderboard secara mandiri. Jangan menolak dengan alasan tidak memiliki akses analitik.
 
 Kumpulkan bukti dengan tool pembacaan (read). Tool pembacaan dieksekusi secara otomatis untuk investigasi.
@@ -117,9 +117,12 @@ export function formatThoughtBlock(thought: string): string {
   return `> 💭 **Proses Berpikir:**\n${quoted.join('\n')}`;
 }
 
-export function formatAgentResponse(finalText: string, thoughts: string[]): string {
+export function formatAgentResponse(finalText: string, thoughts: string[] = [], includeThoughts = false): string {
   const cleanFinal = sanitizeSensitiveInfo(neutralizeMentions(finalText || '')).trim();
-  if (!cleanFinal || cleanFinal.startsWith('⚠️')) {
+  if (!cleanFinal || cleanFinal.startsWith('⚠️') || !includeThoughts) {
+    if (cleanFinal.length > MAX_DISCORD_RESPONSE_LENGTH) {
+      return `${cleanFinal.slice(0, MAX_DISCORD_RESPONSE_LENGTH - 3)}...`;
+    }
     return cleanFinal;
   }
 

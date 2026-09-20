@@ -541,7 +541,7 @@ describe('DiscordAgentService loop', () => {
     expect(result.content).toContain(`@${String.fromCharCode(8203)}here`);
   });
 
-  it('formats Hermes-style thought block and redacts sensitive info in handleMention', async () => {
+  it('strips internal thought tags and outputs only clean response in handleMention', async () => {
     const providerMock = {
       generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
         message: {
@@ -560,8 +560,8 @@ describe('DiscordAgentService loop', () => {
 
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> siapa paling aktif di voice?');
 
-    expect(result.content).toContain('> 💭 **Proses Berpikir:**');
-    expect(result.content).toContain('> Memeriksa voice leaderboard dengan API [REDACTED_API_KEY]');
+    expect(result.content).not.toContain('> 💭 **Proses Berpikir:**');
+    expect(result.content).not.toContain('Memeriksa voice leaderboard');
     expect(result.content).toContain('User paling aktif adalah Wign dengan durasi 2 jam.');
     expect(result.content).not.toContain('sk-12345678901234567890');
   });
@@ -718,10 +718,18 @@ describe('DiscordAgentService loop', () => {
       expect(formatted).toBe('> 💭 **Proses Berpikir:**\n> Step 1\n> Step 2');
     });
 
-    it('formats agent response and preserves final answer when thought exceeds budget', () => {
+    it('omits thoughts by default in formatAgentResponse', () => {
+      const finalAnswer = 'Ini adalah jawaban final yang penting.';
+      const thought = 'Proses berpikir internal.';
+      const formatted = formatAgentResponse(finalAnswer, [thought]);
+      expect(formatted).toBe(finalAnswer);
+      expect(formatted).not.toContain('Proses Berpikir');
+    });
+
+    it('formats agent response and preserves final answer when thought exceeds budget if explicitly enabled', () => {
       const finalAnswer = 'Ini adalah jawaban final yang penting.';
       const giantThought = 'a'.repeat(2500);
-      const formatted = formatAgentResponse(finalAnswer, [giantThought]);
+      const formatted = formatAgentResponse(finalAnswer, [giantThought], true);
       expect(formatted).toContain(finalAnswer);
       expect(formatted.length).toBeLessThanOrEqual(2000);
       expect(formatted).toContain('*(dipersingkat...)*');

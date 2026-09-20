@@ -33,21 +33,38 @@ export class DiscordInteractionService {
     if (interaction.isButton() && interaction.customId.startsWith('agent:')) {
       const [, action, proposalId] = interaction.customId.split(':');
       try {
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferUpdate().catch(() => null);
+        }
         const result = action === 'approve'
           ? await this.agentProposals.approveAndExecute(proposalId, interaction.user.id)
           : await this.agentProposals.cancelProposal(proposalId, interaction.user.id);
-        await interaction.update(await this.agentActionRenderer.renderExecutionResult(
+        const rendered = await this.agentActionRenderer.renderExecutionResult(
           action === 'approve' ? 'Proposal Executed' : 'Proposal Cancelled',
           result.message,
           interaction.guildId || undefined,
-        ));
+        );
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(rendered);
+        } else {
+          await interaction.update(rendered);
+        }
       } catch (err: any) {
         console.error('Agent interaction handling error:', err);
-        await interaction.reply({
-          content: err?.message || 'Failed to process proposal.',
-          flags: MessageFlags.Ephemeral,
-          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
-        });
+        const errorMessage = err?.message || 'Failed to process proposal.';
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp({
+            content: errorMessage,
+            flags: MessageFlags.Ephemeral,
+            allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+          }).catch(() => null);
+        } else {
+          await interaction.reply({
+            content: errorMessage,
+            flags: MessageFlags.Ephemeral,
+            allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+          }).catch(() => null);
+        }
       }
       return;
     }

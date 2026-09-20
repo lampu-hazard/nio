@@ -61,6 +61,36 @@ export class AgentActionRendererService {
     return { embeds: [embed], components: [row] };
   }
 
+  async renderBatchProposalMessage(
+    batchProposal: { id: string; guildId?: string; expiresAt: Date },
+    subProposals: Array<{ id: string; actionType: string; targetUserId: string | null; payload: any }>,
+  ) {
+    const count = subProposals.length;
+    const lines: string[] = [
+      `### Batch Action Proposal`,
+      `> Total Actions: **${count}** actions pending approval.`,
+      '',
+      '**Actions to be executed:**',
+    ];
+    for (let i = 0; i < count; i++) {
+      const p = subProposals[i];
+      const target = p.targetUserId ? `<@${p.targetUserId}> (\`${p.targetUserId}\`)` : '`No member target`';
+      const details = this.formatActionDetails(p);
+      lines.push(`**${i + 1}. \`${p.actionType}\`** · Target: ${target}`);
+      if (details) lines.push(details);
+    }
+    const description = lines.join('\n');
+    const embed = new EmbedBuilder()
+      .setColor(0xe67e22)
+      .setTitle(`Batch Action Proposal (${count} Actions)`)
+      .setDescription(description.length > 4096 ? `${description.slice(0, 4093)}...` : description)
+      .setFooter({ text: `Batch Proposal ${batchProposal.id} · Expires ${batchProposal.expiresAt.toISOString()}` })
+      .setTimestamp();
+
+    const row = this.batchProposalButtons(batchProposal.id, count);
+    return { embeds: [embed], components: [row] };
+  }
+
   async renderExecutionResult(title: string, description: string, guildId?: string) {
     const isCancelled = /cancel|dismiss/i.test(title);
     const isExecuted = /executed|success|berhasil/i.test(title);
@@ -274,6 +304,9 @@ export class AgentActionRendererService {
     if (actionType === 'BAN' || actionType === 'KICK' || actionType === 'MASS_BAN' || actionType === 'MASS_KICK') {
       return { color: 0xe74c3c, label: 'Critical Moderation Proposal', category: 'Critical moderation action' };
     }
+    if (actionType === 'BATCH') {
+      return { color: 0xe67e22, label: 'Batch Action Proposal', category: 'Batch action execution' };
+    }
     if (actionType === 'WARN' || actionType === 'TIMEOUT' || actionType === 'MASS_TIMEOUT') {
       return { color: 0xe67e22, label: 'Moderation Proposal', category: 'Moderation action' };
     }
@@ -334,6 +367,19 @@ export class AgentActionRendererService {
       new ButtonBuilder()
         .setCustomId(`agent:cancel:${proposalId}`)
         .setLabel('Dismiss')
+        .setStyle(ButtonStyle.Secondary),
+    );
+  }
+
+  private batchProposalButtons(batchProposalId: string, count: number) {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`agent:approve:${batchProposalId}`)
+        .setLabel(`Execute All (${count})`)
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`agent:cancel:${batchProposalId}`)
+        .setLabel('Dismiss All')
         .setStyle(ButtonStyle.Secondary),
     );
   }

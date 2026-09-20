@@ -194,4 +194,101 @@ describe('DiscordAnomalyService', () => {
     expect(message.delete).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalled();
   });
+
+  it('detects phishing threat using SentinelService without calling gRPC client', async () => {
+    const mockSentinel: any = {
+      inspectMessage: jest.fn(() => ({
+        isThreat: true,
+        threatType: 'PHISHING',
+        phishingFindings: [
+          {
+            isSuspicious: true,
+            confidence: 0.95,
+            detectedTarget: 'discord.com',
+            reasons: ['Punycode or homoglyph spoofing detected targeting discord.com'],
+            normalizedDomain: 'xn--d1scord-11a.com',
+          },
+        ],
+        reasons: ['Suspicious domain: xn--d1scord-11a.com targeting discord.com'],
+      })),
+    };
+
+    const sentinelAnomalyService = new DiscordAnomalyService(
+      prisma as unknown as PrismaService,
+      logger as unknown as AppLogger,
+      rustClient as unknown as RustAnomalyClientService,
+      mockSentinel,
+    );
+
+    sentinelAnomalyService.updateGuildCache('guild-1', {
+      enabled: true,
+      phishingEnabled: true,
+      contentAnomalyEnabled: true,
+      userAnomalyEnabled: true,
+      guildBaselineEnabled: true,
+      enforcementMode: 'DELETE_HIGH_CONFIDENCE',
+    });
+
+    const message = makeMessage('Check this link: https://xn--d1scord-11a.com/free');
+    await sentinelAnomalyService.handleMessage(message);
+
+    expect(mockSentinel.inspectMessage).toHaveBeenCalled();
+    expect(rustClient.analyze).not.toHaveBeenCalled();
+    expect(message.delete).toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'ANOMALY_DETECTION',
+          guildId: 'guild-1',
+        }),
+      }),
+    );
+  });
+
+  it('detects secret leak threat using SentinelService and deletes message', async () => {
+    const mockSentinel: any = {
+      inspectMessage: jest.fn(() => ({
+        isThreat: true,
+        threatType: 'SECRET_LEAK',
+        secretFindings: {
+          hasSecrets: true,
+          detections: [
+            {
+              secretType: 'DISCORD_BOT_TOKEN',
+              preview: 'MTAx...xyz',
+              confidence: 0.99,
+              start: 10,
+              end: 70,
+            },
+          ],
+          redactedText: 'My token: [REDACTED:DISCORD_BOT_TOKEN]',
+        },
+        reasons: ['Detected 1 credential/secret leak(s) in message content'],
+      })),
+    };
+
+    const sentinelAnomalyService = new DiscordAnomalyService(
+      prisma as unknown as PrismaService,
+      logger as unknown as AppLogger,
+      rustClient as unknown as RustAnomalyClientService,
+      mockSentinel,
+    );
+
+    sentinelAnomalyService.updateGuildCache('guild-1', {
+      enabled: true,
+      phishingEnabled: true,
+      contentAnomalyEnabled: true,
+      userAnomalyEnabled: true,
+      guildBaselineEnabled: true,
+      enforcementMode: 'DELETE_HIGH_CONFIDENCE',
+    });
+
+    const message = makeMessage('My token: dummy-token-sample-value');
+    await sentinelAnomalyService.handleMessage(message);
+
+    expect(mockSentinel.inspectMessage).toHaveBeenCalled();
+    expect(rustClient.analyze).not.toHaveBeenCalled();
+    expect(message.delete).toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalled();
+  });
 });

@@ -187,6 +187,14 @@ export class AgentActionProposalService {
       payload.mcpArguments = input.recommendation.mcpArguments || {};
     }
 
+    if (input.recommendation.type === 'BATCH') {
+      const proposalIds = Array.isArray(input.recommendation.proposalIds) ? input.recommendation.proposalIds : [];
+      if (proposalIds.length === 0) {
+        throw new BadRequestException('Batch recommendation must include at least one proposal ID.');
+      }
+      payload.proposalIds = proposalIds;
+    }
+
     if (DISCORD_OP_ACTIONS.has(input.recommendation.type)) {
       Object.assign(payload, this.normalizeDiscordOperationPayload(input.recommendation, input.channelId));
     }
@@ -205,6 +213,32 @@ export class AgentActionProposalService {
     });
   }
 
+  async createBatchProposal(input: {
+    guildId: string;
+    channelId: string;
+    requestedById: string;
+    proposalIds: string[];
+    reason?: string;
+  }) {
+    if (!input.proposalIds || input.proposalIds.length === 0) {
+      throw new BadRequestException('Batch proposal must include at least one proposal ID.');
+    }
+    return this.prisma.agentActionProposal.create({
+      data: {
+        guildId: input.guildId,
+        channelId: input.channelId,
+        requestedById: input.requestedById,
+        actionType: 'BATCH',
+        payload: {
+          proposalIds: input.proposalIds,
+          reason: input.reason || `Batch execution of ${input.proposalIds.length} actions`,
+        },
+        status: 'PENDING',
+        expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),
+      },
+    });
+  }
+
   async cancelProposal(proposalId: string, userId: string) {
     const proposal = await this.prisma.agentActionProposal.findUnique({ where: { id: proposalId } });
     if (!proposal) throw new BadRequestException('Proposal not found.');
@@ -215,6 +249,20 @@ export class AgentActionProposalService {
       where: { id: proposalId },
       data: { status: 'CANCELLED' },
     });
+
+    if (proposal.actionType === 'BATCH') {
+      const payload = proposal.payload as any;
+      const subProposalIds = Array.isArray(payload?.proposalIds) ? payload.proposalIds : [];
+      if (subProposalIds.length > 0) {
+        await this.prisma.agentActionProposal.updateMany({
+          where: {
+            id: { in: subProposalIds },
+            status: 'PENDING',
+          },
+          data: { status: 'CANCELLED' },
+        });
+      }
+    }
 
     return { ok: true, message: 'Proposal cancelled.' };
   }
@@ -232,6 +280,39 @@ export class AgentActionProposalService {
 
     const actionType = proposal.actionType as AgentActionType;
     const payload = proposal.payload as any;
+
+    if (actionType === 'BATCH') {
+      const subProposalIds = Array.isArray(payload.proposalIds) ? payload.proposalIds : [];
+      if (subProposalIds.length === 0) {
+        throw new BadRequestException('Batch proposal contains no actions.');
+      }
+      await this.prisma.agentActionProposal.update({ where: { id: proposalId }, data: { status: 'APPROVED' } });
+      const executionResults: { id: string; ok: boolean; message: string }[] = [];
+      for (const subId of subProposalIds) {
+        try {
+          const res = await this.approveAndExecute(subId, userId);
+          executionResults.push({ id: subId, ok: true, message: res.message });
+        } catch (err: any) {
+          executionResults.push({ id: subId, ok: false, message: err?.message || String(err) });
+        }
+      }
+      const successCount = executionResults.filter((r) => r.ok).length;
+      const failCount = executionResults.length - successCount;
+      const summaryMessage = `Batch executed: ${successCount}/${executionResults.length} actions succeeded.` +
+        (failCount > 0 ? ` (${failCount} failed)` : '') +
+        '\n' + executionResults.map((r) => `• ${r.ok ? '✅' : '❌'} ${r.message}`).join('\n');
+
+      const finalStatus = successCount === executionResults.length ? 'EXECUTED' : successCount > 0 ? 'EXECUTED' : 'FAILED';
+      await this.prisma.agentActionProposal.update({
+        where: { id: proposalId },
+        data: {
+          status: finalStatus,
+          executedAt: new Date(),
+          error: failCount > 0 ? `${failCount} sub-action(s) failed.` : null,
+        },
+      });
+      return { ok: successCount > 0, message: summaryMessage };
+    }
 
     if (actionType === 'MCP_TOOL_CALL') {
       const ownerId = process.env.OWNER_DISCORD_ID?.trim();

@@ -1,8 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { Message } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../logger/logger.service';
 import { RustAnomalyClientService } from './rust-anomaly-client.service';
+import { SentinelService } from '../sentinel/sentinel.service';
 
 interface AnomalySettings {
   enabled: boolean;
@@ -21,6 +22,7 @@ export class DiscordAnomalyService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly logger: AppLogger,
     private readonly rustClient: RustAnomalyClientService,
+    @Optional() private readonly sentinelService?: SentinelService,
   ) {}
 
   async onModuleInit() {
@@ -76,6 +78,65 @@ export class DiscordAnomalyService implements OnModuleInit {
     // Parse URLs
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const urls = message.content.match(urlRegex) || [];
+
+    // 1. Check with high-performance native Rust Sentinel engine
+    if (this.sentinelService) {
+      const inspection = this.sentinelService.inspectMessage(message.content, urls);
+      if (inspection.isThreat) {
+        const primaryReason = inspection.reasons.join('; ');
+        const isSecretLeak =
+          inspection.threatType === 'SECRET_LEAK' || inspection.threatType === 'MULTIPLE';
+        const isPhishing =
+          inspection.threatType === 'PHISHING' || inspection.threatType === 'MULTIPLE';
+
+        if ((isPhishing && config.phishingEnabled) || isSecretLeak) {
+          if (config.enforcementMode !== 'AUDIT_ONLY') {
+            try {
+              await message.delete();
+              this.logger.log(
+                `[Sentinel] Deleted threat message: ${message.id} from user ${message.author.id} (${inspection.threatType}: ${primaryReason})`,
+                'DiscordAnomaly',
+              );
+            } catch (err: any) {
+              this.logger.error(`Failed to delete message: ${err.message}`, err.stack, 'DiscordAnomaly');
+            }
+          }
+
+          const findings = [
+            ...(inspection.phishingFindings || []).map((p) => ({
+              kind: 1, // FINDING_KIND_PHISHING_LINK
+              severity: 4,
+              confidence: p.confidence,
+              reason: p.reasons.join(', '),
+              evidence: { domain: p.normalizedDomain, target: p.detectedTarget || '' },
+            })),
+            ...(inspection.secretFindings?.detections.map((d) => ({
+              kind: 2, // FINDING_KIND_SECRET_LEAK
+              severity: 4,
+              confidence: d.confidence,
+              reason: `Detected leaked secret: ${d.secretType}`,
+              evidence: { secretType: d.secretType, preview: d.preview },
+            })) || []),
+          ];
+
+          await this.writeAuditLog(
+            message.guild.id,
+            {
+              decision: 3, // DELETE_MESSAGE
+              severity: 4, // CRITICAL
+              confidence: Math.max(...findings.map((f) => f.confidence), 0.9),
+              reason: `[Sentinel Native] ${primaryReason}`,
+              findings,
+              metrics: {},
+            },
+            message.channel.id,
+            message.author.id,
+          );
+
+          return;
+        }
+      }
+    }
 
     const enforcementInt =
       config.enforcementMode === 'AUDIT_ONLY'

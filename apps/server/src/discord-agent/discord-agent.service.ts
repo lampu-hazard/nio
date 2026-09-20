@@ -571,22 +571,31 @@ ${prompt || '(analisis pesan di atas)'}`;
     let components: any[] | undefined = undefined;
 
     if (proposalIds.length > 0) {
-      const allEmbeds: any[] = [];
-      const allComponents: any[] = [];
-      for (const id of proposalIds) {
-        const proposal = await this.prisma.agentActionProposal.findUnique({ where: { id } });
+      if (proposalIds.length === 1) {
+        const proposal = await this.prisma.agentActionProposal.findUnique({ where: { id: proposalIds[0] } });
         if (proposal) {
           const rendered = await this.renderer.renderProposalMessage(proposal);
-          if (rendered.embeds && allEmbeds.length + rendered.embeds.length <= 10) {
-            allEmbeds.push(...rendered.embeds);
-          }
-          if (rendered.components && allComponents.length + rendered.components.length <= 5) {
-            allComponents.push(...rendered.components);
-          }
+          embeds = rendered.embeds;
+          components = rendered.components;
+        }
+      } else {
+        const subProposals: any[] = [];
+        for (const id of proposalIds) {
+          const p = await this.prisma.agentActionProposal.findUnique({ where: { id } });
+          if (p) subProposals.push(p);
+        }
+        if (subProposals.length > 0) {
+          const batchProposal = await this.proposals.createBatchProposal({
+            guildId,
+            channelId,
+            requestedById: authorId,
+            proposalIds: subProposals.map((p) => p.id),
+          });
+          const rendered = await this.renderer.renderBatchProposalMessage(batchProposal, subProposals);
+          embeds = rendered.embeds;
+          components = rendered.components;
         }
       }
-      if (allEmbeds.length > 0) embeds = allEmbeds;
-      if (allComponents.length > 0) components = allComponents;
     }
 
     await this.prisma.agentInteractionLog.create({

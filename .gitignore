@@ -9,6 +9,7 @@ coverage/
 
 # Rust build output
 target/
+*.node
 
 # env/secrets
 .env
@@ -28,6 +29,7 @@ logs/
 docs/
 # OS/editor
 .DS_Store
+image.png
 
 # superpowers local scratch
 .superpowers/

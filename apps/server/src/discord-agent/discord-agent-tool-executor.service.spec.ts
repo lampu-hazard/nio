@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PermissionFlagsBits } from 'discord.js';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
@@ -766,5 +767,292 @@ describe('DiscordAgentToolExecutorService', () => {
     }));
     expect(mockSentinel.scanPhishing).toHaveBeenCalled();
     expect(mockSentinel.scanSecrets).toHaveBeenCalled();
+  });
+
+  describe('web_fetch and web_search tools', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+      delete process.env.BRAVE_SEARCH_API_KEY;
+      delete process.env.TAVILY_API_KEY;
+    });
+
+    it('rejects invalid URL or unsupported protocols for web_fetch', async () => {
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'not-a-valid-url' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'ftp://files.example.com/data' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('blocks SSRF attempts to localhost, cloud metadata, or private IPs for web_fetch', async () => {
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'http://localhost:3000/admin' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'http://169.254.169.254/latest/meta-data' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'http://127.0.0.1:8080/secret' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('blocks domains that resolve to private IP addresses via DNS', async () => {
+      jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
+        { address: '192.168.1.100', family: 4 },
+      ]);
+
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'https://internal-service.mycorp.com' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('fetches valid public web content and cleans HTML into markdown', async () => {
+      jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
+        { address: '93.184.216.34', family: 4 },
+      ]);
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head><style>body { color: red; }</style></head>
+          <body>
+            <script>alert("xss")</script>
+            <header>Site Header</header>
+            <h1>Test Documentation</h1>
+            <p>Welcome to <b>Nio</b> documentation. Visit <a href="https://example.com/docs">our docs</a>.</p>
+            <ul>
+              <li>Item 1</li>
+              <li>Item 2</li>
+            </ul>
+            <footer>Copyright 2026</footer>
+          </body>
+        </html>
+      `;
+
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+        text: async () => htmlContent,
+      } as any);
+
+      const res = await service.execute(
+        'web_fetch',
+        {
+          url: 'https://example.com/info',
+          maxChars: 5000,
+        },
+        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(res).toEqual(
+        expect.objectContaining({
+          url: 'https://example.com/info',
+          status: 200,
+          truncated: false,
+        }),
+      );
+      expect(res.content).toContain('### Test Documentation');
+      expect(res.content).toContain('Welcome to Nio documentation');
+      expect(res.content).toContain('[our docs](https://example.com/docs)');
+      expect(res.content).toContain('- Item 1');
+      expect(res.content).not.toContain('alert("xss")');
+      expect(res.content).not.toContain('Site Header');
+      expect(res.content).not.toContain('Copyright 2026');
+    });
+
+    it('handles web_fetch HTTP error responses gracefully', async () => {
+      jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
+        { address: '93.184.216.34', family: 4 },
+      ]);
+
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        headers: new Headers(),
+      } as any);
+
+      const res = await service.execute(
+        'web_fetch',
+        {
+          url: 'https://example.com/not-found',
+        },
+        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(res).toEqual(
+        expect.objectContaining({
+          success: false,
+          status: 404,
+        }),
+      );
+    });
+
+    it('rejects empty query for web_search', async () => {
+      await expect(
+        service.execute(
+          'web_search',
+          { query: '   ' },
+          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('executes web_search using Brave Search API when configured', async () => {
+      process.env.BRAVE_SEARCH_API_KEY = 'test-brave-key';
+
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: 'Discord JS Guide',
+                url: 'https://discordjs.guide',
+                description: 'Comprehensive guide',
+              },
+            ],
+          },
+        }),
+      } as any);
+
+      const res = await service.execute(
+        'web_search',
+        {
+          query: 'discord js guide',
+          limit: 3,
+        },
+        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(res).toEqual(
+        expect.objectContaining({
+          engine: 'brave',
+          count: 1,
+          results: [
+            {
+              title: 'Discord JS Guide',
+              url: 'https://discordjs.guide',
+              snippet: 'Comprehensive guide',
+            },
+          ],
+        }),
+      );
+    });
+
+    it('executes web_search using Tavily Search API when configured', async () => {
+      process.env.TAVILY_API_KEY = 'test-tavily-key';
+
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: 'NestJS Docs',
+              url: 'https://docs.nestjs.com',
+              content: 'A progressive Node.js framework',
+            },
+          ],
+        }),
+      } as any);
+
+      const res = await service.execute(
+        'web_search',
+        {
+          query: 'nestjs documentation',
+          limit: 3,
+        },
+        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(res).toEqual(
+        expect.objectContaining({
+          engine: 'tavily',
+          count: 1,
+          results: [
+            {
+              title: 'NestJS Docs',
+              url: 'https://docs.nestjs.com',
+              snippet: 'A progressive Node.js framework',
+            },
+          ],
+        }),
+      );
+    });
+
+    it('falls back to DuckDuckGo HTML scraping for zero-config web_search', async () => {
+      const mockDdgHtml = `
+        <div class="result results_links results_links_deep web-result ">
+          <div class="result__body links_main links_deep">
+            <h2 class="result__title">
+              <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fddg-result&rut=123">
+                Example <b>Title</b>
+              </a>
+            </h2>
+            <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fddg-result&rut=123">
+              This is a test snippet from DuckDuckGo.
+            </a>
+          </div>
+        </div>
+      `;
+
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        text: async () => mockDdgHtml,
+      } as any);
+
+      const res = await service.execute(
+        'web_search',
+        {
+          query: 'example query',
+          limit: 5,
+        },
+        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(res).toEqual(
+        expect.objectContaining({
+          engine: 'duckduckgo',
+          count: 1,
+          results: [
+            {
+              title: 'Example Title',
+              url: 'https://example.com/ddg-result',
+              snippet: 'This is a test snippet from DuckDuckGo.',
+            },
+          ],
+        }),
+      );
+    });
   });
 });

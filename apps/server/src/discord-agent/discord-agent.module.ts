@@ -3,6 +3,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { ModerationModule } from '../moderation/moderation.module';
 import { StickersModule } from '../stickers/stickers.module';
 import { EmbedTemplateModule } from '../embed-templates/embed-template.module';
+import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 import { DiscordAgentService } from './discord-agent.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
@@ -13,7 +14,13 @@ import { ConversationMemoryService } from './conversation-memory.service';
 import { McpToolService } from './mcp-tool.service';
 
 @Module({
-  imports: [PrismaModule, ModerationModule, forwardRef(() => StickersModule), EmbedTemplateModule],
+  imports: [
+    PrismaModule,
+    ModerationModule,
+    forwardRef(() => StickersModule),
+    EmbedTemplateModule,
+    forwardRef(() => LeaderboardModule),
+  ],
   providers: [
     DiscordAgentService,
     DiscordAgentContextService,

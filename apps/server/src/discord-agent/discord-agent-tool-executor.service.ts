@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ServiceUnavailableException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, ServiceUnavailableException, ForbiddenException, Optional, Inject, forwardRef } from '@nestjs/common';
 import { Client, PermissionFlagsBits } from 'discord.js';
 import { ModerationService } from '../moderation/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,6 +7,7 @@ import { DiscordAgentContextService } from './discord-agent-context.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
 import { AgentActionRecommendation, AgentActionType, AgentSettingsUpdate } from './agent-action.types';
 import { PluginToolRegistryService } from '../plugins/plugin-tool-registry.service';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
 
 const MAX_READ_LIMIT = 100;
 const MAX_BATCH_ITEMS = 25;
@@ -60,6 +61,9 @@ export class DiscordAgentToolExecutorService {
     private readonly messageLogs: DiscordMessageLogService,
     private readonly contextService: DiscordAgentContextService,
     private readonly pluginTools: PluginToolRegistryService,
+    @Optional()
+    @Inject(forwardRef(() => LeaderboardService))
+    private readonly leaderboard?: LeaderboardService,
   ) {}
 
   setClient(client: Client) {
@@ -403,6 +407,28 @@ export class DiscordAgentToolExecutorService {
 
       case 'get_server_stats':
         return this.getServerStats(context.guildId);
+
+      case 'get_voice_leaderboard': {
+        if (!this.leaderboard) {
+          throw new ServiceUnavailableException('LeaderboardService is not available.');
+        }
+        const days = ['1', '7', '30', 'all'].includes(String(args.days)) ? String(args.days) : '7';
+        const limit = this.clampNumber(args.limit || 10, 1, 50);
+        const rows = await this.leaderboard.getVoiceLeaderboard(context.guildId, days, limit);
+        return rows.map((r) => ({
+          ...r,
+          durationFormatted: this.formatDuration(r.score),
+        }));
+      }
+
+      case 'get_chat_leaderboard': {
+        if (!this.leaderboard) {
+          throw new ServiceUnavailableException('LeaderboardService is not available.');
+        }
+        const days = ['1', '7', '30', 'all'].includes(String(args.days)) ? String(args.days) : '7';
+        const limit = this.clampNumber(args.limit || 10, 1, 50);
+        return this.leaderboard.getChatLeaderboard(context.guildId, days, limit);
+      }
 
       case 'mass_moderation_action': {
         const targetIds = Array.isArray(args.targetUserIds)
@@ -1444,5 +1470,19 @@ export class DiscordAgentToolExecutorService {
         recentSlowmodes,
       },
     };
+  }
+
+  private formatDuration(seconds: number): string {
+    const totalSecs = Math.max(0, Math.floor(seconds || 0));
+    const hours = Math.floor(totalSecs / 3600);
+    const minutes = Math.floor((totalSecs % 3600) / 60);
+    const remainingSecs = totalSecs % 60;
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${remainingSecs}s`;
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${remainingSecs}s`;
+    }
+    return `${remainingSecs}s`;
   }
 }

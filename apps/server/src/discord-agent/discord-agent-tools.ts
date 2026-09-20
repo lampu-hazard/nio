@@ -326,6 +326,28 @@ const RAW_AGENT_TOOLS = [
     },
   },
   {
+    name: 'get_voice_leaderboard',
+    description: 'Get the leaderboard of most active members in voice channels. Returns rank, user ID, username, displayName, and voice duration. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        days: { type: 'string', enum: ['1', '7', '30', 'all'], description: 'Timeframe in days (1, 7, 30, or all). Defaults to 7.' },
+        limit: { type: 'integer', description: 'Number of top voice members to return (1 to 50). Defaults to 10.' },
+      },
+    },
+  },
+  {
+    name: 'get_chat_leaderboard',
+    description: 'Get the leaderboard of most active members in text chat by message count. Returns rank, user ID, username, displayName, and message count. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        days: { type: 'string', enum: ['1', '7', '30', 'all'], description: 'Timeframe in days (1, 7, 30, or all). Defaults to 7.' },
+        limit: { type: 'integer', description: 'Number of top chat members to return (1 to 50). Defaults to 10.' },
+      },
+    },
+  },
+  {
     name: 'get_discord_audit_logs',
     description: 'Fetch official Discord audit logs for security analysis. Read-only; executed immediately.',
     parameters: {

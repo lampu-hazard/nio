@@ -19,7 +19,6 @@ const TYPE_LABELS: Record<string, string> = {
   LEADERBOARD: 'Leaderboard panel',
 };
 
-// ponytail: map panel type → template category. Extend when new panel types are added.
 const PANEL_TYPE_CATEGORY: Record<string, EmbedTemplateCategory> = {
   SELF_ROLE: 'PANEL_SELF_ROLE',
   RULES: 'PANEL_RULES',
@@ -85,6 +84,10 @@ export class PanelRendererService {
     };
   }
 
+  private formatLeaderboardUser(row: any): string {
+    return row.displayName ? `**${row.displayName}** (<@${row.userId}>)` : `<@${row.userId}>`;
+  }
+
   private async leaderboardLines(panel: any): Promise<string> {
     const isVoice = panel.name?.toLowerCase().includes('voice');
     if (isVoice) {
@@ -92,14 +95,14 @@ export class PanelRendererService {
       if (!data?.length) return '*Belum ada aktivitas voice session tercatat.*';
       return data.map((row) => {
         const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
-        return `${medal} <@${row.userId}> — \`${this.formatVoiceDuration(row.score)}\``;
+        return `${medal} ${this.formatLeaderboardUser(row)} — \`${this.formatVoiceDuration(row.score)}\``;
       }).join('\n');
     }
     const data = await this.leaderboard.getChatLeaderboard(panel.guildId, '7', 10);
     if (!data?.length) return '*Belum ada aktivitas pesan tercatat.*';
     return data.map((row) => {
       const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
-      return `${medal} <@${row.userId}> — \`${row.score} pesan\``;
+      return `${medal} ${this.formatLeaderboardUser(row)} — \`${row.score} pesan\``;
     }).join('\n');
   }
 
@@ -143,7 +146,7 @@ export class PanelRendererService {
           data.forEach((row) => {
             const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
             const durationFormatted = this.formatVoiceDuration(row.score);
-            lines.push(`${medal} <@${row.userId}> — \`${durationFormatted}\``);
+            lines.push(`${medal} ${this.formatLeaderboardUser(row)} — \`${durationFormatted}\``);
           });
         }
       } else {
@@ -154,7 +157,7 @@ export class PanelRendererService {
         } else {
           data.forEach((row) => {
             const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : `**#${row.rank}**`;
-            lines.push(`${medal} <@${row.userId}> — \`${row.score} pesan\``);
+            lines.push(`${medal} ${this.formatLeaderboardUser(row)} — \`${row.score} pesan\``);
           });
         }
       }

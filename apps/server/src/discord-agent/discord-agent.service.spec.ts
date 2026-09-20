@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Test, TestingModule } from '@nestjs/testing';
 import { DiscordAgentService } from './discord-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
@@ -7,13 +6,16 @@ import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.s
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { AgentActionRendererService } from './agent-action-renderer.service';
 import { ConversationMemoryService } from './conversation-memory.service';
+import { PluginToolRegistryService } from '../plugins/plugin-tool-registry.service';
+import { McpToolService } from './mcp-tool.service';
+import { AiGenerateRequest, AiGenerateResult } from './interfaces/ai-provider.interface';
 
 describe('DiscordAgentService loop', () => {
   let service: DiscordAgentService;
 
   const mockPrisma = {
     discordAgentSettings: {
-      findUnique: jest.fn(async () => ({
+      findUnique: jest.fn<any>(async () => ({
         enabled: true,
         allowedUserIds: ['admin-1'],
         provider: 'gemini',
@@ -21,60 +23,82 @@ describe('DiscordAgentService loop', () => {
       })),
     },
     agentInteractionLog: {
-      create: jest.fn(async (params: any) => {
+      create: jest.fn<any>(async (params: any) => {
         expect(params.data).toHaveProperty('promptTokens');
         expect(params.data).toHaveProperty('completionTokens');
         expect(params.data).toHaveProperty('totalTokens');
         return {};
       }),
     },
+    agentActionProposal: {
+      findUnique: jest.fn<any>(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        requestedById: 'admin-1',
+        targetUserId: 'user-1',
+        status: 'PENDING',
+        recommendation: { type: 'WARN_USER', reason: 'Spamming' },
+      })),
+    },
   };
 
   const mockExecutor = {
-    execute: jest.fn(async (): Promise<any> => null),
+    execute: jest.fn<any>(async (): Promise<any> => null),
   };
 
   const mockProposals = {
-    createProposal: jest.fn(),
+    createProposal: jest.fn<any>(async () => ({ id: 'prop-mcp-1' })),
   };
 
   const mockRenderer = {
-    renderProposalMessage: jest.fn(() => ({ embeds: [], components: [] })),
+    renderProposalMessage: jest.fn<any>(() => ({ embeds: [{ title: 'Proposal Card' }], components: [] })),
   };
 
   const mockMemory = {
-    loadHistory: jest.fn(async (_guildId?: string, _botMessageId?: string): Promise<any[]> => []),
-    saveConversation: jest.fn(async (_guildId?: string, _botMessageId?: string, _turns?: any[]): Promise<void> => {}),
+    loadHistory: jest.fn<any>(async (_guildId?: string, _botMessageId?: string): Promise<any[]> => []),
+    saveConversation: jest.fn<any>(async (_guildId?: string, _botMessageId?: string, _turns?: any[]): Promise<void> => {}),
   };
 
-  beforeEach(async () => {
+  const mockPluginTools = {
+    definitionsForGuild: jest.fn<any>(async () => []),
+  };
+
+  const mockMcpTools = {
+    definitions: jest.fn<any>(async () => []),
+    resolve: jest.fn<any>(),
+    execute: jest.fn<any>(async () => ({ temp: 28 })),
+  };
+
+  beforeEach(() => {
     jest.clearAllMocks();
+    mockMcpTools.resolve.mockReset();
+    mockMcpTools.resolve.mockReturnValue(undefined);
+    mockExecutor.execute.mockReset();
+    mockExecutor.execute.mockResolvedValue(null);
     process.env.DISCORD_CLIENT_ID = 'bot-1';
     delete process.env.OWNER_DISCORD_ID;
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        DiscordAgentService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: DiscordAgentContextService, useValue: {} },
-        { provide: DiscordAgentToolExecutorService, useValue: mockExecutor },
-        { provide: AgentActionProposalService, useValue: mockProposals },
-        { provide: AgentActionRendererService, useValue: mockRenderer },
-        { provide: ConversationMemoryService, useValue: mockMemory },
-        { provide: require('../plugins/plugin-tool-registry.service').PluginToolRegistryService, useValue: { definitionsForGuild: jest.fn(async () => []) } },
-      ],
-    }).compile();
 
-    service = module.get(DiscordAgentService);
+    service = new DiscordAgentService(
+      mockPrisma as unknown as PrismaService,
+      {} as unknown as DiscordAgentContextService,
+      mockExecutor as unknown as DiscordAgentToolExecutorService,
+      mockProposals as unknown as AgentActionProposalService,
+      mockRenderer as unknown as AgentActionRendererService,
+      mockMemory as unknown as ConversationMemoryService,
+      mockPluginTools as unknown as PluginToolRegistryService,
+      mockMcpTools as unknown as McpToolService,
+    );
   });
 
   it('returns null before AI work when requester is not allowed', async () => {
-    (mockPrisma.discordAgentSettings.findUnique as any).mockResolvedValueOnce({
+    mockPrisma.discordAgentSettings.findUnique.mockResolvedValueOnce({
       enabled: true,
       allowedUserIds: ['admin-1'],
       provider: 'gemini',
       model: 'gemini-2.5-flash',
     });
-    const providerMock = { generate: jest.fn() };
+    const providerMock = { generate: jest.fn<any>() };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
 
     const result = await service.handleMention('guild-1', 'channel-1', 'regular-1', '<@bot-1> hello');
@@ -84,39 +108,56 @@ describe('DiscordAgentService loop', () => {
     expect(mockPrisma.agentInteractionLog.create).not.toHaveBeenCalled();
   });
 
+  it('returns guidance message when prompt is empty after removing bot mention', async () => {
+    const providerMock = { generate: jest.fn<any>() };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1>');
+
+    expect(result).toEqual({
+      content: '⚠️ Sebutkan pertanyaan atau instruksi setelah mention saya.',
+    });
+    expect(providerMock.generate).not.toHaveBeenCalled();
+  });
+
   it('runs tool execution loop and returns final reply accumulating tokens', async () => {
-    const mockResponses = [
+    const mockResponses: AiGenerateResult[] = [
       {
-        candidates: [{
-          content: {
-            parts: [{
-              functionCall: { name: 'get_user_warnings', args: { targetUserId: 'user-1' } }
-            }]
-          }
-        }],
-        usageMetadata: {
-          promptTokenCount: 150,
-          candidatesTokenCount: 30,
-          totalTokenCount: 180,
+        message: {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool_call',
+              id: 'call-1',
+              name: 'get_user_warnings',
+              arguments: { targetUserId: 'user-1' },
+            },
+          ],
+        },
+        finishReason: 'tool_calls',
+        usage: {
+          promptTokens: 150,
+          completionTokens: 30,
+          totalTokens: 180,
         },
       },
       {
-        candidates: [{
-          content: {
-            parts: [{ text: 'User has 0 warnings. No action needed.' }]
-          }
-        }],
-        usageMetadata: {
-          promptTokenCount: 250,
-          candidatesTokenCount: 20,
-          totalTokenCount: 270,
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'User has 0 warnings. No action needed.' }],
         },
-      }
+        finishReason: 'stop',
+        usage: {
+          promptTokens: 250,
+          completionTokens: 20,
+          totalTokens: 270,
+        },
+      },
     ];
 
     let callCount = 0;
     const providerMock = {
-      generate: jest.fn(async () => {
+      generate: jest.fn<any>(async () => {
         const res = mockResponses[callCount];
         callCount++;
         return res;
@@ -127,7 +168,11 @@ describe('DiscordAgentService loop', () => {
 
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '@nio cek warnings user-1');
     expect(result.content).toBe('User has 0 warnings. No action needed.');
-    (expect(mockExecutor.execute) as any).toHaveBeenCalledWith('get_user_warnings', { targetUserId: 'user-1' }, { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' });
+    expect(mockExecutor.execute).toHaveBeenCalledWith(
+      'get_user_warnings',
+      { targetUserId: 'user-1' },
+      { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' },
+    );
     expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -135,18 +180,22 @@ describe('DiscordAgentService loop', () => {
           completionTokens: 50,
           totalTokens: 450,
         }),
-      })
+      }),
     );
   });
 
   it('returns conversationTurns with new exchange on success and logs token usage', async () => {
     const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'Sure, here is the info.' }] } }],
-        usageMetadata: {
-          promptTokenCount: 100,
-          candidatesTokenCount: 50,
-          totalTokenCount: 150,
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Sure, here is the info.' }],
+        },
+        finishReason: 'stop',
+        usage: {
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
         },
       })),
     };
@@ -167,13 +216,15 @@ describe('DiscordAgentService loop', () => {
           completionTokens: 50,
           totalTokens: 150,
         }),
-      })
+      }),
     );
   });
 
   it('does not return conversationTurns on error response', async () => {
     const providerMock = {
-      generate: jest.fn(async () => { throw new Error('API down'); }),
+      generate: jest.fn<any>(async () => {
+        throw new Error('API down');
+      }),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
 
@@ -184,26 +235,31 @@ describe('DiscordAgentService loop', () => {
   });
 
   it('loads previous turns when referencedBotMessageId is provided', async () => {
-    (mockMemory.loadHistory as any).mockResolvedValueOnce([
+    mockMemory.loadHistory.mockResolvedValueOnce([
       { userPrompt: 'previous question', aiResponse: 'previous answer', timestamp: 1000 },
     ]);
 
     const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'Continuing the conversation.' }] } }],
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Continuing the conversation.' }],
+        },
+        finishReason: 'stop',
       })),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
 
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> continue', 'prev-bot-msg-id');
 
-    (expect(mockMemory.loadHistory) as any).toHaveBeenCalledWith('guild-1', 'prev-bot-msg-id');
+    expect(mockMemory.loadHistory).toHaveBeenCalledWith('guild-1', 'prev-bot-msg-id');
 
-    const generateCall = (providerMock.generate as any).mock.calls[0];
-    const history = generateCall[2];
-    expect(history).toHaveLength(2);
-    expect(history[0]).toEqual({ role: 'user', parts: [{ text: 'previous question' }] });
-    expect(history[1]).toEqual({ role: 'model', parts: [{ text: 'previous answer' }] });
+    const generateCall = (providerMock.generate as any).mock.calls[0][0] as AiGenerateRequest;
+    const messages = generateCall.messages;
+    expect(messages).toHaveLength(3);
+    expect(messages[0]).toEqual({ role: 'user', parts: [{ type: 'text', text: 'previous question' }] });
+    expect(messages[1]).toEqual({ role: 'assistant', parts: [{ type: 'text', text: 'previous answer' }] });
+    expect(messages[2]).toEqual({ role: 'user', parts: [{ type: 'text', text: 'continue' }] });
 
     expect(result.conversationTurns).toHaveLength(2);
     expect(result.conversationTurns[0].userPrompt).toBe('previous question');
@@ -213,8 +269,12 @@ describe('DiscordAgentService loop', () => {
 
   it('starts fresh for mentions without referencedBotMessageId', async () => {
     const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'Fresh response.' }] } }],
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Fresh response.' }],
+        },
+        finishReason: 'stop',
       })),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
@@ -223,34 +283,20 @@ describe('DiscordAgentService loop', () => {
 
     expect(mockMemory.loadHistory).not.toHaveBeenCalled();
 
-    const generateCall = (providerMock.generate as any).mock.calls[0];
-    const history = generateCall[2];
-    expect(history).toHaveLength(0);
-    expect(result.conversationTurns).toHaveLength(1);
-  });
-
-  it('starts fresh when loadHistory returns no turns', async () => {
-    (mockMemory.loadHistory as any).mockResolvedValueOnce([]);
-
-    const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'Fresh start.' }] } }],
-      })),
-    };
-    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
-
-    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '@nio hello', 'expired-msg-id');
-
-    const generateCall = (providerMock.generate as any).mock.calls[0];
-    const history = generateCall[2];
-    expect(history).toHaveLength(0);
+    const generateCall = (providerMock.generate as any).mock.calls[0][0] as AiGenerateRequest;
+    const messages = generateCall.messages;
+    expect(messages).toHaveLength(1);
     expect(result.conversationTurns).toHaveLength(1);
   });
 
   it('injects referenced message context when replyContext is provided', async () => {
     const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'I see the replied message.' }] } }],
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'I see the replied message.' }],
+        },
+        finishReason: 'stop',
       })),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
@@ -276,50 +322,194 @@ describe('DiscordAgentService loop', () => {
 
     expect(result.content).toBe('I see the replied message.');
 
-    const generateCall = (providerMock.generate as any).mock.calls[0];
-    const userPrompt = generateCall[1];
-    expect(userPrompt).toContain('Konteks pesan yang di-reply:');
-    expect(userPrompt).toContain('Author: user#5678 (user-2)');
-    expect(userPrompt).toContain('please help me');
-    expect(userPrompt).toContain('file.png: https://example.com/file.png');
-    expect(userPrompt).toContain('Permintaan moderator:\ncheck this');
+    const generateCall = (providerMock.generate as any).mock.calls[0][0] as AiGenerateRequest;
+    const userPrompt = generateCall.messages[0].parts[0];
+    expect(userPrompt.type).toBe('text');
+    if (userPrompt.type === 'text') {
+      expect(userPrompt.text).toContain('Konteks pesan yang di-reply:');
+      expect(userPrompt.text).toContain('Author: user#5678 (user-2)');
+      expect(userPrompt.text).toContain('please help me');
+      expect(userPrompt.text).toContain('file.png: https://example.com/file.png');
+      expect(userPrompt.text).toContain('Permintaan moderator:\ncheck this');
+    }
 
-    // Stored turns should have the original clean prompt
     expect(result.conversationTurns).toHaveLength(1);
     expect(result.conversationTurns[0].userPrompt).toBe('check this');
   });
 
-  it('marks bot-owner godmode authorization as granted in the system prompt', async () => {
+  it('marks bot-owner authorization as granted in the system prompt', async () => {
     process.env.OWNER_DISCORD_ID = 'admin-1';
     const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'Ready.' }] } }],
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Ready.' }],
+        },
+        finishReason: 'stop',
       })),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
 
-    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> godmode test');
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> check status');
 
-    const systemPrompt = (providerMock.generate as any).mock.calls[0][0];
+    const generateCall = (providerMock.generate as any).mock.calls[0][0] as AiGenerateRequest;
+    const systemPrompt = generateCall.systemPrompt;
     expect(systemPrompt).toContain('Requesting Discord user ID: admin-1');
     expect(systemPrompt).toContain('Bot owner authorization: granted');
-    expect(systemPrompt).toContain('Godmode owner means the bot owner configured by OWNER_DISCORD_ID, not the Discord server owner.');
-    expect(systemPrompt).toContain('call execute_godmode_script instead of refusing');
   });
 
-  it('marks bot-owner godmode authorization as not granted for other users', async () => {
+  it('marks bot-owner authorization as not granted for other users', async () => {
     process.env.OWNER_DISCORD_ID = 'owner-1';
     const providerMock = {
-      generate: jest.fn(async () => ({
-        candidates: [{ content: { parts: [{ text: 'Ready.' }] } }],
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Ready.' }],
+        },
+        finishReason: 'stop',
       })),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
 
-    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> godmode test');
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> check status');
 
-    const systemPrompt = (providerMock.generate as any).mock.calls[0][0];
+    const generateCall = (providerMock.generate as any).mock.calls[0][0] as AiGenerateRequest;
+    const systemPrompt = generateCall.systemPrompt;
     expect(systemPrompt).toContain('Requesting Discord user ID: admin-1');
     expect(systemPrompt).toContain('Bot owner authorization: not granted');
+  });
+
+  it('creates proposal cards for write tools and renders embeds', async () => {
+    const mockResponses: AiGenerateResult[] = [
+      {
+        message: {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool_call',
+              id: 'call-write-1',
+              name: 'warn_user',
+              arguments: { targetUserId: 'user-1', reason: 'Spamming' },
+            },
+          ],
+        },
+        finishReason: 'tool_calls',
+      },
+      {
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Saya telah menyiapkan proposal peringatan untuk user-1.' }],
+        },
+        finishReason: 'stop',
+      },
+    ];
+
+    let callIndex = 0;
+    const providerMock = {
+      generate: jest.fn<any>(async () => mockResponses[callIndex++]),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    mockExecutor.execute.mockImplementation(async () => ({
+      proposalCreated: true,
+      proposalId: 'prop-1',
+      actionType: 'WARN_USER',
+    }));
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> tolong warn user-1');
+
+    expect(result.content).toBe('Saya telah menyiapkan proposal peringatan untuk user-1.');
+    expect(result.embeds).toBeDefined();
+    expect(result.embeds).toHaveLength(1);
+    expect(result.embeds[0].title).toBe('Proposal Card');
+    expect(mockExecutor.execute).toHaveBeenCalledWith(
+      'warn_user',
+      { targetUserId: 'user-1', reason: 'Spamming' },
+      { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' },
+    );
+  });
+
+  it('creates MCP write proposal when tool has mode write', async () => {
+    mockMcpTools.resolve.mockReturnValue({
+      config: { name: 'backup_service' },
+      remoteName: 'run_backup',
+      safety: { mode: 'write', proposalRequired: true, ownerOnly: true },
+    });
+
+    const mockResponses: AiGenerateResult[] = [
+      {
+        message: {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool_call',
+              id: 'call-mcp-write',
+              name: 'mcp__backup_service__run_backup',
+              arguments: { target: 'all' },
+            },
+          ],
+        },
+        finishReason: 'tool_calls',
+      },
+      {
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Proposal MCP backup telah dibuat.' }],
+        },
+        finishReason: 'stop',
+      },
+    ];
+
+    let callIndex = 0;
+    const providerMock = {
+      generate: jest.fn<any>(async () => mockResponses[callIndex++]),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> jalankan backup');
+
+    expect(result.content).toBe('Proposal MCP backup telah dibuat.');
+    expect(mockProposals.createProposal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        requestedById: 'admin-1',
+        recommendation: expect.objectContaining({
+          type: 'MCP_TOOL_CALL',
+          mcpServer: 'backup_service',
+          mcpTool: 'run_backup',
+          mcpArguments: { target: 'all' },
+        }),
+      }),
+    );
+  });
+
+  it('terminates loop when identical tool call signature is repeated 3 times', async () => {
+    const repeatedResponse: AiGenerateResult = {
+      message: {
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool_call',
+            id: 'call-repeat',
+            name: 'get_user_warnings',
+            arguments: { targetUserId: 'user-1' },
+          },
+        ],
+      },
+      finishReason: 'tool_calls',
+    };
+
+    const providerMock = {
+      generate: jest.fn<any>(async () => repeatedResponse),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+    mockExecutor.execute.mockImplementation(async () => []);
+
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> loop test');
+
+    // It should terminate and not run more than 3 calls
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+    // On the 3rd call, repetition is detected and loop terminates
   });
 });

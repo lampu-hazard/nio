@@ -10,7 +10,8 @@ export type AgentActionType =
   | 'CREATE_THREAD' | 'ARCHIVE_THREAD' | 'LOCK_THREAD' | 'PIN_MESSAGE' | 'UNPIN_MESSAGE' | 'REACT_TO_MESSAGE' | 'REMOVE_REACTION'
   | 'MOVE_MEMBER_VOICE' | 'DISCONNECT_MEMBER_VOICE' | 'SET_VOICE_CHANNEL_STATUS'
   | 'CREATE_INVITE' | 'DELETE_INVITE'
-  | 'BOT_JOIN_VOICE' | 'BOT_LEAVE_VOICE';
+  | 'BOT_JOIN_VOICE' | 'BOT_LEAVE_VOICE'
+  | 'MCP_TOOL_CALL';
 
 export type AgentActionStatus = 'PENDING' | 'APPROVED' | 'CANCELLED' | 'EXECUTED' | 'FAILED' | 'EXPIRED';
 
@@ -96,6 +97,9 @@ export type AgentActionRecommendation = {
   locked?: boolean;
   quarantineRoleId?: string;
   removeOtherRoles?: boolean;
+  mcpServer?: string;
+  mcpTool?: string;
+  mcpArguments?: Record<string, unknown>;
 };
 
 export type CreateAgentActionProposalInput = {

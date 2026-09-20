@@ -65,6 +65,38 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: nio-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - private
+
+  nio-migrate:
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: nio-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./apps/server/.env
+    environment:
+      - NODE_ENV=production
+    command: ["bun", "run", "prisma:deploy"]
+    networks:
+      - private
+
   nio-server:
     image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
     build:
@@ -77,6 +109,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      nio-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       slowmode-engine:
         condition: service_started
       anomaly-engine:
@@ -87,6 +123,7 @@ services:
       - ./apps/server/.env
     environment:
       - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
       - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
       - ANOMALY_ENGINE_URL=anomaly-engine:50051
       - ANALYTICS_ENGINE_URL=analytics-engine:50053

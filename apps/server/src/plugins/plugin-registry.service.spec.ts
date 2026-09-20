@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import { PluginRegistryService } from './plugin-registry.service';
 import { CommandRegistryService } from './command-registry.service';
 import { NioPlugin } from './nio-plugin.interface';

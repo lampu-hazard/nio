@@ -93,10 +93,10 @@ jobs:
           script: |
             export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:$PATH"
             cd ${{ secrets.VPS_PROJECT_PATH || './nio-server' }}
-            git pull origin main
-            docker compose down
+            git fetch origin main
+            git reset --hard origin/main
             docker compose pull
-            docker compose up -d
+            docker compose up -d --remove-orphans
             docker image prune -f
       
       - name: Notify Discord — Success

@@ -196,6 +196,12 @@ export class AgentActionRendererService {
       lines.push('> Constraint: only messages younger than 14 days and not pinned are eligible.');
     }
 
+    if (proposal.actionType === 'MCP_TOOL_CALL') {
+      lines.push(`> Server: \`${proposal.payload?.mcpServer}\``);
+      lines.push(`> Tool: \`${proposal.payload?.mcpTool}\``);
+      lines.push(`> Arguments: \`\`\`json\n${JSON.stringify(proposal.payload?.mcpArguments || {}, null, 2)}\n\`\`\``);
+    }
+
     if (['MASS_TIMEOUT', 'MASS_KICK', 'MASS_BAN'].includes(proposal.actionType)) {
       const targets = (proposal.payload?.targetUserIds as string[]) || [];
       const targetMentions = targets.map((id) => `<@${id}>`).join(', ');
@@ -288,6 +294,9 @@ export class AgentActionRendererService {
     }
     if (actionType === 'PURGE_USER_MESSAGES') {
       return { color: 0xe67e22, label: 'User Message Purge Proposal', category: 'Message cleanup action' };
+    }
+    if (actionType === 'MCP_TOOL_CALL') {
+      return { color: 0x9b59b6, label: 'External MCP Action Proposal', category: 'External MCP tool call' };
     }
     if (actionType === 'PURGE' || actionType === 'UPDATE_SETTINGS') {
       return { color: 0x7f8c8d, label: 'Server Operations Proposal', category: 'Server operations action' };

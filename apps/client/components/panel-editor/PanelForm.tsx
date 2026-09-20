@@ -18,6 +18,7 @@ type Draft = {
   color: string;
   imageUrl: string;
   thumbnailUrl: string;
+  maxRoles: number;
 };
 
 type FormState = {
@@ -79,6 +80,7 @@ function initialDraft(panel?: Panel | null): Draft {
     color: panel?.color || '#18181B',
     imageUrl: panel?.imageUrl || '',
     thumbnailUrl: panel?.thumbnailUrl || '',
+    maxRoles: panel?.maxRoles ?? 0,
   };
 }
 
@@ -218,6 +220,7 @@ export function PanelForm({
       color: draft.color,
       imageUrl: optional(publicUrl(draft.imageUrl)),
       thumbnailUrl: optional(publicUrl(draft.thumbnailUrl)),
+      maxRoles: draft.maxRoles,
     };
 
     try {
@@ -339,6 +342,21 @@ export function PanelForm({
             </select>
             {draft.type !== 'SELF_ROLE' && <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Rules and announcements do not send role components.</p>}
           </label>
+
+          {draft.type === 'SELF_ROLE' && (
+            <label className="block">
+              <span className="field-label">Role selection</span>
+              <select value={draft.maxRoles === 0 ? 'unlimited' : draft.maxRoles === 1 ? 'exclusive' : 'capped'} onChange={(event) => patchDraft({ maxRoles: event.target.value === 'unlimited' ? 0 : event.target.value === 'exclusive' ? 1 : Math.max(2, draft.maxRoles) })} className="input">
+                <option value="unlimited">Unlimited</option>
+                <option value="exclusive">Exclusive (one role)</option>
+                <option value="capped">Capped</option>
+              </select>
+              {draft.maxRoles > 1 && (
+                <input type="number" min={2} max={25} value={draft.maxRoles} onChange={(event) => patchDraft({ maxRoles: Math.min(25, Math.max(2, Number(event.target.value) || 2)) })} className="input mt-2" aria-label="Maximum roles" />
+              )}
+              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Exclusive swaps roles within this panel. Capped allows 2–25 roles.</p>
+            </label>
+          )}
 
           <label className="block">
             <span className="field-label">Accent color</span>

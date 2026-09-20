@@ -4,7 +4,7 @@ import { PluginAccessService } from './plugin-access.service';
 
 describe('plugin command dispatch contract', () => {
   it('executes a registered command only after guild access is granted', async () => {
-    const execute = jest.fn(async () => undefined);
+    const execute = jest.fn<any>(async () => undefined);
     const registry = {
       get: jest.fn(() => ({ name: 'hosting', pluginId: 'hosting', execute })),
     } as unknown as CommandRegistryService;
@@ -19,7 +19,7 @@ describe('plugin command dispatch contract', () => {
   });
 
   it('does not execute a command after access is revoked', async () => {
-    const execute = jest.fn(async () => undefined);
+    const execute = jest.fn<any>(async () => undefined);
     const registry = { get: jest.fn(() => ({ name: 'hosting', pluginId: 'hosting', execute })) } as any;
     const access = { canUse: jest.fn(async () => false) } as any;
     const command = registry.get('hosting');

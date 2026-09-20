@@ -19,6 +19,7 @@ import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-
 import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
 import { RustAnalyticsClientService } from './rust-analytics-client.service';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
+import { HallOfFameService } from './hall-of-fame.service';
 
 const MAX_DELETE_LOG_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const DELETE_LOG_MEDIA_DIR = path.resolve(process.cwd(), '.tmp/delete-log-media');
@@ -35,8 +36,9 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildVoiceStates,
+      GatewayIntentBits.GuildMessageReactions,
     ],
-    partials: [Partials.GuildMember, Partials.Message, Partials.Channel],
+    partials: [Partials.GuildMember, Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
     allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
   });
 
@@ -58,6 +60,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     private readonly voiceConnections: DiscordVoiceConnectionService,
     private readonly commandSync: GuildCommandSyncService,
     private readonly pluginEvents: PluginEventDispatcherService,
+    private readonly hallOfFame: HallOfFameService,
   ) {}
 
   async onModuleInit() {
@@ -75,6 +78,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     this.actionProposals.setAnomalyService(this.anomaly);
     this.actionProposals.setVoiceConnectionService(this.voiceConnections);
     this.agentToolExecutor.setClient(this.client);
+    this.hallOfFame.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -156,7 +160,34 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       );
     });
 
+    this.client.on(Events.MessageReactionAdd, (reaction) => {
+      this.hallOfFame.handleReaction(reaction).catch(
+        (err) => this.logger.error(`Hall of Fame reaction add error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
+    this.client.on(Events.MessageReactionRemove, (reaction) => {
+      this.hallOfFame.handleReaction(reaction).catch(
+        (err) => this.logger.error(`Hall of Fame reaction remove error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
+    this.client.on(Events.MessageReactionRemoveAll, (message) => {
+      this.hallOfFame.handleReactionRemoveAll(message).catch(
+        (err) => this.logger.error(`Hall of Fame reaction remove all error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
+    this.client.on(Events.MessageReactionRemoveEmoji, (reaction) => {
+      this.hallOfFame.handleReaction(reaction).catch(
+        (err) => this.logger.error(`Hall of Fame reaction remove emoji error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
+    });
+
     this.client.on(Events.MessageDelete, (message) => {
+      this.hallOfFame.handleMessageDelete(message).catch(
+        (err) => this.logger.error(`Hall of Fame message delete error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
       this.handleMessageDelete(message).catch(
         (err) => this.logger.error(`Message delete log error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );

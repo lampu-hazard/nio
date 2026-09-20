@@ -13,23 +13,17 @@ export class LeaderboardService {
   ) {}
 
   async getChatLeaderboard(guildId: string, days: string, limit: number) {
+    const candidateLimit = Math.max(limit * 2, 50);
+
     if (this.rustAnalytics) {
       try {
-        const entries = await this.rustAnalytics.getChatLeaderboard(guildId, days, limit);
+        const entries = await this.rustAnalytics.getChatLeaderboard(guildId, days, candidateLimit);
         if (entries && entries.length > 0) {
-          return await Promise.all(
-            entries.map(async (row) => {
-              const liveUser = await this.resolveLiveUser(row.userId);
-              return {
-                rank: row.rank,
-                userId: row.userId,
-                username: liveUser.username,
-                displayName: liveUser.displayName,
-                avatar: liveUser.avatar,
-                score: row.score,
-              };
-            })
-          );
+          const candidates = entries.map((row) => ({
+            userId: row.userId,
+            score: row.score,
+          }));
+          return await this.resolveAndFilterLeaderboard(guildId, candidates, limit);
         }
       } catch {
         // Fall back to Prisma DB aggregate if Rust client fails
@@ -49,44 +43,29 @@ export class LeaderboardService {
       orderBy: {
         _count: { id: 'desc' },
       },
-      take: limit,
+      take: candidateLimit,
     });
 
-    const leaderboards = await Promise.all(
-      aggregates.map(async (row, idx) => {
-        const liveUser = await this.resolveLiveUser(row.authorId);
-        return {
-          rank: idx + 1,
-          userId: row.authorId,
-          username: liveUser.username,
-          displayName: liveUser.displayName,
-          avatar: liveUser.avatar,
-          score: row._count.id,
-        };
-      })
-    );
+    const candidates = aggregates.map((row) => ({
+      userId: row.authorId,
+      score: row._count.id,
+    }));
 
-    return leaderboards;
+    return await this.resolveAndFilterLeaderboard(guildId, candidates, limit);
   }
 
   async getVoiceLeaderboard(guildId: string, days: string, limit: number) {
+    const candidateLimit = Math.max(limit * 2, 50);
+
     if (this.rustAnalytics) {
       try {
-        const entries = await this.rustAnalytics.getVoiceLeaderboard(guildId, days, limit);
+        const entries = await this.rustAnalytics.getVoiceLeaderboard(guildId, days, candidateLimit);
         if (entries && entries.length > 0) {
-          return await Promise.all(
-            entries.map(async (row) => {
-              const liveUser = await this.resolveLiveUser(row.userId);
-              return {
-                rank: row.rank,
-                userId: row.userId,
-                username: liveUser.username,
-                displayName: liveUser.displayName,
-                avatar: liveUser.avatar,
-                score: row.score,
-              };
-            })
-          );
+          const candidates = entries.map((row) => ({
+            userId: row.userId,
+            score: row.score,
+          }));
+          return await this.resolveAndFilterLeaderboard(guildId, candidates, limit);
         }
       } catch {
         // Fall back to Prisma DB aggregate if Rust client fails
@@ -106,24 +85,118 @@ export class LeaderboardService {
       orderBy: {
         _sum: { duration: 'desc' },
       },
-      take: limit,
+      take: candidateLimit,
     });
 
-    const leaderboards = await Promise.all(
-      aggregates.map(async (row, idx) => {
-        const liveUser = await this.resolveLiveUser(row.userId);
-        return {
-          rank: idx + 1,
-          userId: row.userId,
-          username: liveUser.username,
-          displayName: liveUser.displayName,
-          avatar: liveUser.avatar,
-          score: row._sum.duration || 0, // duration in seconds
-        };
-      })
+    const candidates = aggregates.map((row) => ({
+      userId: row.userId,
+      score: row._sum.duration || 0,
+    }));
+
+    return await this.resolveAndFilterLeaderboard(guildId, candidates, limit);
+  }
+
+  private async resolveAndFilterLeaderboard(
+    guildId: string,
+    candidates: Array<{ userId: string; score: number }>,
+    limit: number,
+  ) {
+    let guild: any = null;
+    try {
+      guild =
+        this.bot?.client?.guilds?.cache?.get(guildId) ||
+        (await this.bot?.client?.guilds?.fetch(guildId).catch(() => null));
+    } catch {
+      guild = null;
+    }
+
+    const resolvedCandidates = await Promise.all(
+      candidates.map(async (candidate) => {
+        const resolved = await this.resolveMemberOrUser(guild, candidate.userId);
+        return { candidate, resolved };
+      }),
     );
 
-    return leaderboards;
+    const filtered = guild
+      ? resolvedCandidates.filter((item) => item.resolved.isMember)
+      : resolvedCandidates;
+
+    return filtered.slice(0, limit).map((item, idx) => ({
+      rank: idx + 1,
+      userId: item.candidate.userId,
+      username: item.resolved.username,
+      displayName: item.resolved.displayName,
+      avatar: item.resolved.avatar,
+      score: item.candidate.score,
+    }));
+  }
+
+  private async resolveMemberOrUser(
+    guild: any,
+    userId: string,
+  ): Promise<{
+    username: string;
+    displayName: string;
+    avatar: string | null;
+    isMember: boolean;
+  }> {
+    if (guild?.members) {
+      try {
+        let member = guild.members.cache?.get(userId);
+        let checkedGuild = false;
+
+        if (!member && typeof guild.members.fetch === 'function') {
+          try {
+            member = await guild.members.fetch(userId);
+            checkedGuild = true;
+          } catch (err: any) {
+            const isNotFound =
+              err?.status === 404 ||
+              err?.code === 10007 ||
+              /not found|unknown member/i.test(err?.message || '');
+            if (isNotFound) {
+              checkedGuild = true;
+              member = null;
+            } else {
+              checkedGuild = false;
+            }
+          }
+        } else if (member) {
+          checkedGuild = true;
+        }
+
+        if (member) {
+          const username = member.user?.username || member.displayName || `User#${userId.slice(0, 4)}`;
+          const displayName = member.displayName || member.user?.globalName || username;
+          const avatar =
+            typeof member.displayAvatarURL === 'function'
+              ? member.displayAvatarURL({ size: 128 })
+              : typeof member.user?.displayAvatarURL === 'function'
+                ? member.user.displayAvatarURL({ size: 128 })
+                : null;
+          return {
+            username,
+            displayName,
+            avatar,
+            isMember: true,
+          };
+        } else if (checkedGuild) {
+          const fallback = await this.resolveLiveUser(userId);
+          return {
+            ...fallback,
+            isMember: false,
+          };
+        }
+      } catch {
+        // Ignored, proceed to fallback
+      }
+    }
+
+    const liveUser = await this.resolveLiveUser(userId);
+    return {
+      ...liveUser,
+      isMember: true,
+    };
   }
 
   private async resolveLiveUser(userId: string): Promise<{ username: string; displayName: string; avatar: string | null }> {

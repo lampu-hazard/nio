@@ -10,6 +10,9 @@ type Settings = {
   logChannelId: string | null;
   messageDeleteLogChannelId: string | null;
   stickerEnabled: boolean;
+  hallOfFameEnabled: boolean;
+  hallOfFameChannelId: string | null;
+  hallOfFameThreshold: number;
   slowmodeEnabled: boolean;
   slowmodeChannels: string[];
   slowmodeIntervalQuiet: number;
@@ -70,6 +73,9 @@ export default function SettingsPage({ params }: PageProps) {
     logChannelId: null,
     messageDeleteLogChannelId: null,
     stickerEnabled: false,
+    hallOfFameEnabled: false,
+    hallOfFameChannelId: null,
+    hallOfFameThreshold: 3,
     slowmodeEnabled: false,
     slowmodeChannels: [],
     slowmodeIntervalQuiet: 5,
@@ -284,6 +290,64 @@ export default function SettingsPage({ params }: PageProps) {
                       <option value="AUDIT_ONLY">Audit only</option>
                       <option value="DELETE_HIGH_CONFIDENCE">Auto-delete high-confidence messages</option>
                     </select>
+                  </label>
+                </div>
+              )}
+            </section>
+
+            <section className="card p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-[var(--text)]">⭐ Hall of Fame (Starboard)</h2>
+                  <p className="mt-1 text-sm text-[var(--muted)]">Mirror popular messages that receive enough ⭐ star reactions into a showcase channel.</p>
+                </div>
+                <Switch
+                  checked={settings.hallOfFameEnabled}
+                  label="Toggle Hall of Fame"
+                  onClick={() => setSettings((prev) => ({ ...prev, hallOfFameEnabled: !prev.hallOfFameEnabled }))}
+                />
+              </div>
+
+              {settings.hallOfFameEnabled && (
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="field-label">Hall of Fame Channel</span>
+                    <select
+                      value={settings.hallOfFameChannelId || 'none'}
+                      onChange={(event) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          hallOfFameChannelId: event.target.value === 'none' ? null : event.target.value,
+                        }))
+                      }
+                      className="input"
+                    >
+                      <option value="none">Select a channel...</option>
+                      {channels.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          #{ch.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-2 text-xs text-[var(--muted)]">The showcase channel where starred messages will be mirrored.</p>
+                  </label>
+
+                  <label className="block">
+                    <span className="field-label">Star Threshold</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={settings.hallOfFameThreshold}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val >= 1 && val <= 100) {
+                          setSettings((prev) => ({ ...prev, hallOfFameThreshold: val }));
+                        }
+                      }}
+                      className="input"
+                    />
+                    <p className="mt-2 text-xs text-[var(--muted)]">Minimum ⭐ reactions required to feature a message (1 - 100).</p>
                   </label>
                 </div>
               )}

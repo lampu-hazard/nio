@@ -15,7 +15,7 @@ describe('DiscordMessageLogService', () => {
       deleteMany: jest.fn(async () => ({})),
     },
     guildSettings: {
-      findUnique: jest.fn(async () => ({ messageDeleteLogChannelId: null })),
+      findUnique: jest.fn<any>(async () => ({ messageDeleteLogChannelId: null })),
     },
   };
 

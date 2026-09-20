@@ -754,6 +754,30 @@ const RAW_AGENT_TOOLS = [
       required: ['urlOrDomain'],
     },
   },
+  {
+    name: 'web_fetch',
+    description: 'Fetch and extract readable text/markdown content from a public web URL. Features automatic SSRF defense against internal networks. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The public web URL to fetch (HTTP or HTTPS only).' },
+        maxChars: { type: 'integer', description: 'Maximum characters of content to extract (defaults to 10000, max 25000).' },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'web_search',
+    description: 'Search the public web for real-time information, documentation, news, or technical references with zero-config fallback. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query string.' },
+        limit: { type: 'integer', description: 'Maximum number of search results to return (1-10, defaults to 5).' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 const READ_TOOL_PREFIXES = [
   'get_',
@@ -765,6 +789,7 @@ const READ_TOOL_PREFIXES = [
   'detect_',
   'analyze_',
   'lookup_',
+  'web_',
 ];
 
 export const AGENT_TOOLS: AiToolDefinition[] = RAW_AGENT_TOOLS.map((tool) => {

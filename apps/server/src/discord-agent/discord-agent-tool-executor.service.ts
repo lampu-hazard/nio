@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, ServiceUnavailableException, ForbiddenException, Optional, Inject, forwardRef } from '@nestjs/common';
 import { Client, PermissionFlagsBits } from 'discord.js';
+import * as dns from 'node:dns/promises';
 import { ModerationService } from '../moderation/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentActionProposalService } from './agent-action-proposal.service';
@@ -534,6 +535,18 @@ export class DiscordAgentToolExecutorService {
       case 'lookup_domain_reputation':
         return this.lookupDomainReputation(
           this.requireString(args?.urlOrDomain, 'urlOrDomain'),
+        );
+
+      case 'web_fetch':
+        return this.executeWebFetch(
+          this.requireString(args?.url, 'url'),
+          args?.maxChars,
+        );
+
+      case 'web_search':
+        return this.executeWebSearch(
+          this.requireString(args?.query, 'query'),
+          args?.limit,
         );
 
       default:
@@ -2098,5 +2111,397 @@ export class DiscordAgentToolExecutorService {
     }
     const distance = track[s2.length][s1.length];
     return Math.max(0, 1 - distance / Math.max(s1.length, s2.length));
+  }
+
+  private isBlockedHostname(hostname: string): boolean {
+    const lower = hostname.toLowerCase().trim();
+    if (
+      lower === 'localhost' ||
+      lower.endsWith('.localhost') ||
+      lower.endsWith('.local') ||
+      lower.endsWith('.internal') ||
+      lower.endsWith('.lan') ||
+      lower.endsWith('.arpa') ||
+      lower === 'metadata.google.internal' ||
+      lower === '169.254.169.254'
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private isPrivateIp(ip: string): boolean {
+    const cleanIp = ip.trim().toLowerCase();
+
+    // IPv4 check
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanIp)) {
+      const parts = cleanIp.split('.').map(Number);
+      if (parts.some((p) => p < 0 || p > 255 || isNaN(p))) return true;
+
+      // 0.0.0.0/8 (Current network)
+      if (parts[0] === 0) return true;
+      // 10.0.0.0/8 (Private)
+      if (parts[0] === 10) return true;
+      // 127.0.0.0/8 (Loopback)
+      if (parts[0] === 127) return true;
+      // 169.254.0.0/16 (Link-local / Cloud metadata)
+      if (parts[0] === 169 && parts[1] === 254) return true;
+      // 172.16.0.0/12 (Private: 172.16.0.0 - 172.31.255.255)
+      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+      // 192.168.0.0/16 (Private)
+      if (parts[0] === 192 && parts[1] === 168) return true;
+      // 100.64.0.0/10 (Carrier-grade NAT)
+      if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+      // 198.18.0.0/15 (Benchmarking)
+      if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true;
+      // Multicast & Reserved (>= 224.0.0.0)
+      if (parts[0] >= 224) return true;
+      return false;
+    }
+
+    // IPv6 check
+    if (
+      cleanIp === '::1' ||
+      cleanIp === '::' ||
+      cleanIp.startsWith('fe80:') ||
+      cleanIp.startsWith('fc') ||
+      cleanIp.startsWith('fd') ||
+      cleanIp.startsWith('ff')
+    ) {
+      return true;
+    }
+
+    // IPv4-mapped IPv6 (::ffff:192.168.1.1)
+    if (cleanIp.startsWith('::ffff:')) {
+      const v4Part = cleanIp.replace('::ffff:', '');
+      return this.isPrivateIp(v4Part);
+    }
+
+    return false;
+  }
+
+  private stripHtmlAndEntities(html: string): string {
+    // 1. Remove non-content tags
+    let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+    text = text.replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '');
+    text = text.replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '');
+    text = text.replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, '');
+    text = text.replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, '');
+    text = text.replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, '');
+    text = text.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
+
+    // 2. Format common structural elements to markdown
+    text = text.replace(/<h[1-6]\b[^>]*>(.*?)<\/h[1-6]>/gi, '\n### $1\n');
+    text = text.replace(/<a\b[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gi, '[$2]($1)');
+    text = text.replace(/<(?:p|div|section|article)\b[^>]*>/gi, '\n');
+    text = text.replace(/<br\s*[\/]?>/gi, '\n');
+    text = text.replace(/<li\b[^>]*>(.*?)<\/li>/gi, '\n- $1');
+
+    // 3. Strip remaining tags
+    text = text.replace(/<[^>]+>/g, '');
+
+    // 4. Decode HTML entities
+    text = text
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+
+    // 5. Clean up whitespace
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n');
+  }
+
+  protected async resolveDns(
+    hostname: string,
+  ): Promise<Array<{ address: string; family: number }>> {
+    return dns.lookup(hostname, { all: true });
+  }
+
+  private async executeWebFetch(rawUrl: string, maxChars?: number) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(rawUrl);
+    } catch {
+      throw new BadRequestException(`Invalid URL format: "${rawUrl}". URL must be valid HTTP or HTTPS.`);
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new BadRequestException(
+        `Unsupported protocol: "${parsedUrl.protocol}". Only HTTP and HTTPS URLs are permitted.`,
+      );
+    }
+
+    if (this.isBlockedHostname(parsedUrl.hostname) || this.isPrivateIp(parsedUrl.hostname)) {
+      throw new ForbiddenException(
+        `SSRF protection: Target hostname or IP "${parsedUrl.hostname}" is restricted.`,
+      );
+    }
+
+    try {
+      const addresses = await this.resolveDns(parsedUrl.hostname);
+      if (!addresses || addresses.length === 0) {
+        throw new BadRequestException(`Could not resolve hostname: "${parsedUrl.hostname}".`);
+      }
+      for (const record of addresses) {
+        if (this.isPrivateIp(record.address)) {
+          throw new ForbiddenException(
+            `SSRF protection: Hostname "${parsedUrl.hostname}" resolved to private/restricted IP (${record.address}).`,
+          );
+        }
+      }
+    } catch (err: any) {
+      if (err instanceof ForbiddenException || err instanceof BadRequestException) {
+        throw err;
+      }
+      throw new BadRequestException(
+        `DNS lookup failed for "${parsedUrl.hostname}": ${err?.message || 'Host not found'}`,
+      );
+    }
+
+    const limit = Math.max(500, Math.min(25000, Number(maxChars) || 10000));
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const res = await fetch(parsedUrl.toString(), {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 NioBot/2.0',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+        },
+      });
+
+      if (!res.ok) {
+        return {
+          url: parsedUrl.toString(),
+          status: res.status,
+          statusText: res.statusText,
+          success: false,
+          error: `HTTP error ${res.status}: ${res.statusText}`,
+        };
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      const rawBody = await res.text();
+
+      let extractedContent: string;
+      if (
+        contentType.includes('text/html') ||
+        contentType.includes('application/xhtml+xml') ||
+        rawBody.includes('<html')
+      ) {
+        extractedContent = this.stripHtmlAndEntities(rawBody);
+      } else {
+        extractedContent = rawBody.trim();
+      }
+
+      const isTruncated = extractedContent.length > limit;
+      const content = isTruncated
+        ? extractedContent.slice(0, limit) + '\n...[TRUNCATED]'
+        : extractedContent;
+
+      return {
+        url: parsedUrl.toString(),
+        status: res.status,
+        contentType,
+        contentLength: content.length,
+        truncated: isTruncated,
+        content,
+      };
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new ServiceUnavailableException(
+          `Web fetch timed out after 12s for URL: ${parsedUrl.toString()}`,
+        );
+      }
+      throw new BadRequestException(
+        `Failed to fetch web content from "${parsedUrl.toString()}": ${err?.message || 'Network error'}`,
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private parseDuckDuckGoResults(html: string, limit: number) {
+    const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+    const resultRegex =
+      /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>|<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>)/gi;
+
+    let match: RegExpExecArray | null;
+    while ((match = resultRegex.exec(html)) !== null && results.length < limit) {
+      const rawHref = match[1];
+      const rawTitle = match[2];
+      const rawSnippet = match[3] || match[4] || '';
+
+      let finalUrl = rawHref;
+      try {
+        if (rawHref.includes('uddg=')) {
+          const matchUddg = rawHref.match(/uddg=([^&]+)/);
+          if (matchUddg && matchUddg[1]) {
+            finalUrl = decodeURIComponent(matchUddg[1]);
+          }
+        }
+      } catch {
+        // keep rawHref if decodeURIComponent fails
+      }
+
+      const title = this.stripHtmlAndEntities(rawTitle);
+      const snippet = this.stripHtmlAndEntities(rawSnippet);
+
+      if (title && finalUrl && finalUrl.startsWith('http')) {
+        results.push({
+          title,
+          url: finalUrl,
+          snippet,
+        });
+      }
+    }
+
+    if (results.length === 0) {
+      const linkRegex = /<a[^>]+href="([^"]*(?:uddg=http)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+      let linkMatch: RegExpExecArray | null;
+      while ((linkMatch = linkRegex.exec(html)) !== null && results.length < limit) {
+        const rawHref = linkMatch[1];
+        const rawTitle = linkMatch[2];
+        try {
+          const matchUddg = rawHref.match(/uddg=([^&]+)/);
+          if (matchUddg && matchUddg[1]) {
+            const finalUrl = decodeURIComponent(matchUddg[1]);
+            const title = this.stripHtmlAndEntities(rawTitle);
+            if (title && !results.some((r) => r.url === finalUrl)) {
+              results.push({ title, url: finalUrl, snippet: '' });
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    return results;
+  }
+
+  private async executeWebSearch(query: string, maxResults?: number) {
+    const limit = Math.max(1, Math.min(10, Number(maxResults) || 5));
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      throw new BadRequestException('Search query cannot be empty.');
+    }
+
+    const braveApiKey = process.env.BRAVE_SEARCH_API_KEY;
+    const tavilyApiKey = process.env.TAVILY_API_KEY;
+
+    if (braveApiKey) {
+      try {
+        const braveUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(trimmedQuery)}&count=${limit}`;
+        const res = await fetch(braveUrl, {
+          headers: {
+            Accept: 'application/json',
+            'X-Subscription-Token': braveApiKey,
+          },
+        });
+        if (res.ok) {
+          const data: any = await res.json();
+          const results = (data?.web?.results || []).slice(0, limit).map((r: any) => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.description || '',
+          }));
+          return {
+            engine: 'brave',
+            query: trimmedQuery,
+            count: results.length,
+            results,
+          };
+        }
+      } catch {
+        // Fallthrough
+      }
+    }
+
+    if (tavilyApiKey) {
+      try {
+        const res = await fetch('https://api.tavily.com/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: tavilyApiKey,
+            query: trimmedQuery,
+            max_results: limit,
+            search_depth: 'basic',
+          }),
+        });
+        if (res.ok) {
+          const data: any = await res.json();
+          const results = (data?.results || []).slice(0, limit).map((r: any) => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.content || '',
+          }));
+          return {
+            engine: 'tavily',
+            query: trimmedQuery,
+            count: results.length,
+            results,
+          };
+        }
+      } catch {
+        // Fallthrough
+      }
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(trimmedQuery)}`;
+      const res = await fetch(ddgUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 NioBot/2.0',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+
+      if (!res.ok) {
+        return {
+          engine: 'duckduckgo',
+          query: trimmedQuery,
+          count: 0,
+          results: [],
+          warning: `Search request returned HTTP ${res.status}`,
+        };
+      }
+
+      const html = await res.text();
+      const results = this.parseDuckDuckGoResults(html, limit);
+
+      return {
+        engine: 'duckduckgo',
+        query: trimmedQuery,
+        count: results.length,
+        results,
+      };
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new ServiceUnavailableException('Web search timed out after 10s.');
+      }
+      throw new BadRequestException(`Web search failed: ${err?.message || 'Network error'}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }

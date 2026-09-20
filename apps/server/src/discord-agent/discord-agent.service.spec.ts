@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { DiscordAgentService } from './discord-agent.service';
+import {
+  DiscordAgentService,
+  extractThoughtsAndContent,
+  sanitizeSensitiveInfo,
+  neutralizeMentions,
+  formatThoughtBlock,
+  formatAgentResponse,
+} from './discord-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
@@ -513,6 +520,108 @@ describe('DiscordAgentService loop', () => {
     // On the 3rd call, repetition is detected and loop terminates
   });
 
+  it('neutralizes accidental @everyone and @here mentions from model responses', async () => {
+    const providerMock = {
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Halo @everyone dan @here, ini pengumuman penting!' }],
+        },
+        finishReason: 'stop',
+      })),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> announce');
+
+    // Should insert zero-width space after @ so Discord does not trigger mention
+    expect(result.content).not.toContain('@everyone');
+    expect(result.content).not.toContain('@here');
+    expect(result.content).toContain(`@${String.fromCharCode(8203)}everyone`);
+    expect(result.content).toContain(`@${String.fromCharCode(8203)}here`);
+  });
+
+  it('formats Hermes-style thought block and redacts sensitive info in handleMention', async () => {
+    const providerMock = {
+      generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
+        message: {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: '<thought>Memeriksa voice leaderboard dengan API sk-12345678901234567890</thought>User paling aktif adalah Wign dengan durasi 2 jam.',
+            },
+          ],
+        },
+        finishReason: 'stop',
+      })),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> siapa paling aktif di voice?');
+
+    expect(result.content).toContain('> 💭 **Proses Berpikir:**');
+    expect(result.content).toContain('> Memeriksa voice leaderboard dengan API [REDACTED_API_KEY]');
+    expect(result.content).toContain('User paling aktif adalah Wign dengan durasi 2 jam.');
+    expect(result.content).not.toContain('sk-12345678901234567890');
+  });
+
+  it('notifies onProgress callback with English status messages during loop', async () => {
+    const mockResponses: AiGenerateResult[] = [
+      {
+        message: {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool_call',
+              id: 'call-voice-lb',
+              name: 'get_voice_leaderboard',
+              arguments: { days: '7' },
+            },
+          ],
+        },
+        finishReason: 'tool_calls',
+      },
+      {
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Leaderboard retrieved successfully.' }],
+        },
+        finishReason: 'stop',
+      },
+    ];
+
+    let callIndex = 0;
+    const providerMock = {
+      generate: jest.fn<any>(async () => mockResponses[callIndex++]),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    mockExecutor.execute.mockResolvedValueOnce([
+      { userId: 'user-1', tag: 'User1', score: 3600, durationFormatted: '1h' },
+    ]);
+
+    const progressCalls: string[] = [];
+    const onProgress = jest.fn(async (status: string) => {
+      progressCalls.push(status);
+    });
+
+    const result = await service.handleMention(
+      'guild-1',
+      'channel-1',
+      'admin-1',
+      '<@bot-1> cek leaderboard voice',
+      undefined,
+      undefined,
+      onProgress,
+    );
+
+    expect(result.content).toBe('Leaderboard retrieved successfully.');
+    expect(progressCalls).toContain('💭 *Thinking...*');
+    expect(progressCalls).toContain('🔧 *Running tool: `get_voice_leaderboard`...*');
+    expect(progressCalls).toContain('💭 *Analyzing results...*');
+  });
+
   describe('getProvider', () => {
     it('returns OpenAiProvider when provider is openai or openai-compatible', () => {
       const getProvider = (service as any).getProvider.bind(service);
@@ -535,6 +644,87 @@ describe('DiscordAgentService loop', () => {
     it('throws when provider is unknown', () => {
       const getProvider = (service as any).getProvider.bind(service);
       expect(() => getProvider('unknown-ai', 'model-x')).toThrow('Unsupported AI provider: unknown-ai');
+    });
+  });
+
+  describe('Hermes thoughts and secret sanitization helpers', () => {
+    it('extracts thoughts from <thought> and <think> tags and cleans content', () => {
+      const raw = '<thought>Investigating user</thought>Halo dunia!\n<think>Next step</think>Semoga harimu menyenangkan.';
+      const { thoughts, cleanedContent } = extractThoughtsAndContent(raw);
+      expect(thoughts).toEqual(['Investigating user', 'Next step']);
+      expect(cleanedContent).toBe('Halo dunia!\nSemoga harimu menyenangkan.');
+    });
+
+    it('returns empty thoughts when no tags exist', () => {
+      const raw = 'Just plain response.';
+      const { thoughts, cleanedContent } = extractThoughtsAndContent(raw);
+      expect(thoughts).toEqual([]);
+      expect(cleanedContent).toBe('Just plain response.');
+    });
+
+    it('sanitizes Discord bot tokens, MFA tokens, API keys, and connection strings', () => {
+      const fakeDiscordToken = ['dummy_part1_discord_tok_val', 'part22', 'part333333333333333333333333333'].join('.');
+      const fakeMfaToken = 'mfa.' + '1'.repeat(84);
+      const fakeOpenAiKey = 'sk-' + 'dummytestkey1234567890123456';
+      const fakeGeminiKey = 'AIzaSy' + 'DummyGeminiApiKeyForTesting12345678';
+      const fakeGithubKey = 'ghp_' + 'dummyGithubTokenForTesting1234567890';
+
+      const text = `
+        token: ${fakeDiscordToken}
+        mfa: ${fakeMfaToken}
+        openai: ${fakeOpenAiKey}
+        gemini: ${fakeGeminiKey}
+        github: ${fakeGithubKey}
+        db: postgresql://postgres:supersecretpassword123@db:5432/nio-db
+        redis: redis://default:secretredispass@redis:6379
+      `;
+      const sanitized = sanitizeSensitiveInfo(text);
+      expect(sanitized).not.toContain('supersecretpassword123');
+      expect(sanitized).not.toContain('secretredispass');
+      expect(sanitized).not.toContain(fakeDiscordToken);
+      expect(sanitized).not.toContain(fakeMfaToken);
+      expect(sanitized).not.toContain(fakeOpenAiKey);
+      expect(sanitized).not.toContain(fakeGeminiKey);
+      expect(sanitized).not.toContain(fakeGithubKey);
+      expect(sanitized).toContain('[REDACTED_DISCORD_TOKEN]');
+      expect(sanitized).toContain('[REDACTED_MFA_TOKEN]');
+      expect(sanitized).toContain('postgresql://postgres:***@');
+      expect(sanitized).toContain('redis://default:***@');
+      expect(sanitized).toContain('[REDACTED_API_KEY]');
+      expect(sanitized).toContain('[REDACTED_GEMINI_KEY]');
+      expect(sanitized).toContain('[REDACTED_GITHUB_KEY]');
+    });
+
+    it('scrubs environment variable values from sanitized output', () => {
+      process.env.DISCORD_TOKEN = 'SUPER_SECRET_DISCORD_TOKEN_XYZ';
+      const text = 'Here is the token: SUPER_SECRET_DISCORD_TOKEN_XYZ in response.';
+      const sanitized = sanitizeSensitiveInfo(text);
+      expect(sanitized).not.toContain('SUPER_SECRET_DISCORD_TOKEN_XYZ');
+      expect(sanitized).toContain('[REDACTED]');
+      delete process.env.DISCORD_TOKEN;
+    });
+
+    it('neutralizes mass mentions by injecting zero-width space', () => {
+      const text = 'Hello @everyone and @here!';
+      const neutralized = neutralizeMentions(text);
+      expect(neutralized).not.toContain('@everyone');
+      expect(neutralized).not.toContain('@here');
+      expect(neutralized).toBe(`Hello @${String.fromCharCode(8203)}everyone and @${String.fromCharCode(8203)}here!`);
+    });
+
+    it('formats thought block with blockquotes and header', () => {
+      const thought = 'Step 1\nStep 2';
+      const formatted = formatThoughtBlock(thought);
+      expect(formatted).toBe('> 💭 **Proses Berpikir:**\n> Step 1\n> Step 2');
+    });
+
+    it('formats agent response and preserves final answer when thought exceeds budget', () => {
+      const finalAnswer = 'Ini adalah jawaban final yang penting.';
+      const giantThought = 'a'.repeat(2500);
+      const formatted = formatAgentResponse(finalAnswer, [giantThought]);
+      expect(formatted).toContain(finalAnswer);
+      expect(formatted.length).toBeLessThanOrEqual(2000);
+      expect(formatted).toContain('*(dipersingkat...)*');
     });
   });
 });

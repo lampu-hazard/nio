@@ -306,9 +306,21 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     }
 
     const loadingMessage = await message.reply({
-      content: '**nio** sedang membaca konteks...\n-# Meninjau riwayat channel, warning, role, dan tool yang relevan.',
+      content: '💭 *Thinking...*',
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     }).catch(() => null);
+
+    let lastProgressEdit = 0;
+    const onProgress = async (status: string) => {
+      if (!loadingMessage) return;
+      const now = Date.now();
+      if (now - lastProgressEdit < 1000) return;
+      lastProgressEdit = now;
+      await loadingMessage.edit({
+        content: status,
+        allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+      }).catch(() => null);
+    };
 
     const response = await this.agent.handleMention(
       message.guild.id,
@@ -317,6 +329,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       message.content,
       referencedBotMessageId,
       replyContext,
+      onProgress,
     );
 
     if (!response) {

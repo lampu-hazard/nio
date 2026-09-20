@@ -131,6 +131,15 @@ describe('DiscordAgentToolExecutorService', () => {
     execute: jest.fn(),
   };
 
+  const mockLeaderboard = {
+    getVoiceLeaderboard: jest.fn(async (..._args: any[]): Promise<any[]> => [
+      { userId: 'user-1', tag: 'User1', avatar: null, score: 3665 },
+    ]),
+    getChatLeaderboard: jest.fn(async (..._args: any[]): Promise<any[]> => [
+      { userId: 'user-1', tag: 'User1', avatar: null, score: 42 },
+    ]),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new DiscordAgentToolExecutorService(
@@ -140,6 +149,7 @@ describe('DiscordAgentToolExecutorService', () => {
       mockMessageLogs as any,
       mockContext as any,
       mockPluginTools as any,
+      mockLeaderboard as any,
     );
     service.setClient(mockClient as any);
   });
@@ -533,5 +543,32 @@ describe('DiscordAgentToolExecutorService', () => {
         recentSlowmodes: 5,
       },
     }));
+  });
+
+  it('executes get_voice_leaderboard with formatted duration', async () => {
+    const res = await service.execute('get_voice_leaderboard', { days: '7', limit: 10 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(mockLeaderboard.getVoiceLeaderboard).toHaveBeenCalledWith('guild-1', '7', 10);
+    expect(res).toEqual([
+      {
+        userId: 'user-1',
+        tag: 'User1',
+        avatar: null,
+        score: 3665,
+        durationFormatted: '1h 1m 5s',
+      },
+    ]);
+  });
+
+  it('executes get_chat_leaderboard', async () => {
+    const res = await service.execute('get_chat_leaderboard', { days: '30', limit: 5 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    expect(mockLeaderboard.getChatLeaderboard).toHaveBeenCalledWith('guild-1', '30', 5);
+    expect(res).toEqual([
+      {
+        userId: 'user-1',
+        tag: 'User1',
+        avatar: null,
+        score: 42,
+      },
+    ]);
   });
 });

@@ -21,16 +21,9 @@ describe('PanelRendererService', () => {
     iconURL: jest.fn(() => 'https://guild-icon.com/icon.png'),
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PanelRendererService,
-        { provide: LeaderboardService, useValue: mockLeaderboard },
-      ],
-    }).compile();
-
-    service = module.get<PanelRendererService>(PanelRendererService);
+    service = new PanelRendererService(mockLeaderboard as unknown as LeaderboardService);
   });
 
   it('renders a standard self role panel with embeds and buttons', async () => {

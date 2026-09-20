@@ -7,6 +7,7 @@ import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.s
 import { AgentActionProposalService } from './agent-action-proposal.service';
 import { AgentActionRendererService } from './agent-action-renderer.service';
 import { GeminiProvider } from './providers/gemini.provider';
+import { OpenAiProvider } from './providers/openai.provider';
 import {
   AiGenerateResult,
   AiMessage,
@@ -476,9 +477,24 @@ ${prompt || '(analisis pesan di atas)'}`;
   }
 
   private getProvider(provider: string, model: string): AiProvider {
-    if (provider === 'gemini') {
+    const normalized = (provider || '').toLowerCase();
+    if (normalized === 'gemini') {
       const apiKey = process.env.GEMINI_API_KEY || '';
       return new GeminiProvider(apiKey, model);
+    }
+    if (
+      normalized === 'openai' ||
+      normalized === 'openai-compatible' ||
+      normalized === 'openrouter' ||
+      normalized === 'groq' ||
+      normalized === 'ollama'
+    ) {
+      const apiKey = process.env.OPENAI_API_KEY || '';
+      const baseUrl =
+        process.env.OPENAI_BASE_URL ||
+        process.env.OPENAI_API_BASE ||
+        'https://api.openai.com/v1';
+      return new OpenAiProvider(apiKey, model, baseUrl);
     }
     throw new Error(`Unsupported AI provider: ${provider}`);
   }

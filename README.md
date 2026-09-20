@@ -108,6 +108,19 @@ The AI Agent operates on an autonomous multi-turn reasoning loop bounded by stri
 - Max Result Size: 32KB
 - Repetition Detector: Terminates if the exact same tool call is repeated 3 times.
 
+**AI Providers Supported**:
+- `gemini`: Google Gemini (e.g. `gemini-2.5-flash`, `gemini-1.5-pro`) via `GEMINI_API_KEY`.
+- `openai` / `openai-compatible`: Standard OpenAI (`gpt-4o`, `gpt-4o-mini`), OpenRouter, Groq, Ollama, LocalAI, etc. via `OPENAI_API_KEY` and optional `OPENAI_BASE_URL` (default `https://api.openai.com/v1`).
+
+```env
+DISCORD_AGENT_ENABLED=true
+DISCORD_AGENT_PROVIDER=gemini        # 'gemini' | 'openai' | 'openai-compatible' | 'groq' | 'ollama'
+DISCORD_AGENT_MODEL=gemini-2.5-flash # or 'gpt-4o-mini', 'llama-3.3-70b-versatile', etc.
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
 **Approval Semantics**:
 - Read-only tools (`get_*`, `search_*`, `check_*`, etc.) execute autonomously to gather evidence.
 - Mutating tools (moderation actions, roles, channel lockdowns, announcements, etc.) create interactive `AgentActionProposal` cards requiring moderator approval.

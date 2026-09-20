@@ -8,6 +8,7 @@ import { DiscordMessageLogService } from './discord-message-log.service';
 import { AgentActionRecommendation, AgentActionType, AgentSettingsUpdate } from './agent-action.types';
 import { PluginToolRegistryService } from '../plugins/plugin-tool-registry.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { SentinelService } from '../sentinel/sentinel.service';
 
 const MAX_READ_LIMIT = 100;
 const MAX_BATCH_ITEMS = 25;
@@ -64,6 +65,8 @@ export class DiscordAgentToolExecutorService {
     @Optional()
     @Inject(forwardRef(() => LeaderboardService))
     private readonly leaderboard?: LeaderboardService,
+    @Optional()
+    private readonly sentinel?: SentinelService,
   ) {}
 
   setClient(client: Client) {
@@ -492,6 +495,46 @@ export class DiscordAgentToolExecutorService {
         });
         return { proposalCreated: true, proposalId: stickerProposal.id, actionType: 'MANAGE_STICKER' };
       }
+
+      case 'trace_user_timeline':
+        return this.traceUserTimeline(
+          context.guildId,
+          this.requireString(args?.targetUserId, 'targetUserId'),
+          args?.hours,
+          args?.limit,
+          args?.includeMessages !== false,
+        );
+
+      case 'find_correlated_accounts':
+        return this.findCorrelatedAccounts(
+          context.guildId,
+          this.requireString(args?.targetUserId, 'targetUserId'),
+          args?.joinWindowMinutes,
+          args?.creationWindowDays,
+          args?.similarityThreshold,
+          args?.limit,
+        );
+
+      case 'detect_role_hierarchy_blockers':
+        return this.detectRoleHierarchyBlockers(
+          context.guildId,
+          args?.targetUserId,
+          args?.roleId,
+          args?.actionType,
+        );
+
+      case 'analyze_channel_permissions_leak':
+        return this.analyzeChannelPermissionsLeak(
+          context.guildId,
+          args?.channelId,
+          args?.severityThreshold,
+          args?.limit,
+        );
+
+      case 'lookup_domain_reputation':
+        return this.lookupDomainReputation(
+          this.requireString(args?.urlOrDomain, 'urlOrDomain'),
+        );
 
       default:
         throw new Error(`Tool ${name} is not implemented.`);
@@ -1484,5 +1527,576 @@ export class DiscordAgentToolExecutorService {
       return `${minutes}m ${remainingSecs}s`;
     }
     return `${remainingSecs}s`;
+  }
+
+  private async traceUserTimeline(
+    guildId: string,
+    targetUserId: string,
+    hours?: number,
+    limit?: number,
+    includeMessages = true,
+  ) {
+    const hoursClamped = this.clampNumber(hours || 24, 1, 168);
+    const limitClamped = this.clampNumber(limit || 30, 1, 100);
+    const cutoff = new Date(Date.now() - hoursClamped * 60 * 60 * 1000);
+
+    const timelineEvents: Array<{
+      type: string;
+      timestamp: Date;
+      channelId?: string | null;
+      summary: string;
+      details?: Record<string, any>;
+    }> = [];
+
+    // 1. Warnings
+    const warnings = await this.prisma.warning.findMany({
+      where: {
+        guildId,
+        userId: targetUserId,
+        createdAt: { gte: cutoff },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limitClamped,
+    });
+    for (const w of warnings) {
+      timelineEvents.push({
+        type: 'WARNING',
+        timestamp: w.createdAt,
+        summary: `Warned: "${w.reason}"`,
+        details: { warningId: w.id, moderatorId: w.moderatorId, reason: w.reason },
+      });
+    }
+
+    // 2. Moderator Notes
+    const notes = await this.prisma.userNote.findMany({
+      where: {
+        guildId,
+        userId: targetUserId,
+        createdAt: { gte: cutoff },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limitClamped,
+    });
+    for (const n of notes) {
+      timelineEvents.push({
+        type: 'MODERATOR_NOTE',
+        timestamp: n.createdAt,
+        summary: `Note: "${n.content.slice(0, 100)}"`,
+        details: { noteId: n.id, moderatorId: n.moderatorId },
+      });
+    }
+
+    // 3. Audit Logs
+    try {
+      const dbAuditLogs = await this.prisma.auditLog.findMany({
+        where: {
+          guildId,
+          userId: targetUserId,
+          createdAt: { gte: cutoff },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limitClamped,
+      });
+      for (const a of dbAuditLogs) {
+        timelineEvents.push({
+          type: 'AUDIT_LOG',
+          timestamp: a.createdAt,
+          summary: `${a.action}: user=${a.userId}`,
+          details: { action: a.action, userId: a.userId, metadata: a.metadata },
+        });
+      }
+    } catch {
+      // Ignore if DB audit query fails
+    }
+
+    // Also check Discord audit logs if bot has permission
+    try {
+      const guild = await this.getGuild(guildId);
+      const me = guild.members.me ?? await guild.members.fetchMe?.().catch(() => null);
+      if (me?.permissions?.has?.(PermissionFlagsBits.ViewAuditLog)) {
+        const discordLogs = await guild.fetchAuditLogs({ limit: limitClamped });
+        const rawEntries: any[] = Array.from((discordLogs.entries as any)?.values?.() || []);
+        const relevantLogs = rawEntries.filter((e: any) => e.targetId === targetUserId || e.executor?.id === targetUserId);
+        for (const log of relevantLogs) {
+          if (log.createdAt && log.createdAt >= cutoff) {
+            timelineEvents.push({
+              type: 'DISCORD_AUDIT_LOG',
+              timestamp: log.createdAt,
+              summary: `Audit Action ${log.action}: executor=${log.executor?.tag || log.executor?.id || 'unknown'}, target=${log.targetId || 'none'}`,
+              details: { action: log.action, executorId: log.executor?.id, targetId: log.targetId, reason: log.reason },
+            });
+          }
+        }
+      }
+    } catch {
+      // Ignore if audit logs cannot be fetched
+    }
+
+    // 4. Messages (if includeMessages is true)
+    if (includeMessages) {
+      const messages = await this.prisma.discordMessageLog.findMany({
+        where: {
+          guildId,
+          authorId: targetUserId,
+          createdAt: { gte: cutoff },
+          deletedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limitClamped,
+      });
+      for (const m of messages) {
+        timelineEvents.push({
+          type: 'MESSAGE',
+          timestamp: m.createdAt,
+          channelId: m.channelId,
+          summary: m.content ? (m.content.length > 80 ? `${m.content.slice(0, 77)}...` : m.content) : '[Attachment/Embed]',
+          details: { messageId: m.id, channelId: m.channelId },
+        });
+      }
+    }
+
+    // Sort descending by timestamp (newest first)
+    timelineEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const events = timelineEvents.slice(0, limitClamped);
+
+    return {
+      guildId,
+      targetUserId,
+      timeWindowHours: hoursClamped,
+      totalEvents: events.length,
+      events,
+    };
+  }
+
+  private async findCorrelatedAccounts(
+    guildId: string,
+    targetUserId: string,
+    joinWindowMinutes?: number,
+    creationWindowDays?: number,
+    similarityThreshold?: number,
+    limit?: number,
+  ) {
+    const joinWindowClamped = this.clampNumber(joinWindowMinutes || 15, 1, 1440);
+    const creationWindowClamped = this.clampNumber(creationWindowDays || 7, 1, 365);
+    const simThreshold = Math.max(0, Math.min(1, typeof similarityThreshold === 'number' && Number.isFinite(similarityThreshold) ? similarityThreshold : 0.7));
+    const limitClamped = this.clampNumber(limit || 10, 1, 50);
+
+    const guild = await this.getGuild(guildId);
+    const targetMember = await guild.members.fetch(targetUserId).catch(() => null);
+    if (!targetMember) {
+      throw new BadRequestException(`Target user ${targetUserId} not found in guild.`);
+    }
+
+    const targetJoinedAt = targetMember.joinedTimestamp || (targetMember.joinedAt instanceof Date ? targetMember.joinedAt.getTime() : 0);
+    const targetCreatedAt = targetMember.user?.createdTimestamp || (targetMember.user?.createdAt instanceof Date ? targetMember.user.createdAt.getTime() : 0);
+    const targetUsername = targetMember.user?.username || '';
+    const targetDisplayName = targetMember.displayName || targetUsername;
+
+    const fetchedMembers: any = await guild.members.fetch({ limit: 1000 } as any).catch(() => guild.members.cache);
+    const memberList: any[] = fetchedMembers && typeof fetchedMembers.values === 'function'
+      ? Array.from(fetchedMembers.values())
+      : Array.isArray(fetchedMembers)
+        ? fetchedMembers
+        : Array.from(guild.members.cache?.values?.() || []);
+
+    const correlatedList: Array<{
+      userId: string;
+      username: string;
+      displayName: string;
+      joinedAt: Date | null;
+      createdAt: Date | null;
+      joinDifferenceMinutes: number;
+      creationDifferenceDays: number;
+      nameSimilarity: number;
+      correlationScore: number;
+      matchedReasons: string[];
+    }> = [];
+
+    for (const member of memberList) {
+      if (member.id === targetUserId || member.user?.bot) {
+        continue;
+      }
+
+      const mJoinedAt = member.joinedTimestamp || (member.joinedAt instanceof Date ? member.joinedAt.getTime() : 0);
+      const mCreatedAt = member.user?.createdTimestamp || (member.user?.createdAt instanceof Date ? member.user.createdAt.getTime() : 0);
+      const mUsername = member.user?.username || '';
+      const mDisplayName = member.displayName || mUsername;
+
+      const joinDiffMin = targetJoinedAt && mJoinedAt
+        ? Math.round(Math.abs(mJoinedAt - targetJoinedAt) / 60000)
+        : 999999;
+      const creationDiffDays = targetCreatedAt && mCreatedAt
+        ? Math.round(Math.abs(mCreatedAt - targetCreatedAt) / 86400000)
+        : 999999;
+
+      const usernameSim = this.calculateStringSimilarity(targetUsername, mUsername);
+      const displaySim = this.calculateStringSimilarity(targetDisplayName, mDisplayName);
+      const maxNameSim = Math.max(usernameSim, displaySim);
+
+      const matchedReasons: string[] = [];
+      let score = 0;
+
+      if (joinDiffMin <= joinWindowClamped) {
+        matchedReasons.push('JOIN_PROXIMITY');
+        score += 0.4 * (1 - joinDiffMin / joinWindowClamped);
+      }
+
+      if (creationDiffDays <= creationWindowClamped) {
+        matchedReasons.push('ACCOUNT_CREATION_PROXIMITY');
+        score += 0.3 * (1 - creationDiffDays / creationWindowClamped);
+      }
+
+      if (maxNameSim >= simThreshold) {
+        matchedReasons.push('NAME_SIMILARITY');
+        score += 0.3 * maxNameSim;
+      }
+
+      if (matchedReasons.length > 0) {
+        correlatedList.push({
+          userId: member.id,
+          username: mUsername,
+          displayName: mDisplayName,
+          joinedAt: member.joinedAt || (mJoinedAt ? new Date(mJoinedAt) : null),
+          createdAt: member.user?.createdAt || (mCreatedAt ? new Date(mCreatedAt) : null),
+          joinDifferenceMinutes: joinDiffMin,
+          creationDifferenceDays: creationDiffDays,
+          nameSimilarity: Math.round(maxNameSim * 100) / 100,
+          correlationScore: Math.round(score * 100) / 100,
+          matchedReasons,
+        });
+      }
+    }
+
+    correlatedList.sort((a, b) => b.correlationScore - a.correlationScore);
+    const results = correlatedList.slice(0, limitClamped);
+
+    return {
+      guildId,
+      targetUser: {
+        userId: targetUserId,
+        username: targetUsername,
+        displayName: targetDisplayName,
+        joinedAt: targetMember.joinedAt || (targetJoinedAt ? new Date(targetJoinedAt) : null),
+        createdAt: targetMember.user?.createdAt || (targetCreatedAt ? new Date(targetCreatedAt) : null),
+      },
+      criteria: {
+        joinWindowMinutes: joinWindowClamped,
+        creationWindowDays: creationWindowClamped,
+        similarityThreshold: simThreshold,
+      },
+      foundCount: results.length,
+      correlatedAccounts: results,
+    };
+  }
+
+  private async detectRoleHierarchyBlockers(
+    guildId: string,
+    targetUserId?: string,
+    roleId?: string,
+    actionType?: string,
+  ) {
+    const guild = await this.getGuild(guildId);
+    const me = guild.members.me ?? (await guild.members.fetchMe?.().catch(() => null)) ?? (this.client?.user?.id ? await guild.members.fetch(this.client.user.id).catch(() => null) : null);
+    if (!me) {
+      throw new ServiceUnavailableException('Bot member cannot be fetched from this guild.');
+    }
+
+    const botHighestRole = me.roles?.highest || { id: '0', name: 'Unknown', position: 0 };
+    const blockers: string[] = [];
+    const warnings: string[] = [];
+
+    // 1. Action permissions check
+    const normalizedAction = (actionType || '').toUpperCase().trim();
+    if (normalizedAction && me.permissions && typeof me.permissions.has === 'function') {
+      switch (normalizedAction) {
+        case 'TIMEOUT':
+        case 'MODERATE_MEMBERS':
+          if (!me.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+            blockers.push('Bot lacks ModerateMembers permission to timeout members.');
+          }
+          break;
+        case 'KICK':
+        case 'KICK_MEMBERS':
+          if (!me.permissions.has(PermissionFlagsBits.KickMembers)) {
+            blockers.push('Bot lacks KickMembers permission.');
+          }
+          break;
+        case 'BAN':
+        case 'BAN_MEMBERS':
+          if (!me.permissions.has(PermissionFlagsBits.BanMembers)) {
+            blockers.push('Bot lacks BanMembers permission.');
+          }
+          break;
+        case 'MANAGE_ROLES':
+        case 'ADD_ROLE':
+        case 'REMOVE_ROLE':
+          if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            blockers.push('Bot lacks ManageRoles permission.');
+          }
+          break;
+        case 'MANAGE_CHANNELS':
+          if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+            blockers.push('Bot lacks ManageChannels permission.');
+          }
+          break;
+      }
+    }
+
+    let targetDetails: any = null;
+    if (targetUserId) {
+      const targetMember = await guild.members.fetch(targetUserId).catch(() => null);
+      if (!targetMember) {
+        warnings.push(`Target user ${targetUserId} is not currently a member of the guild (may have left or been banned).`);
+      } else {
+        const targetHighest = targetMember.roles?.highest || { id: '0', name: 'Default', position: 0 };
+        targetDetails = {
+          userId: targetMember.id,
+          username: targetMember.user?.username,
+          displayName: targetMember.displayName,
+          isOwner: guild.ownerId === targetMember.id,
+          highestRole: {
+            id: targetHighest.id,
+            name: targetHighest.name,
+            position: targetHighest.position,
+          },
+        };
+
+        if (guild.ownerId === targetMember.id) {
+          blockers.push(`Target user ${targetMember.displayName} is the Server Owner and cannot be moderated.`);
+        } else if (targetHighest.position >= botHighestRole.position) {
+          blockers.push(
+            `Target user ${targetMember.displayName} has role "${targetHighest.name}" (pos ${targetHighest.position}) which is higher than or equal to bot role "${botHighestRole.name}" (pos ${botHighestRole.position}).`,
+          );
+        }
+
+        if (targetMember.permissions?.has?.(PermissionFlagsBits.Administrator)) {
+          warnings.push(`Target user has Administrator permission.`);
+        }
+      }
+    }
+
+    let roleDetails: any = null;
+    if (roleId) {
+      const role = await guild.roles.fetch(roleId).catch(() => null);
+      if (!role) {
+        blockers.push(`Role ${roleId} not found in guild.`);
+      } else {
+        roleDetails = {
+          roleId: role.id,
+          name: role.name,
+          position: role.position,
+          managed: role.managed,
+        };
+
+        if (role.position >= botHighestRole.position) {
+          blockers.push(
+            `Role "${role.name}" (pos ${role.position}) is higher than or equal to bot role "${botHighestRole.name}" (pos ${botHighestRole.position}).`,
+          );
+        }
+
+        if (role.managed) {
+          blockers.push(`Role "${role.name}" is managed by an integration/bot and cannot be manually assigned or removed.`);
+        }
+      }
+    }
+
+    return {
+      guildId,
+      canExecute: blockers.length === 0,
+      botHighestRole: {
+        id: botHighestRole.id,
+        name: botHighestRole.name,
+        position: botHighestRole.position,
+      },
+      blockers,
+      warnings,
+      targetDetails: targetDetails || undefined,
+      roleDetails: roleDetails || undefined,
+    };
+  }
+
+  private async analyzeChannelPermissionsLeak(
+    guildId: string,
+    channelId?: string,
+    severityThreshold = 'MEDIUM',
+    limit?: number,
+  ) {
+    const limitClamped = this.clampNumber(limit || 20, 1, 50);
+    const guild = await this.getGuild(guildId);
+
+    const severityRanks: Record<string, number> = {
+      LOW: 1,
+      MEDIUM: 2,
+      HIGH: 3,
+      CRITICAL: 4,
+    };
+    const minRank = severityRanks[(severityThreshold || 'MEDIUM').toUpperCase()] || 2;
+
+    const channelsToScan: any[] = [];
+    if (channelId) {
+      const channel = await guild.channels.fetch(channelId).catch(() => null);
+      if (!channel) throw new BadRequestException(`Channel ${channelId} not found.`);
+      channelsToScan.push(channel);
+    } else {
+      const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
+      const channelList = channels && typeof channels.values === 'function'
+        ? Array.from(channels.values())
+        : Array.isArray(channels)
+          ? channels
+          : Array.from(guild.channels.cache?.values?.() || []);
+
+      for (const ch of channelList) {
+        if (ch && (ch.isTextBased?.() || ch.type === 0 || ch.type === 2)) {
+          channelsToScan.push(ch);
+        }
+      }
+    }
+
+    const leaks: Array<{
+      channelId: string;
+      channelName: string;
+      severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+      targetType: 'EVERYONE' | 'ROLE' | 'MEMBER';
+      targetId: string;
+      leakedPermissions: string[];
+      description: string;
+    }> = [];
+
+    const SENSITIVE_NAME_REGEX = /(?:admin|mod|staff|log|secret|audit|internal)/i;
+    const READONLY_NAME_REGEX = /(?:rule|announcement|info|welcome|faq)/i;
+
+    for (const channel of channelsToScan) {
+      if (!channel) continue;
+
+      const overwrites = channel.permissionOverwrites?.cache || channel.permissionOverwrites;
+      const everyoneOverwrite = overwrites?.get ? overwrites.get(guild.id) : null;
+
+      if (everyoneOverwrite && everyoneOverwrite.allow) {
+        const leaked: Array<{ perm: string; sev: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'; desc: string }> = [];
+
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.ManageChannels)) {
+          leaked.push({ perm: 'ManageChannels', sev: 'CRITICAL', desc: '@everyone is allowed to edit or delete this channel' });
+        }
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.ManageRoles)) {
+          leaked.push({ perm: 'ManageRoles', sev: 'CRITICAL', desc: '@everyone is allowed to modify channel permission overrides' });
+        }
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.MentionEveryone)) {
+          leaked.push({ perm: 'MentionEveryone', sev: 'HIGH', desc: '@everyone is allowed to ping @everyone/@here in this channel' });
+        }
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.ManageMessages)) {
+          leaked.push({ perm: 'ManageMessages', sev: 'HIGH', desc: '@everyone is allowed to delete or pin messages' });
+        }
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.ManageWebhooks)) {
+          leaked.push({ perm: 'ManageWebhooks', sev: 'HIGH', desc: '@everyone is allowed to create/modify webhooks' });
+        }
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.ViewChannel) && SENSITIVE_NAME_REGEX.test(channel.name || '')) {
+          leaked.push({ perm: 'ViewChannel', sev: 'HIGH', desc: `@everyone is allowed to view sensitive/staff channel "${channel.name}"` });
+        }
+        if (everyoneOverwrite.allow.has?.(PermissionFlagsBits.SendMessages) && READONLY_NAME_REGEX.test(channel.name || '')) {
+          leaked.push({ perm: 'SendMessages', sev: 'MEDIUM', desc: `@everyone is allowed to send messages in read-only/rules channel "${channel.name}"` });
+        }
+
+        for (const item of leaked) {
+          if (severityRanks[item.sev] >= minRank) {
+            leaks.push({
+              channelId: channel.id,
+              channelName: channel.name,
+              severity: item.sev,
+              targetType: 'EVERYONE',
+              targetId: guild.id,
+              leakedPermissions: [item.perm],
+              description: item.desc,
+            });
+          }
+        }
+      }
+    }
+
+    leaks.sort((a, b) => severityRanks[b.severity] - severityRanks[a.severity]);
+    const results = leaks.slice(0, limitClamped);
+
+    return {
+      guildId,
+      channelsScanned: channelsToScan.length,
+      severityFilter: (severityThreshold || 'MEDIUM').toUpperCase(),
+      totalLeaksFound: results.length,
+      leaks: results,
+    };
+  }
+
+  private async lookupDomainReputation(urlOrDomain: string) {
+    const target = this.requireString(urlOrDomain, 'urlOrDomain');
+    let normalized = target.trim();
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      normalized = `https://${normalized}`;
+    }
+
+    let phishingResult: any = null;
+    let secretResult: any = null;
+
+    if (this.sentinel) {
+      phishingResult = this.sentinel.scanPhishing(normalized);
+      secretResult = this.sentinel.scanSecrets(target);
+    } else {
+      const isSus = /(?:discord-nitro|steam-gift|free-nitro|discrod|dіscord)/i.test(normalized);
+      phishingResult = {
+        isSuspicious: isSus,
+        confidence: isSus ? 0.85 : 0.0,
+        detectedTarget: isSus ? 'discord.com' : null,
+        reasons: isSus ? ['Suspicious keywords or domain pattern'] : [],
+        normalizedDomain: normalized,
+      };
+      secretResult = {
+        hasSecrets: false,
+        detections: [],
+        redactedText: target,
+      };
+    }
+
+    const threatTypes: string[] = [];
+    if (phishingResult.isSuspicious) threatTypes.push('PHISHING');
+    if (secretResult.hasSecrets) threatTypes.push('SECRET_LEAK');
+
+    return {
+      input: target,
+      normalizedUrl: normalized,
+      isThreat: threatTypes.length > 0,
+      threatTypes,
+      confidence: phishingResult.confidence,
+      phishing: phishingResult,
+      secrets: secretResult.hasSecrets ? {
+        detectionsCount: secretResult.detections.length,
+        redactedPreview: secretResult.redactedText,
+      } : null,
+    };
+  }
+
+  private calculateStringSimilarity(str1: string, str2: string): number {
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+    if (s1 === s2) return 1.0;
+    if (!s1.length || !s2.length) return 0.0;
+    if (s1.includes(s2) || s2.includes(s1)) {
+      return Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length);
+    }
+
+    const track = Array(s2.length + 1)
+      .fill(null)
+      .map(() => Array(s1.length + 1).fill(null));
+    for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+
+    for (let j = 1; j <= s2.length; j += 1) {
+      for (let i = 1; i <= s1.length; i += 1) {
+        const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+        track[j][i] = Math.min(
+          track[j][i - 1] + 1,
+          track[j - 1][i] + 1,
+          track[j - 1][i - 1] + indicator,
+        );
+      }
+    }
+    const distance = track[s2.length][s1.length];
+    return Math.max(0, 1 - distance / Math.max(s1.length, s2.length));
   }
 }

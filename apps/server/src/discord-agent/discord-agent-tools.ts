@@ -690,8 +690,82 @@ const RAW_AGENT_TOOLS = [
     description: 'Create a proposal to delete an invite code. Creates an action card before execution.',
     parameters: { type: 'object', properties: { code: { type: 'string' }, reason: { type: 'string' } }, required: ['code', 'reason'] },
   },
+  {
+    name: 'trace_user_timeline',
+    description: 'Chronologically aggregates user events (messages, warnings, moderator notes, audit logs) over a specified time window. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetUserId: { type: 'string', description: 'Discord user ID to inspect.' },
+        hours: { type: 'integer', description: 'Time window in hours (1-168, defaults to 24).' },
+        limit: { type: 'integer', description: 'Maximum timeline events to return (1-100, defaults to 30).' },
+        includeMessages: { type: 'boolean', description: 'Whether to include message logs in timeline (defaults to true).' },
+      },
+      required: ['targetUserId'],
+    },
+  },
+  {
+    name: 'find_correlated_accounts',
+    description: 'Correlates accounts based on join timestamp proximity, account creation timestamp proximity, and username/display name similarity. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetUserId: { type: 'string', description: 'Discord user ID to find correlations for.' },
+        joinWindowMinutes: { type: 'integer', description: 'Join proximity window in minutes (defaults to 15).' },
+        creationWindowDays: { type: 'integer', description: 'Account creation proximity window in days (defaults to 7).' },
+        similarityThreshold: { type: 'number', description: 'Name similarity threshold (0.0 to 1.0, defaults to 0.7).' },
+        limit: { type: 'integer', description: 'Maximum correlated accounts to return (defaults to 10).' },
+      },
+      required: ['targetUserId'],
+    },
+  },
+  {
+    name: 'detect_role_hierarchy_blockers',
+    description: 'Preemptively evaluates bot role position and permissions against target members, roles, or actions before proposing changes. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetUserId: { type: 'string', description: 'Optional Discord member ID to check hierarchy against.' },
+        roleId: { type: 'string', description: 'Optional role ID to check hierarchy against.' },
+        actionType: { type: 'string', description: 'Optional action type (e.g. TIMEOUT, KICK, BAN, MANAGE_ROLE).' },
+      },
+    },
+  },
+  {
+    name: 'analyze_channel_permissions_leak',
+    description: 'Audits channel permission overwrites server-wide or for a specific channel for privilege escalations or sensitive permission leaks to @everyone or public roles. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        channelId: { type: 'string', description: 'Optional channel ID. If omitted, scans all text channels in the guild.' },
+        severityThreshold: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], description: 'Minimum severity of permission leak to report. Defaults to MEDIUM.' },
+        limit: { type: 'integer', description: 'Maximum leaked channels/overwrites to return (defaults to 20).' },
+      },
+    },
+  },
+  {
+    name: 'lookup_domain_reputation',
+    description: 'Inspects a domain or URL using the native Sentinel engine to detect phishing, homoglyphs, typosquatting, zero-width attacks, or suspicious brand keywords. Read-only; executed immediately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        urlOrDomain: { type: 'string', description: 'The URL or domain to inspect.' },
+      },
+      required: ['urlOrDomain'],
+    },
+  },
 ];
-const READ_TOOL_PREFIXES = ['get_', 'find_', 'search_', 'check_', 'preview_'];
+const READ_TOOL_PREFIXES = [
+  'get_',
+  'find_',
+  'search_',
+  'check_',
+  'preview_',
+  'trace_',
+  'detect_',
+  'analyze_',
+  'lookup_',
+];
 
 export const AGENT_TOOLS: AiToolDefinition[] = RAW_AGENT_TOOLS.map((tool) => {
   const readOnly = READ_TOOL_PREFIXES.some((prefix) => tool.name.startsWith(prefix));

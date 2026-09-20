@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
+import { PermissionFlagsBits } from 'discord.js';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,17 @@ describe('DiscordAgentToolExecutorService', () => {
     },
     discordMessageLog: {
       findMany: jest.fn(async (): Promise<any[]> => []),
+    },
+    warning: {
+      findMany: jest.fn(async (): Promise<any[]> => []),
+      count: jest.fn(async () => 0),
+    },
+    auditLog: {
+      findMany: jest.fn(async (): Promise<any[]> => []),
+      count: jest.fn(async () => 0),
+    },
+    agentActionProposal: {
+      count: jest.fn(async () => 0),
     },
     userNote: {
       create: jest.fn(async (params: any) => ({
@@ -73,6 +85,7 @@ describe('DiscordAgentToolExecutorService', () => {
   };
 
   const mockGuild = {
+    id: 'guild-1',
     name: 'Test Guild',
     memberCount: 42,
     approximatePresenceCount: 7,
@@ -101,6 +114,23 @@ describe('DiscordAgentToolExecutorService', () => {
         id: 'admin-1',
         voice: { channelId: 'voice-current' },
       })),
+    },
+    roles: {
+      cache: new Map([
+        ['role-bot', { id: 'role-bot', name: 'Bot Role', position: 10 }],
+        ['role-admin', { id: 'role-admin', name: 'Admin', position: 20 }],
+        ['role-member', { id: 'role-member', name: 'Member', position: 5 }],
+      ]),
+      fetch: jest.fn(async (id?: string) => {
+        const roles = new Map([
+          ['role-bot', { id: 'role-bot', name: 'Bot Role', position: 10 }],
+          ['role-admin', { id: 'role-admin', name: 'Admin', position: 20 }],
+          ['role-member', { id: 'role-member', name: 'Member', position: 5 }],
+        ]);
+        return id ? roles.get(id) : roles;
+      }),
+      highest: { position: 10 },
+      everyone: { id: 'guild-1' },
     },
     fetchAuditLogs: jest.fn(async (..._args: any[]): Promise<any> => ({
       entries: [
@@ -140,6 +170,21 @@ describe('DiscordAgentToolExecutorService', () => {
     ]),
   };
 
+  const mockSentinel = {
+    scanPhishing: jest.fn((url: string) => ({
+      isSuspicious: url.includes('discrod') || url.includes('dіscord'),
+      reasons: url.includes('discrod') ? ['Typosquatting of discord.com'] : [],
+      confidence: 0.9,
+      detectedTarget: 'discord.com',
+    })),
+    scanSecrets: jest.fn((text: string) => ({
+      hasSecrets: text.includes('sk-'),
+      detections: text.includes('sk-') ? [{ secretType: 'OPENAI_API_KEY', preview: 'sk-...1234', confidence: 0.98, start: 0, end: 10 }] : [],
+      redactedText: text.replace(/sk-[A-Za-z0-9_-]+/g, '[REDACTED:OPENAI_API_KEY]'),
+    })),
+    inspectMessage: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new DiscordAgentToolExecutorService(
@@ -150,6 +195,7 @@ describe('DiscordAgentToolExecutorService', () => {
       mockContext as any,
       mockPluginTools as any,
       mockLeaderboard as any,
+      mockSentinel as any,
     );
     service.setClient(mockClient as any);
   });
@@ -525,12 +571,9 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('returns server statistics summary', async () => {
-    // mock count calls for prisma warning, proposal, and auditlog
-    mockPrisma.discordMessageLog.findMany.mockResolvedValueOnce([]); // mock some details if needed
-    const mockPrismaCount = jest.fn(async () => 5);
-    (service as any).prisma.warning = { count: mockPrismaCount };
-    (service as any).prisma.agentActionProposal = { count: mockPrismaCount };
-    (service as any).prisma.auditLog = { count: mockPrismaCount };
+    (mockPrisma.warning.count as any).mockResolvedValueOnce(5);
+    (mockPrisma.agentActionProposal.count as any).mockResolvedValueOnce(5);
+    (mockPrisma.auditLog.count as any).mockResolvedValueOnce(5).mockResolvedValueOnce(5);
 
     const res = await service.execute('get_server_stats', {}, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual(expect.objectContaining({
@@ -570,5 +613,158 @@ describe('DiscordAgentToolExecutorService', () => {
         score: 42,
       },
     ]);
+  });
+
+  it('executes trace_user_timeline aggregating warnings, notes, audit logs, and messages', async () => {
+    (mockPrisma.warning.findMany as any).mockResolvedValueOnce([
+      { id: 'w-1', guildId: 'guild-1', userId: 'user-1', moderatorId: 'mod-1', reason: 'Spamming', createdAt: new Date('2026-01-01T02:00:00Z') },
+    ]);
+    (mockPrisma.userNote.findMany as any).mockResolvedValueOnce([
+      { id: 'n-1', guildId: 'guild-1', userId: 'user-1', moderatorId: 'mod-1', content: 'Watched user', createdAt: new Date('2026-01-01T01:30:00Z') },
+    ]);
+    (mockPrisma.auditLog.findMany as any).mockResolvedValueOnce([
+      { id: 'a-1', guildId: 'guild-1', userId: 'user-1', action: 'WARN_USER', metadata: {}, createdAt: new Date('2026-01-01T02:00:00Z') },
+    ]);
+    (mockPrisma.discordMessageLog.findMany as any).mockResolvedValueOnce([
+      { id: 'm-1', guildId: 'guild-1', authorId: 'user-1', channelId: 'ch-1', content: 'Hello raid', createdAt: new Date('2026-01-01T01:00:00Z'), deletedAt: null },
+    ]);
+
+    const res = await service.execute('trace_user_timeline', {
+      targetUserId: 'user-1',
+      hours: 24,
+      limit: 20,
+      includeMessages: true,
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual(expect.objectContaining({
+      guildId: 'guild-1',
+      targetUserId: 'user-1',
+      timeWindowHours: 24,
+      totalEvents: expect.any(Number),
+      events: expect.any(Array),
+    }));
+    expect(res.events.some((e: any) => e.type === 'WARNING')).toBe(true);
+    expect(res.events.some((e: any) => e.type === 'MODERATOR_NOTE')).toBe(true);
+    expect(res.events.some((e: any) => e.type === 'MESSAGE')).toBe(true);
+  });
+
+  it('executes find_correlated_accounts comparing join time, creation time, and string similarity', async () => {
+    const targetMember = {
+      id: 'target-1',
+      user: { username: 'raid_bot_01', globalName: 'Raid Bot 01', createdAt: new Date('2026-01-01T00:00:00Z'), createdTimestamp: 1767225600000, bot: false },
+      displayName: 'Raid Bot 01',
+      joinedAt: new Date('2026-01-02T00:00:00Z'),
+      joinedTimestamp: 1767312000000,
+    };
+    const correlatedMember = {
+      id: 'alt-1',
+      user: { username: 'raid_bot_02', globalName: 'Raid Bot 02', createdAt: new Date('2026-01-01T00:05:00Z'), createdTimestamp: 1767225900000, bot: false },
+      displayName: 'Raid Bot 02',
+      joinedAt: new Date('2026-01-02T00:02:00Z'),
+      joinedTimestamp: 1767312120000,
+    };
+    const innocentMember = {
+      id: 'user-regular',
+      user: { username: 'regular_alice', globalName: 'Alice', createdAt: new Date('2024-01-01T00:00:00Z'), createdTimestamp: 1704067200000, bot: false },
+      displayName: 'Alice',
+      joinedAt: new Date('2025-01-01T00:00:00Z'),
+      joinedTimestamp: 1735689600000,
+    };
+
+    (mockGuild.members.fetch as jest.Mock).mockImplementation(async (arg?: any) => {
+      if (arg === 'target-1') return targetMember;
+      return new Map([
+        ['target-1', targetMember],
+        ['alt-1', correlatedMember],
+        ['user-regular', innocentMember],
+      ]);
+    });
+
+    const res = await service.execute('find_correlated_accounts', {
+      targetUserId: 'target-1',
+      joinWindowMinutes: 30,
+      creationWindowDays: 7,
+      similarityThreshold: 0.7,
+      limit: 10,
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual(expect.objectContaining({
+      guildId: 'guild-1',
+      targetUser: expect.objectContaining({ userId: 'target-1', username: 'raid_bot_01' }),
+      foundCount: 1,
+    }));
+    expect(res.correlatedAccounts[0]).toEqual(expect.objectContaining({
+      userId: 'alt-1',
+      matchedReasons: expect.arrayContaining(['JOIN_PROXIMITY', 'ACCOUNT_CREATION_PROXIMITY', 'NAME_SIMILARITY']),
+    }));
+  });
+
+  it('executes detect_role_hierarchy_blockers detecting higher role position and server owner', async () => {
+    (mockGuild.members.fetch as jest.Mock).mockImplementation(async (id?: any) => {
+      if (id === 'target-admin') {
+        return {
+          id: 'target-admin',
+          displayName: 'Admin User',
+          user: { username: 'adminuser' },
+          roles: { highest: { id: 'role-admin', name: 'Admin', position: 20 } },
+          permissions: { has: jest.fn(() => true) },
+        };
+      }
+      return { id: 'admin-1', voice: { channelId: 'voice-current' } };
+    });
+
+    const res = await service.execute('detect_role_hierarchy_blockers', {
+      targetUserId: 'target-admin',
+      actionType: 'TIMEOUT',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res.canExecute).toBe(false);
+    expect(res.blockers.some((b: string) => b.includes('higher than or equal to bot role'))).toBe(true);
+  });
+
+  it('executes analyze_channel_permissions_leak detecting sensitive leaks to @everyone', async () => {
+    const leakChannel = {
+      id: 'ch-leak',
+      name: 'staff-secret-chat',
+      isTextBased: () => true,
+      permissionOverwrites: new Map([
+        ['guild-1', {
+          id: 'guild-1',
+          allow: {
+            has: jest.fn((perm: any) => {
+              return perm === PermissionFlagsBits.ViewChannel || perm === PermissionFlagsBits.ManageChannels;
+            }),
+          },
+        }],
+      ]),
+    };
+
+    (mockGuild.channels.fetch as any).mockResolvedValueOnce(new Map([['ch-leak', leakChannel]]));
+
+    const res = await service.execute('analyze_channel_permissions_leak', {
+      severityThreshold: 'HIGH',
+      limit: 10,
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual(expect.objectContaining({
+      guildId: 'guild-1',
+      totalLeaksFound: expect.any(Number),
+      leaks: expect.any(Array),
+    }));
+    expect(res.leaks.some((l: any) => l.channelId === 'ch-leak' && l.severity === 'CRITICAL')).toBe(true);
+  });
+
+  it('executes lookup_domain_reputation detecting phishing domains and secret leaks', async () => {
+    const testSecret = ['sk', 'testsecret12345'].join('-');
+    const res = await service.execute('lookup_domain_reputation', {
+      urlOrDomain: `https://discrod-nitro-gift.ru?token=${testSecret}`,
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual(expect.objectContaining({
+      isThreat: true,
+      threatTypes: expect.arrayContaining(['PHISHING', 'SECRET_LEAK']),
+    }));
+    expect(mockSentinel.scanPhishing).toHaveBeenCalled();
+    expect(mockSentinel.scanSecrets).toHaveBeenCalled();
   });
 });

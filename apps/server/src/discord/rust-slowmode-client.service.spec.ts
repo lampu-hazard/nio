@@ -53,6 +53,7 @@ describe('RustSlowmodeClientService', () => {
     global.fetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
+        text: () => Promise.resolve(JSON.stringify(mockResponse)),
         json: () => Promise.resolve(mockResponse),
       } as Response),
     ) as any;

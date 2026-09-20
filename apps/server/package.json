@@ -11,6 +11,7 @@
     "test": "jest",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "start:prod": "bun ./dist/main.js"
   },
@@ -20,6 +21,7 @@
     "@discordjs/voice": "^0.19.2",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@nestjs/common": "latest",
     "@nestjs/config": "latest",
     "@nestjs/core": "latest",
@@ -35,6 +37,7 @@
     "ioredis": "^5.11.1",
     "nest-winston": "latest",
     "pg": "^8.22.0",
+    "prisma": "^6.19.0",
     "reflect-metadata": "latest",
     "rxjs": "latest",
     "winston": "latest"
@@ -49,7 +52,6 @@
     "@types/node": "latest",
     "@types/pg": "^8.20.0",
     "jest": "latest",
-    "prisma": "^6.19.0",
     "ts-jest": "latest",
     "ts-node": "latest",
     "typescript": "latest"

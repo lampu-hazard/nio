@@ -3,6 +3,7 @@ import { ChannelType, PermissionsBitField } from 'discord.js';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
 import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
+import { HallOfFameService } from '../discord/hall-of-fame.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StickersService } from '../stickers/stickers.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
@@ -20,6 +21,7 @@ export class GuildsService {
     private readonly stickers: StickersService,
     private readonly slowmode: DiscordSlowmodeService,
     private readonly anomaly: DiscordAnomalyService,
+    private readonly hallOfFame: HallOfFameService,
   ) {}
 
   canManage(userGuild: any): boolean {
@@ -127,6 +129,9 @@ export class GuildsService {
       logChannelId: settings?.logChannelId || null,
       messageDeleteLogChannelId: settings?.messageDeleteLogChannelId || null,
       stickerEnabled: settings?.stickerEnabled || false,
+      hallOfFameEnabled: settings?.hallOfFameEnabled || false,
+      hallOfFameChannelId: settings?.hallOfFameChannelId || null,
+      hallOfFameThreshold: settings?.hallOfFameThreshold ?? 3,
       slowmodeEnabled: settings?.slowmodeEnabled || false,
       slowmodeChannels: settings?.slowmodeChannels || [],
       slowmodeIntervalQuiet: settings?.slowmodeIntervalQuiet ?? 0,
@@ -142,12 +147,27 @@ export class GuildsService {
   }
 
   async updateSettings(guildId: string, dto: UpdateSettingsDto) {
+    const previous = await this.prisma.guildSettings.findUnique({ where: { guildId } });
+    const hallEnabled = dto.hallOfFameEnabled ?? previous?.hallOfFameEnabled ?? false;
+    const hallChannelId = dto.hallOfFameChannelId !== undefined
+      ? dto.hallOfFameChannelId
+      : previous?.hallOfFameChannelId ?? null;
+    if (hallEnabled && !hallChannelId) {
+      throw new BadRequestException('Select a Hall of Fame channel before enabling it.');
+    }
+    if (hallEnabled && hallChannelId) {
+      await this.hallOfFame.validateChannel(guildId, hallChannelId);
+    }
+
     const updated = await this.prisma.guildSettings.upsert({
       where: { guildId },
       update: {
         logChannelId: dto.logChannelId !== undefined ? dto.logChannelId : undefined,
         messageDeleteLogChannelId: dto.messageDeleteLogChannelId !== undefined ? dto.messageDeleteLogChannelId : undefined,
         stickerEnabled: dto.stickerEnabled !== undefined ? dto.stickerEnabled : undefined,
+        hallOfFameEnabled: dto.hallOfFameEnabled !== undefined ? dto.hallOfFameEnabled : undefined,
+        hallOfFameChannelId: dto.hallOfFameChannelId !== undefined ? dto.hallOfFameChannelId : undefined,
+        hallOfFameThreshold: dto.hallOfFameThreshold !== undefined ? dto.hallOfFameThreshold : undefined,
         slowmodeEnabled: dto.slowmodeEnabled !== undefined ? dto.slowmodeEnabled : undefined,
         slowmodeChannels: dto.slowmodeChannels !== undefined ? dto.slowmodeChannels : undefined,
         slowmodeIntervalQuiet: dto.slowmodeIntervalQuiet !== undefined ? dto.slowmodeIntervalQuiet : undefined,
@@ -165,6 +185,9 @@ export class GuildsService {
         logChannelId: dto.logChannelId || null,
         messageDeleteLogChannelId: dto.messageDeleteLogChannelId || null,
         stickerEnabled: dto.stickerEnabled || false,
+        hallOfFameEnabled: dto.hallOfFameEnabled || false,
+        hallOfFameChannelId: dto.hallOfFameChannelId || null,
+        hallOfFameThreshold: dto.hallOfFameThreshold ?? 3,
         slowmodeEnabled: dto.slowmodeEnabled || false,
         slowmodeChannels: dto.slowmodeChannels || [],
         slowmodeIntervalQuiet: dto.slowmodeIntervalQuiet ?? 0,

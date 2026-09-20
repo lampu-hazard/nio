@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { REST } from 'discord.js';
 import { GuildCommandSyncService } from './guild-command-sync.service';
 
 const command = (name: string, pluginId?: string) => ({
@@ -10,10 +11,9 @@ const command = (name: string, pluginId?: string) => ({
 
 describe('GuildCommandSyncService', () => {
   it('bulk overwrites only commands for active plugins', async () => {
-    const put = jest.fn(async () => []);
-    jest.spyOn(require('discord.js'), 'REST').mockImplementation(() => ({
-      setToken: () => ({ put }),
-    }) as any);
+    const put = jest.fn<any>(async () => []);
+    jest.spyOn(REST.prototype, 'setToken').mockReturnThis();
+    jest.spyOn(REST.prototype, 'put').mockImplementation(put);
     const prisma = {
       guildCommandSync: {
         findUnique: jest.fn(async () => null),

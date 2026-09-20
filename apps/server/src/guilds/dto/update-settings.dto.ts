@@ -15,6 +15,20 @@ export class UpdateSettingsDto {
 
   @IsOptional()
   @IsBoolean()
+  hallOfFameEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  hallOfFameChannelId?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  hallOfFameThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
   slowmodeEnabled?: boolean;
 
   @IsOptional()

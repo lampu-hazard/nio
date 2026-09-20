@@ -66,15 +66,54 @@ ANOMALY_ENGINE_URL="127.0.0.1:50051"
 
 ### 2. Database Migrations
 
-Generate your local client and push the PostgreSQL schema structure using Prisma:
+Generate your local client and run Prisma migrations.
 
+#### Fresh Database Setup
+For a new database, apply the baseline and all incremental migrations:
 ```bash
 cd apps/server
 bun install
-bunx prisma db push
+bun run prisma:generate
+bun run prisma:deploy
 ```
 
-### 3. Run Development Servers
+#### Existing Database Rollout (from `db push` or pre-baseline state)
+If transitioning an existing production database created before the migration baseline:
+1. Back up your existing database (`pg_dump`).
+2. Verify the schema matches `prisma/schema.prisma`.
+3. Mark only the baseline migration as already applied:
+   ```bash
+   bunx prisma migrate resolve --applied 20260704000000_baseline
+   ```
+4. Deploy remaining incremental migrations:
+   ```bash
+   bun run prisma:deploy
+   ```
+*Never run `prisma migrate reset` or `db push` on production data.*
+
+### 3. Redis & AI Agent Configuration
+
+#### Redis Setup
+Redis is required for AI agent conversational memory caching and degrades gracefully if unreachable:
+```env
+REDIS_URL="redis://localhost:6379"
+```
+
+#### Autonomous Discord AI Agent & MCP Configuration
+The AI Agent operates on an autonomous multi-turn reasoning loop bounded by strict resource limits:
+- Max Turns: 5
+- Max Tool Calls Per Turn: 8
+- Max Total Tool Calls: 20
+- Max Wall-Clock Time: 60s
+- Max Result Size: 32KB
+- Repetition Detector: Terminates if the exact same tool call is repeated 3 times.
+
+**Approval Semantics**:
+- Read-only tools (`get_*`, `search_*`, `check_*`, etc.) execute autonomously to gather evidence.
+- Mutating tools (moderation actions, roles, channel lockdowns, announcements, etc.) create interactive `AgentActionProposal` cards requiring moderator approval.
+- Model Context Protocol (MCP) external tools are configured in operator deployment environment (`MCP_SERVERS_JSON`). Write operations with external side-effects strictly require the bot owner's approval (`OWNER_DISCORD_ID`).
+
+### 4. Run Development Servers
 
 Run the local development environments concurrently using the root `Makefile` helper targets:
 

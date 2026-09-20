@@ -27,6 +27,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY apps/server/system-prompt.md ./system-prompt.md
 COPY services/anomaly-engine/proto/anomaly ./proto/anomaly
 COPY apps/server/proto/analytics ./proto/analytics
 

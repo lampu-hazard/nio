@@ -37,7 +37,8 @@ model Guild {
   plugins         GuildPlugin[]
   entitlements    GuildEntitlement[]
   pluginCredentials GuildPluginCredential[]
-  commandSync     GuildCommandSync?
+  commandSync       GuildCommandSync?
+  hallOfFameEntries HallOfFameEntry[]
 }
 
 model GuildSettings {
@@ -59,6 +60,9 @@ model GuildSettings {
   userAnomalyEnabled          Boolean  @default(true)
   guildBaselineEnabled        Boolean  @default(true)
   anomalyEnforcementMode      String   @default("AUDIT_ONLY")
+  hallOfFameEnabled           Boolean  @default(false)
+  hallOfFameChannelId         String?
+  hallOfFameThreshold         Int      @default(3)
 
   // New Moderation Settings
   warnLimitEnabled       Boolean  @default(false)
@@ -67,6 +71,22 @@ model GuildSettings {
   warnExpiryDays         Int      @default(30) // 0 = Never Expire
 
   guild                  Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model HallOfFameEntry {
+  id               String   @id @default(cuid())
+  guildId          String
+  sourceChannelId  String
+  sourceMessageId  String
+  mirrorChannelId  String
+  mirrorMessageId  String   @unique
+  starCount        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  guild            Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, sourceChannelId, sourceMessageId])
+  @@index([guildId, mirrorChannelId])
 }
 
 model Panel {

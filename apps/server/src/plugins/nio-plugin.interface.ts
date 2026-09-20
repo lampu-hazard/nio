@@ -4,6 +4,7 @@ import {
   Message,
   RESTPostAPIApplicationCommandsJSONBody,
 } from 'discord.js';
+import { JsonSchema, ToolSafety } from '../discord-agent/interfaces/ai-provider.interface';
 
 export type NioPluginType = 'FREE' | 'PREMIUM';
 
@@ -17,7 +18,8 @@ export interface NioAgentTool {
   readonly name: string;
   readonly pluginId: string;
   readonly description: string;
-  readonly parameters: Record<string, unknown>;
+  readonly parameters: JsonSchema;
+  readonly safety: ToolSafety;
   readonly execute: (args: unknown, context: NioPluginContext) => Promise<unknown>;
 }
 

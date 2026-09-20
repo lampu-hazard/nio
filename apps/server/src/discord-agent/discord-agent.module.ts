@@ -10,6 +10,7 @@ import { AgentActionProposalService } from './agent-action-proposal.service';
 import { AgentActionRendererService } from './agent-action-renderer.service';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
 import { ConversationMemoryService } from './conversation-memory.service';
+import { McpToolService } from './mcp-tool.service';
 
 @Module({
   imports: [PrismaModule, ModerationModule, forwardRef(() => StickersModule), EmbedTemplateModule],
@@ -21,6 +22,7 @@ import { ConversationMemoryService } from './conversation-memory.service';
     AgentActionRendererService,
     DiscordAgentToolExecutorService,
     ConversationMemoryService,
+    McpToolService,
   ],
   exports: [
     DiscordAgentService,
@@ -30,6 +32,7 @@ import { ConversationMemoryService } from './conversation-memory.service';
     AgentActionRendererService,
     DiscordAgentToolExecutorService,
     ConversationMemoryService,
+    McpToolService,
   ],
 })
 export class DiscordAgentModule {}

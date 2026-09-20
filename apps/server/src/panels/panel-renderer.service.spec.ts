@@ -66,8 +66,8 @@ describe('PanelRendererService', () => {
     };
 
     const res = await service.render(panel, mockGuild as any);
-    expect(res.embeds[0].data.description).toContain('🥇 <@user-1> — `100 pesan`');
-    expect(res.embeds[0].data.description).toContain('🥈 <@user-2> — `50 pesan`');
+    expect(res.embeds[0].data.description).toContain('🥇 **Andi User** (<@user-1>) — `100 pesan`');
+    expect(res.embeds[0].data.description).toContain('🥈 **Budi User** (<@user-2>) — `50 pesan`');
     expect(mockLeaderboard.getChatLeaderboard).toHaveBeenCalledWith('guild-1', '7', 10);
   });
 
@@ -84,7 +84,7 @@ describe('PanelRendererService', () => {
     };
 
     const res = await service.render(panel, mockGuild as any);
-    expect(res.embeds[0].data.description).toContain('🥇 <@user-1> — `1h 0m`');
+    expect(res.embeds[0].data.description).toContain('🥇 **Andi User** (<@user-1>) — `1h 0m`');
     expect(mockLeaderboard.getVoiceLeaderboard).toHaveBeenCalledWith('guild-1', '7', 10);
   });
 });

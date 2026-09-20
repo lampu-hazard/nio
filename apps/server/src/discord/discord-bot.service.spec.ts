@@ -9,8 +9,8 @@ const makeService = (overrides: any = {}) => {
       guildSettings: { findUnique: jest.fn(async () => ({ messageDeleteLogChannelId: null })) },
       discordMessageLog: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     },
-    logCreate: jest.fn(),
-    logDelete: jest.fn(),
+    logCreate: jest.fn<any>(async () => ({})),
+    logDelete: jest.fn<any>(async () => ({})),
   };
 
   const rustAnalytics = overrides.rustAnalytics || {
@@ -35,6 +35,9 @@ const makeService = (overrides: any = {}) => {
       { saveConversation: jest.fn() } as any,
       rustAnalytics as any,
       { } as any,
+      { sync: jest.fn() } as any,
+      { dispatchMessage: jest.fn() } as any,
+      { handleReaction: jest.fn(), handleMessageDelete: jest.fn() } as any,
     ),
     messageLogs,
     rustAnalytics,
@@ -79,7 +82,7 @@ describe('DiscordBotService deleted message logs', () => {
   it('sends cached media files to the Discord delete log channel', async () => {
     const deletedBytes = Buffer.from('deleted image');
     const cachedFileName = path.join('guild-1', 'msg-1', 'att-1-photo.png');
-    const send = jest.fn(async () => ({}));
+    const send = jest.fn<any>(async () => ({}));
     const cachePath = path.resolve(process.cwd(), '.tmp/delete-log-media', cachedFileName);
     await fs.rm(path.dirname(path.dirname(cachePath)), { recursive: true, force: true });
     const messageLogs = {
@@ -99,8 +102,8 @@ describe('DiscordBotService deleted message logs', () => {
           updateMany: jest.fn(),
         },
       },
-      logCreate: jest.fn(),
-      logDelete: jest.fn(),
+      logCreate: jest.fn<any>(async () => ({})),
+      logDelete: jest.fn<any>(async () => ({})),
     };
     const { service } = makeService({ messageLogs });
     await (service as any).writeDeleteLogMedia(cachedFileName, deletedBytes);

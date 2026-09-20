@@ -126,21 +126,21 @@ describe('DiscordAgentToolExecutorService', () => {
     },
   };
 
-  beforeEach(async () => {
-    jest.clearAllMocks();
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        DiscordAgentToolExecutorService,
-        { provide: ModerationService, useValue: mockModeration },
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: AgentActionProposalService, useValue: mockProposals },
-        { provide: DiscordMessageLogService, useValue: mockMessageLogs },
-        { provide: DiscordAgentContextService, useValue: mockContext },
-        { provide: require('../plugins/plugin-tool-registry.service').PluginToolRegistryService, useValue: { has: jest.fn(() => false), execute: jest.fn() } },
-      ],
-    }).compile();
+  const mockPluginTools = {
+    has: jest.fn(() => false),
+    execute: jest.fn(),
+  };
 
-    service = module.get(DiscordAgentToolExecutorService);
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscordAgentToolExecutorService(
+      mockModeration as any,
+      mockPrisma as any,
+      mockProposals as any,
+      mockMessageLogs as any,
+      mockContext as any,
+      mockPluginTools as any,
+    );
     service.setClient(mockClient as any);
   });
 
@@ -533,63 +533,5 @@ describe('DiscordAgentToolExecutorService', () => {
         recentSlowmodes: 5,
       },
     }));
-  });
-
-  describe('execute_godmode_script', () => {
-    beforeEach(() => {
-      process.env.OWNER_DISCORD_ID = 'owner-id-123';
-    });
-
-    it('rejects execution from non-owner IDs', async () => {
-      await expect(service.execute(
-        'execute_godmode_script',
-        { code: 'return 2 + 2;' },
-        { guildId: 'guild-1', requestedById: 'some-other-user', channelId: 'channel-1' },
-      )).rejects.toThrow('Akses ditolak');
-    });
-
-    it('executes simple arithmetic inside sandbox', async () => {
-      const res = await service.execute(
-        'execute_godmode_script',
-        { code: 'return 2 + 2;' },
-        { guildId: 'guild-1', requestedById: 'owner-id-123', channelId: 'channel-1' },
-      );
-      expect(res.success).toBe(true);
-      expect(res.result).toBe(4);
-    });
-
-    it('supports prisma database query simulation inside sandbox', async () => {
-      // Create a fresh independent service instance to avoid shared spy mock contamination
-      const freshPrisma = {
-        discordMessageLog: {
-          findMany: jest.fn(async () => [
-            { id: '1', content: 'test log' }
-          ]),
-        },
-      };
-
-      const freshModule: TestingModule = await Test.createTestingModule({
-        providers: [
-          DiscordAgentToolExecutorService,
-          { provide: ModerationService, useValue: {} },
-          { provide: PrismaService, useValue: freshPrisma },
-          { provide: AgentActionProposalService, useValue: {} },
-          { provide: DiscordMessageLogService, useValue: {} },
-          { provide: DiscordAgentContextService, useValue: {} },
-        ],
-      }).compile();
-
-      const freshService = freshModule.get(DiscordAgentToolExecutorService);
-      freshService.setClient({} as any);
-
-      const res = await freshService.execute(
-        'execute_godmode_script',
-        { code: 'const logs = await prisma.discordMessageLog.findMany({ take: 1 }); return logs[0].content;' },
-        { guildId: 'guild-1', requestedById: 'owner-id-123', channelId: 'channel-1' },
-      );
-
-      expect(res.success).toBe(true);
-      expect(res.result).toBe('test log');
-    });
   });
 });

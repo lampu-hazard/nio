@@ -1,9 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException, Inject, Optional, forwardRef } from '@nestjs/common';
 import { ChannelType, Client, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { StickersService } from '../stickers/stickers.service';
 import { CreateAgentActionProposalInput, AgentActionType, AgentSettingsUpdate } from './agent-action.types';
+import { McpToolService } from './mcp-tool.service';
 
 const PROPOSAL_TTL_MS = 10 * 60 * 1000;
 const MAX_TIMEOUT_MINUTES = 1440;
@@ -62,6 +63,9 @@ export class AgentActionProposalService {
     private readonly moderation: ModerationService,
     @Inject(forwardRef(() => StickersService))
     private readonly stickers: StickersService,
+    @Optional()
+    @Inject(forwardRef(() => McpToolService))
+    private readonly mcpToolService?: McpToolService,
   ) {}
 
   setClient(client: Client) {
@@ -177,6 +181,12 @@ export class AgentActionProposalService {
       }
     }
 
+    if (input.recommendation.type === 'MCP_TOOL_CALL') {
+      payload.mcpServer = this.requireString(input.recommendation.mcpServer, 'mcpServer');
+      payload.mcpTool = this.requireString(input.recommendation.mcpTool, 'mcpTool');
+      payload.mcpArguments = input.recommendation.mcpArguments || {};
+    }
+
     if (DISCORD_OP_ACTIONS.has(input.recommendation.type)) {
       Object.assign(payload, this.normalizeDiscordOperationPayload(input.recommendation, input.channelId));
     }
@@ -220,10 +230,31 @@ export class AgentActionProposalService {
       throw new BadRequestException('Proposal has expired.');
     }
 
-    const guild = await this.client.guilds.fetch(proposal.guildId);
-    const approver = await guild.members.fetch(userId);
     const actionType = proposal.actionType as AgentActionType;
     const payload = proposal.payload as any;
+
+    if (actionType === 'MCP_TOOL_CALL') {
+      const ownerId = process.env.OWNER_DISCORD_ID?.trim();
+      if (!ownerId || userId !== ownerId) {
+        throw new ForbiddenException('Only the bot owner can approve external MCP tool calls.');
+      }
+      if (!this.mcpToolService) {
+        throw new ServiceUnavailableException('MCP tool service is not available.');
+      }
+      await this.prisma.agentActionProposal.update({ where: { id: proposalId }, data: { status: 'APPROVED' } });
+      try {
+        const publicName = `mcp__${payload.mcpServer}__${payload.mcpTool}`;
+        const mcpResult = await this.mcpToolService.execute(publicName, payload.mcpArguments || {});
+        await this.prisma.agentActionProposal.update({ where: { id: proposalId }, data: { status: 'EXECUTED' } });
+        return { ok: true, message: `MCP tool call '${payload.mcpServer}__${payload.mcpTool}' executed successfully.`, result: mcpResult };
+      } catch (err: any) {
+        await this.prisma.agentActionProposal.update({ where: { id: proposalId }, data: { status: 'FAILED' } });
+        throw err;
+      }
+    }
+
+    const guild = await this.client.guilds.fetch(proposal.guildId);
+    const approver = await guild.members.fetch(userId);
     const targetRequired = ['WARN', 'TIMEOUT', 'KICK', 'ADD_ROLE', 'REMOVE_ROLE', 'REMOVE_TIMEOUT', 'SNAPSHOT_MEMBER_ROLES', 'RESTORE_MEMBER_ROLES', 'QUARANTINE_MEMBER', 'MOVE_MEMBER_VOICE', 'DISCONNECT_MEMBER_VOICE'].includes(actionType);
     const target = proposal.targetUserId ? await guild.members.fetch(proposal.targetUserId).catch(() => null) : null;
 

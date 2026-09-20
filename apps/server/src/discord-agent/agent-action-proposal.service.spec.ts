@@ -29,18 +29,13 @@ describe('AgentActionProposalService', () => {
 
   let service: AgentActionProposalService;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AgentActionProposalService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: ModerationService, useValue: mockModeration },
-        { provide: StickersService, useValue: mockStickers },
-      ],
-    }).compile();
-
-    service = module.get(AgentActionProposalService);
+    service = new AgentActionProposalService(
+      mockPrisma as any,
+      mockModeration as any,
+      mockStickers as any,
+    );
   });
 
   it('creates a pending proposal with a 10 minute expiry', async () => {
@@ -269,6 +264,48 @@ describe('AgentActionProposalService', () => {
     expect(data.payload.stickerAction).toBe('ADD');
     expect(data.payload.stickerName).toBe('cool');
     expect(data.payload.stickerUrl).toBe('https://example.com/cool.png');
+  });
+
+  it('normalizes MCP tool call proposals', async () => {
+    await service.createProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      targetUserId: null,
+      recommendation: {
+        type: 'MCP_TOOL_CALL',
+        reason: 'execute deploy',
+        mcpServer: 'deploy-srv',
+        mcpTool: 'deploy_app',
+        mcpArguments: { branch: 'main' },
+      },
+    });
+
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('MCP_TOOL_CALL');
+    expect(data.payload.mcpServer).toBe('deploy-srv');
+    expect(data.payload.mcpTool).toBe('deploy_app');
+    expect(data.payload.mcpArguments).toEqual({ branch: 'main' });
+  });
+
+  it('rejects MCP tool call approval if approver is not bot owner', async () => {
+    process.env.OWNER_DISCORD_ID = 'owner-123';
+    mockPrisma.agentActionProposal.findUnique.mockResolvedValue({
+      id: 'proposal-mcp',
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      status: 'PENDING',
+      actionType: 'MCP_TOOL_CALL',
+      payload: { mcpServer: 'srv', mcpTool: 'tool' },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    service.setClient({ guilds: { fetch: jest.fn() } } as any);
+
+    await expect(service.approveAndExecute('proposal-mcp', 'not-owner')).rejects.toThrow(
+      'Only the bot owner can approve external MCP tool calls.',
+    );
   });
 
   it('cancels a pending proposal requested by the same user', async () => {

@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
+import { BadRequestException } from '@nestjs/common';
 import { GuildsService } from './guilds.service';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
 import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
+import { HallOfFameService } from '../discord/hall-of-fame.service';
 import { StickersService } from '../stickers/stickers.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
@@ -14,6 +16,7 @@ describe('GuildsService', () => {
   let stickers: any;
   let slowmode: any;
   let anomaly: any;
+  let hallOfFame: any;
 
   beforeEach(() => {
     bot = {
@@ -46,12 +49,17 @@ describe('GuildsService', () => {
       updateGuildCache: jest.fn(),
     };
 
+    hallOfFame = {
+      validateChannel: jest.fn(),
+    };
+
     service = new GuildsService(
       bot as unknown as DiscordBotService,
       prisma as unknown as PrismaService,
       stickers as unknown as StickersService,
       slowmode as unknown as DiscordSlowmodeService,
       anomaly as unknown as DiscordAnomalyService,
+      hallOfFame as unknown as HallOfFameService,
     );
   });
 
@@ -68,6 +76,9 @@ describe('GuildsService', () => {
         logChannelId: null,
         messageDeleteLogChannelId: null,
         stickerEnabled: false,
+        hallOfFameEnabled: false,
+        hallOfFameChannelId: null,
+        hallOfFameThreshold: 3,
         slowmodeEnabled: false,
         slowmodeChannels: [],
         slowmodeIntervalQuiet: 0,
@@ -88,6 +99,9 @@ describe('GuildsService', () => {
         logChannelId: 'channel-1',
         messageDeleteLogChannelId: 'channel-del-1',
         stickerEnabled: true,
+        hallOfFameEnabled: true,
+        hallOfFameChannelId: 'channel-hof',
+        hallOfFameThreshold: 5,
         slowmodeEnabled: true,
         slowmodeChannels: ['channel-2'],
         slowmodeIntervalQuiet: 15,
@@ -111,6 +125,9 @@ describe('GuildsService', () => {
         logChannelId: 'channel-1',
         messageDeleteLogChannelId: 'channel-del-1',
         stickerEnabled: true,
+        hallOfFameEnabled: true,
+        hallOfFameChannelId: 'channel-hof',
+        hallOfFameThreshold: 5,
         slowmodeEnabled: true,
         slowmodeChannels: ['channel-2'],
         slowmodeIntervalQuiet: 15,
@@ -185,6 +202,9 @@ describe('GuildsService', () => {
           logChannelId: undefined,
           messageDeleteLogChannelId: undefined,
           stickerEnabled: undefined,
+          hallOfFameEnabled: undefined,
+          hallOfFameChannelId: undefined,
+          hallOfFameThreshold: undefined,
           slowmodeEnabled: true,
           slowmodeChannels: ['channel-3'],
           slowmodeIntervalQuiet: 20,
@@ -202,6 +222,9 @@ describe('GuildsService', () => {
           logChannelId: null,
           messageDeleteLogChannelId: null,
           stickerEnabled: false,
+          hallOfFameEnabled: false,
+          hallOfFameChannelId: null,
+          hallOfFameThreshold: 3,
           slowmodeEnabled: true,
           slowmodeChannels: ['channel-3'],
           slowmodeIntervalQuiet: 20,
@@ -267,6 +290,9 @@ describe('GuildsService', () => {
           logChannelId: undefined,
           messageDeleteLogChannelId: undefined,
           stickerEnabled: true,
+          hallOfFameEnabled: undefined,
+          hallOfFameChannelId: undefined,
+          hallOfFameThreshold: undefined,
           slowmodeEnabled: undefined,
           slowmodeChannels: undefined,
           slowmodeIntervalQuiet: undefined,
@@ -284,6 +310,9 @@ describe('GuildsService', () => {
           logChannelId: null,
           messageDeleteLogChannelId: null,
           stickerEnabled: true,
+          hallOfFameEnabled: false,
+          hallOfFameChannelId: null,
+          hallOfFameThreshold: 3,
           slowmodeEnabled: false,
           slowmodeChannels: [],
           slowmodeIntervalQuiet: 0,
@@ -314,6 +343,57 @@ describe('GuildsService', () => {
         guildBaselineEnabled: true,
         enforcementMode: 'AUDIT_ONLY',
       });
+    });
+
+    it('throws BadRequestException if enabling Hall of Fame without channel ID', async () => {
+      prisma.guildSettings.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateSettings('guild-1', { hallOfFameEnabled: true }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('validates channel and updates Hall of Fame settings when channel ID is provided', async () => {
+      prisma.guildSettings.findUnique.mockResolvedValue(null);
+      const mockUpdated = {
+        guildId: 'guild-1',
+        logChannelId: null,
+        messageDeleteLogChannelId: null,
+        stickerEnabled: false,
+        hallOfFameEnabled: true,
+        hallOfFameChannelId: 'channel-hof',
+        hallOfFameThreshold: 5,
+        slowmodeEnabled: false,
+        slowmodeChannels: [],
+        slowmodeIntervalQuiet: 0,
+        slowmodeIntervalNormal: 5,
+        slowmodeIntervalBusy: 10,
+        anomalyEnabled: false,
+        phishingDetectionEnabled: true,
+        contentAnomalyEnabled: true,
+        userAnomalyEnabled: true,
+        guildBaselineEnabled: true,
+        anomalyEnforcementMode: 'AUDIT_ONLY',
+      };
+      prisma.guildSettings.upsert.mockResolvedValue(mockUpdated);
+
+      const result = await service.updateSettings('guild-1', {
+        hallOfFameEnabled: true,
+        hallOfFameChannelId: 'channel-hof',
+        hallOfFameThreshold: 5,
+      });
+
+      expect(hallOfFame.validateChannel).toHaveBeenCalledWith('guild-1', 'channel-hof');
+      expect(prisma.guildSettings.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            hallOfFameEnabled: true,
+            hallOfFameChannelId: 'channel-hof',
+            hallOfFameThreshold: 5,
+          }),
+        }),
+      );
+      expect(result).toEqual(mockUpdated);
     });
   });
 

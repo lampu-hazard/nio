@@ -15,6 +15,7 @@ import { DiscordAnomalyService } from './discord-anomaly.service';
 import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
 import { RustAnalyticsClientService } from './rust-analytics-client.service';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
+import { HallOfFameService } from './hall-of-fame.service';
 
 @Module({
   imports: [SelfRolesModule, StickersModule, ModerationModule, BoosterRoleModule, TakoModule, DiscordAgentModule, EmbedTemplateModule],
@@ -28,6 +29,7 @@ import { DiscordVoiceConnectionService } from './discord-voice-connection.servic
     DiscordAnomalyService,
     RustAnalyticsClientService,
     DiscordVoiceConnectionService,
+    HallOfFameService,
   ],
   exports: [
     DiscordBotService,
@@ -38,6 +40,7 @@ import { DiscordVoiceConnectionService } from './discord-voice-connection.servic
     DiscordAnomalyService,
     RustAnalyticsClientService,
     DiscordVoiceConnectionService,
+    HallOfFameService,
   ],
 })
 export class DiscordModule {}

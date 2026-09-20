@@ -768,11 +768,11 @@ const RAW_AGENT_TOOLS = [
   },
   {
     name: 'web_search',
-    description: 'Search the public web for real-time information, documentation, news, or technical references with zero-config fallback. Read-only; executed immediately.',
+    description: 'Search the live public web for real-time news, current events, documentation, or technical references with zero-config fallback. Read-only; executed immediately. Use this whenever the user asks about current events, recent news, or external knowledge.',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Search query string.' },
+        query: { type: 'string', description: 'Search query keywords.' },
         limit: { type: 'integer', description: 'Maximum number of search results to return (1-10, defaults to 5).' },
       },
       required: ['query'],

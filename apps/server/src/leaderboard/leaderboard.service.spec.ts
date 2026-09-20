@@ -69,17 +69,12 @@ describe('LeaderboardService', () => {
     },
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        LeaderboardService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: DiscordBotService, useValue: mockDiscordBot },
-      ],
-    }).compile();
-
-    service = module.get<LeaderboardService>(LeaderboardService);
+    service = new LeaderboardService(
+      mockPrisma as unknown as PrismaService,
+      mockDiscordBot as unknown as DiscordBotService,
+    );
   });
 
   it('generates chat leaderboard resolving usernames with fallback logic', async () => {

@@ -512,4 +512,29 @@ describe('DiscordAgentService loop', () => {
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
     // On the 3rd call, repetition is detected and loop terminates
   });
+
+  describe('getProvider', () => {
+    it('returns OpenAiProvider when provider is openai or openai-compatible', () => {
+      const getProvider = (service as any).getProvider.bind(service);
+      const openaiProvider = getProvider('openai', 'gpt-4o');
+      expect(openaiProvider.constructor.name).toBe('OpenAiProvider');
+
+      const compatibleProvider = getProvider('openai-compatible', 'custom-model');
+      expect(compatibleProvider.constructor.name).toBe('OpenAiProvider');
+
+      const groqProvider = getProvider('groq', 'llama-3.3-70b-versatile');
+      expect(groqProvider.constructor.name).toBe('OpenAiProvider');
+    });
+
+    it('returns GeminiProvider when provider is gemini', () => {
+      const getProvider = (service as any).getProvider.bind(service);
+      const geminiProvider = getProvider('gemini', 'gemini-2.5-flash');
+      expect(geminiProvider.constructor.name).toBe('GeminiProvider');
+    });
+
+    it('throws when provider is unknown', () => {
+      const getProvider = (service as any).getProvider.bind(service);
+      expect(() => getProvider('unknown-ai', 'model-x')).toThrow('Unsupported AI provider: unknown-ai');
+    });
+  });
 });

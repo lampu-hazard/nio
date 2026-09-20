@@ -48,17 +48,13 @@ describe('DiscordAgentContextService', () => {
     },
   };
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        DiscordAgentContextService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: ModerationService, useValue: mockModeration },
-        { provide: DiscordMessageLogService, useValue: mockMessageLog },
-      ],
-    }).compile();
-
-    service = module.get<DiscordAgentContextService>(DiscordAgentContextService);
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscordAgentContextService(
+      mockPrisma as unknown as PrismaService,
+      mockModeration as unknown as ModerationService,
+      mockMessageLog as unknown as DiscordMessageLogService,
+    );
     service.setClient(mockClient as any);
   });
 

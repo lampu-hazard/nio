@@ -19,17 +19,10 @@ describe('DiscordMessageLogService', () => {
     },
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        DiscordMessageLogService,
-        { provide: PrismaService, useValue: mockPrisma },
-      ],
-    }).compile();
-
-    service = module.get<DiscordMessageLogService>(DiscordMessageLogService);
-    prisma = module.get<PrismaService>(PrismaService);
+    prisma = mockPrisma as unknown as PrismaService;
+    service = new DiscordMessageLogService(prisma);
   });
 
   it('creates or updates a message log when the agent is enabled', async () => {

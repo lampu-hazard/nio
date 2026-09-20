@@ -16,6 +16,7 @@ import { DiscordAgentModule } from './discord-agent/discord-agent.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { EmbedTemplateModule } from './embed-templates/embed-template.module';
 import { PluginsModule } from './plugins/plugins.module';
+import { SentinelModule } from './sentinel/sentinel.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PluginsModule } from './plugins/plugins.module';
     LoggerModule,
     PrismaModule,
     R2Module,
+    SentinelModule,
     AuthModule,
     DiscordModule,
     GuildsModule,

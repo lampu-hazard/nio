@@ -1,4 +1,5 @@
 export type AgentActionType =
+  | 'BATCH'
   | 'WARN' | 'TIMEOUT' | 'UPDATE_SETTINGS' | 'KICK' | 'BAN' | 'PURGE'
   | 'ADD_ROLE' | 'REMOVE_ROLE' | 'REMOVE_TIMEOUT' | 'REVOKE_WARNING'
   | 'LOCKDOWN' | 'UNLOCK' | 'SET_SLOWMODE' | 'SEND_ANNOUNCEMENT'
@@ -100,6 +101,7 @@ export type AgentActionRecommendation = {
   mcpServer?: string;
   mcpTool?: string;
   mcpArguments?: Record<string, unknown>;
+  proposalIds?: string[];
 };
 
 export type CreateAgentActionProposalInput = {

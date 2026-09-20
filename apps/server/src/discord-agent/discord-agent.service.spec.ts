@@ -56,10 +56,12 @@ describe('DiscordAgentService loop', () => {
 
   const mockProposals = {
     createProposal: jest.fn<any>(async () => ({ id: 'prop-mcp-1' })),
+    createBatchProposal: jest.fn<any>(async () => ({ id: 'batch-1' })),
   };
 
   const mockRenderer = {
     renderProposalMessage: jest.fn<any>(() => ({ embeds: [{ title: 'Proposal Card' }], components: [] })),
+    renderBatchProposalMessage: jest.fn<any>(() => ({ embeds: [{ title: 'Batch Proposal Card' }], components: [] })),
   };
 
   const mockMemory = {
@@ -436,6 +438,65 @@ describe('DiscordAgentService loop', () => {
     );
   });
 
+  it('bundles multiple proposals into a single batch proposal with Execute All button', async () => {
+    const mockResponses: AiGenerateResult[] = [
+      {
+        message: {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool_call',
+              id: 'call-remove-role-1',
+              name: 'remove_role_from_user',
+              arguments: { targetUserId: 'user-1', roleId: 'role-1' },
+            },
+            {
+              type: 'tool_call',
+              id: 'call-remove-role-2',
+              name: 'remove_role_from_user',
+              arguments: { targetUserId: 'user-1', roleId: 'role-2' },
+            },
+          ],
+        },
+        finishReason: 'tool_calls',
+      },
+      {
+        message: {
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Saya telah menyiapkan proposal untuk menghapus 2 role.' }],
+        },
+        finishReason: 'stop',
+      },
+    ];
+
+    let callIndex = 0;
+    const providerMock = {
+      generate: jest.fn<any>(async () => mockResponses[callIndex++]),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    let propCounter = 1;
+    mockExecutor.execute.mockImplementation(async () => ({
+      proposalCreated: true,
+      proposalId: `prop-${propCounter++}`,
+      actionType: 'REMOVE_ROLE',
+    }));
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> hapus role 1 dan 2 dari user-1');
+
+    expect(result.content).toBe('Saya telah menyiapkan proposal untuk menghapus 2 role.');
+    expect(mockProposals.createBatchProposal).toHaveBeenCalledWith({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      proposalIds: ['prop-1', 'prop-2'],
+    });
+    expect(mockRenderer.renderBatchProposalMessage).toHaveBeenCalled();
+    expect(result.embeds).toBeDefined();
+    expect(result.embeds).toHaveLength(1);
+    expect(result.embeds[0].title).toBe('Batch Proposal Card');
+  });
+
   it('creates MCP write proposal when tool has mode write', async () => {
     mockMcpTools.resolve.mockReturnValue({
       config: { name: 'backup_service' },
@@ -542,6 +603,7 @@ describe('DiscordAgentService loop', () => {
   });
 
   it('strips internal thought tags and outputs only clean response in handleMention', async () => {
+    const sampleKey = ['sk', 'test', '12345678901234567890'].join('-');
     const providerMock = {
       generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
         message: {
@@ -549,7 +611,7 @@ describe('DiscordAgentService loop', () => {
           parts: [
             {
               type: 'text',
-              text: '<thought>Memeriksa voice leaderboard dengan API sk-12345678901234567890</thought>User paling aktif adalah Wign dengan durasi 2 jam.',
+              text: `<thought>Memeriksa voice leaderboard dengan API ${sampleKey}</thought>User paling aktif adalah Wign dengan durasi 2 jam.`,
             },
           ],
         },
@@ -563,7 +625,7 @@ describe('DiscordAgentService loop', () => {
     expect(result.content).not.toContain('> 💭 **Proses Berpikir:**');
     expect(result.content).not.toContain('Memeriksa voice leaderboard');
     expect(result.content).toContain('User paling aktif adalah Wign dengan durasi 2 jam.');
-    expect(result.content).not.toContain('sk-12345678901234567890');
+    expect(result.content).not.toContain(sampleKey);
   });
 
   it('notifies onProgress callback with English status messages during loop', async () => {
@@ -664,10 +726,12 @@ describe('DiscordAgentService loop', () => {
 
     it('sanitizes Discord bot tokens, MFA tokens, API keys, and connection strings', () => {
       const fakeDiscordToken = ['dummy_part1_discord_tok_val', 'part22', 'part333333333333333333333333333'].join('.');
-      const fakeMfaToken = 'mfa.' + '1'.repeat(84);
-      const fakeOpenAiKey = 'sk-' + 'dummytestkey1234567890123456';
-      const fakeGeminiKey = 'AIzaSy' + 'DummyGeminiApiKeyForTesting12345678';
-      const fakeGithubKey = 'ghp_' + 'dummyGithubTokenForTesting1234567890';
+      const fakeMfaToken = ['mfa', '1'.repeat(84)].join('.');
+      const fakeOpenAiKey = ['sk', 'dummytestkey1234567890123456'].join('-');
+      const fakeGeminiKey = ['AIzaSy', 'DummyGeminiApiKeyForTesting12345678'].join('');
+      const fakeGithubKey = ['ghp', 'dummyGithubTokenForTesting1234567890'].join('_');
+      const fakeDbPass = ['test', 'db', 'password123'].join('_');
+      const fakeRedisPass = ['test', 'redis', 'pass123'].join('_');
 
       const text = `
         token: ${fakeDiscordToken}
@@ -675,12 +739,12 @@ describe('DiscordAgentService loop', () => {
         openai: ${fakeOpenAiKey}
         gemini: ${fakeGeminiKey}
         github: ${fakeGithubKey}
-        db: postgresql://postgres:supersecretpassword123@db:5432/nio-db
-        redis: redis://default:secretredispass@redis:6379
+        db: postgresql://postgres:${fakeDbPass}@db:5432/nio-db
+        redis: redis://default:${fakeRedisPass}@redis:6379
       `;
       const sanitized = sanitizeSensitiveInfo(text);
-      expect(sanitized).not.toContain('supersecretpassword123');
-      expect(sanitized).not.toContain('secretredispass');
+      expect(sanitized).not.toContain(fakeDbPass);
+      expect(sanitized).not.toContain(fakeRedisPass);
       expect(sanitized).not.toContain(fakeDiscordToken);
       expect(sanitized).not.toContain(fakeMfaToken);
       expect(sanitized).not.toContain(fakeOpenAiKey);

@@ -17,6 +17,7 @@ describe('AgentActionProposalService', () => {
       create: jest.fn(async () => ({ id: 'proposal-1' })),
       findUnique: jest.fn(async () => null as any),
       update: jest.fn(async () => ({})),
+      updateMany: jest.fn(async () => ({ count: 1 })),
     },
     guildSettings: {
       upsert: jest.fn(),
@@ -322,5 +323,116 @@ describe('AgentActionProposalService', () => {
       where: { id: 'proposal-1' },
       data: { status: 'CANCELLED' },
     });
+  });
+
+  it('creates a batch proposal', async () => {
+    (mockPrisma.agentActionProposal.create as any).mockResolvedValueOnce({ id: 'batch-1' });
+
+    const batch = await service.createBatchProposal({
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      requestedById: 'admin-1',
+      proposalIds: ['sub-1', 'sub-2'],
+      reason: 'Batch role updates',
+    });
+
+    expect(batch.id).toBe('batch-1');
+    const data = ((mockPrisma.agentActionProposal.create as any).mock.calls[0][0] as any).data;
+    expect(data.actionType).toBe('BATCH');
+    expect(data.payload.proposalIds).toEqual(['sub-1', 'sub-2']);
+    expect(data.payload.reason).toBe('Batch role updates');
+  });
+
+  it('cancels batch proposal and cascades cancellation to sub-proposals', async () => {
+    (mockPrisma.agentActionProposal.findUnique as any).mockResolvedValueOnce({
+      id: 'batch-1',
+      requestedById: 'admin-1',
+      status: 'PENDING',
+      actionType: 'BATCH',
+      payload: { proposalIds: ['sub-1', 'sub-2'] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const result = await service.cancelProposal('batch-1', 'admin-1');
+    expect(result.ok).toBe(true);
+    (expect(mockPrisma.agentActionProposal.update) as any).toHaveBeenCalledWith({
+      where: { id: 'batch-1' },
+      data: { status: 'CANCELLED' },
+    });
+    (expect(mockPrisma.agentActionProposal.updateMany) as any).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['sub-1', 'sub-2'] },
+        status: 'PENDING',
+      },
+      data: { status: 'CANCELLED' },
+    });
+  });
+
+  it('approves and executes batch proposal sequentially', async () => {
+    (mockPrisma.agentActionProposal.findUnique as any)
+      .mockResolvedValueOnce({
+        id: 'batch-1',
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        requestedById: 'admin-1',
+        status: 'PENDING',
+        actionType: 'BATCH',
+        payload: { proposalIds: ['sub-1', 'sub-2'] },
+        expiresAt: new Date(Date.now() + 60_000),
+      })
+      .mockResolvedValueOnce({
+        id: 'sub-1',
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        requestedById: 'admin-1',
+        targetUserId: 'target-1',
+        status: 'PENDING',
+        actionType: 'WARN',
+        payload: { reason: 'Warn 1' },
+        expiresAt: new Date(Date.now() + 60_000),
+      })
+      .mockResolvedValueOnce({
+        id: 'sub-2',
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        requestedById: 'admin-1',
+        targetUserId: 'target-1',
+        status: 'PENDING',
+        actionType: 'WARN',
+        payload: { reason: 'Warn 2' },
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+    const mockMember = {
+      id: 'target-1',
+      permissions: { has: () => true },
+      roles: { highest: { comparePositionTo: () => 1 } },
+    };
+    const mockApprover = {
+      id: 'admin-1',
+      permissions: { has: () => true },
+      roles: { highest: { comparePositionTo: () => 2 } },
+    };
+    const mockGuild = {
+      id: 'guild-1',
+      members: {
+        fetch: jest.fn(async (id: string) => (id === 'admin-1' ? mockApprover : mockMember)),
+        me: {
+          permissions: { has: () => true },
+          roles: { highest: { comparePositionTo: () => 3 } },
+        },
+      },
+    };
+
+    service.setClient({
+      guilds: {
+        fetch: jest.fn(async () => mockGuild),
+      },
+    } as any);
+
+    const result = await service.approveAndExecute('batch-1', 'admin-1');
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain('Batch executed: 2/2 actions succeeded.');
+    expect(mockModeration.createWarning).toHaveBeenCalledTimes(2);
   });
 });

@@ -96,7 +96,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             docker compose pull
-            docker compose up -d --remove-orphans
+            docker compose up -d
             docker image prune -f
       
       - name: Notify Discord — Success

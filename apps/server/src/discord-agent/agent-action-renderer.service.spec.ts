@@ -133,4 +133,48 @@ describe('AgentActionRendererService', () => {
     expect(payload.embeds[0].data.title).toBe('Action Executed');
     expect(payload.embeds[0].data.color).toBe(0x2ecc71);
   });
+
+  it('renders batch proposal message with single Execute All button', async () => {
+    const service = new AgentActionRendererService();
+
+    const payload = await service.renderBatchProposalMessage(
+      {
+        id: 'batch-1',
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      },
+      [
+        {
+          id: 'sub-1',
+          actionType: 'REMOVE_ROLE',
+          targetUserId: 'user-1',
+          payload: { roleId: 'role-1' },
+        },
+        {
+          id: 'sub-2',
+          actionType: 'REMOVE_ROLE',
+          targetUserId: 'user-1',
+          payload: { roleId: 'role-2' },
+        },
+        {
+          id: 'sub-3',
+          actionType: 'REMOVE_ROLE',
+          targetUserId: 'user-1',
+          payload: { roleId: 'role-3' },
+        },
+      ],
+    );
+
+    expect(payload.embeds).toHaveLength(1);
+    expect(payload.embeds[0].data.title).toBe('Batch Action Proposal (3 Actions)');
+    expect(payload.embeds[0].data.description).toContain('Total Actions: **3** actions pending approval.');
+    expect(payload.embeds[0].data.description).toContain('1. `REMOVE_ROLE`');
+    expect(payload.embeds[0].data.description).toContain('2. `REMOVE_ROLE`');
+    expect(payload.embeds[0].data.description).toContain('3. `REMOVE_ROLE`');
+    expect(payload.components).toHaveLength(1);
+    expect(payload.components[0].components).toHaveLength(2);
+    expect((payload.components[0].components[0].data as any).custom_id).toBe('agent:approve:batch-1');
+    expect((payload.components[0].components[0].data as any).label).toBe('Execute All (3)');
+    expect((payload.components[0].components[1].data as any).custom_id).toBe('agent:cancel:batch-1');
+    expect((payload.components[0].components[1].data as any).label).toBe('Dismiss All');
+  });
 });

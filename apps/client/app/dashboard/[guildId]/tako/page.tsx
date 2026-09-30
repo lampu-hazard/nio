@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
 type ChannelOption = { id: string; name: string };
 type RoleOption = { id: string; name: string; color: string; manageable: boolean };
@@ -266,20 +265,14 @@ export default function TakoDashboardPage({ params }: PageProps) {
   const webhookUrl = `${backendUrl}/guilds/${guildId}/tako/webhook`;
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Support & Donate</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Tako Role Rewards</h1>
-            <p className="mt-1 text-[var(--muted)]">Configure automatic role assignment for members supporting via Tako donations.</p>
-          </div>
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Configure automatic role assignment for members supporting via Tako donations.</p>
           <a href={`/dashboard/${guildId}/embed-templates`} className="btn btn-secondary w-fit px-4">
             Custom Embed Templates
           </a>
         </div>
-
-        <DashboardNav guildId={guildId} activeTab="tako" />
 
         {error && <div className="notice notice-error mb-6">{error}</div>}
         {success && <div className="notice notice-success mb-6">{success}</div>}

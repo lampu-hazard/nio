@@ -1,5 +1,4 @@
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
 type LeaderboardRow = {
   rank: number;
@@ -59,19 +58,14 @@ export default async function LeaderboardPage({
   const remaining = leaderboardData.filter((u) => u.rank > 3);
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Activity</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Leaderboard</h1>
-          <p className="mt-1 text-[var(--muted)]">View the most active members in chat and voice.</p>
-        </div>
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">View the most active members in chat and voice.</p>
 
-        <DashboardNav guildId={guildId} activeTab="leaderboard" />
-
-        {/* Filters */}
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex gap-2">
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-2">
             <a
               href={`?type=chat&days=${days}`}
               className={`btn px-4 py-2 rounded-md font-semibold ${
@@ -94,7 +88,7 @@ export default async function LeaderboardPage({
             </a>
           </div>
 
-          <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
             {[
               { id: '7', label: '7 Days' },
               { id: '30', label: '30 Days' },
@@ -112,6 +106,7 @@ export default async function LeaderboardPage({
                 {d.label}
               </a>
             ))}
+            </div>
           </div>
         </div>
 

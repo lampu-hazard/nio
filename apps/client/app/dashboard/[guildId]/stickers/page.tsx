@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 import type { Sticker } from '@/lib/types';
 
 type PageProps = {
@@ -119,15 +118,9 @@ export default function StickersPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Media</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Sticker Keywords</h1>
-          <p className="mt-1 text-[var(--muted)]">Send sticker images when users type specific keyword triggers.</p>
-        </div>
-
-        <DashboardNav guildId={guildId} activeTab="stickers" />
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Send sticker images when users type specific keyword triggers.</p>
         {error && <div className="notice notice-error mb-6">{error}</div>}
 
         {loading ? (

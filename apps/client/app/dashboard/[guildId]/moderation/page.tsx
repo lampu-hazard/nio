@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
 type DiscordProfile = {
   id: string;
@@ -142,15 +141,9 @@ export default function ModerationPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Security</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Warnings & Penalties</h1>
-          <p className="mt-1 text-[var(--muted)]">Manage server warnings, active points, auto-timeouts, and infraction logs.</p>
-        </div>
-
-        <DashboardNav guildId={guildId} activeTab="moderation" />
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Manage server warnings, active points, auto-timeouts, and infraction logs.</p>
 
         {error && <div className="notice notice-error mb-6">{error}</div>}
         {success && <div className="notice notice-success mb-6">{success}</div>}

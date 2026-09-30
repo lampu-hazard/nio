@@ -293,7 +293,7 @@ describe('OpenAiProvider with Tool Calling', () => {
         systemPrompt: '',
         messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
         tools: [],
-      })).rejects.toThrow('OPENAI_COMPATIBLE_INVALID_JSON');
+      })).rejects.toThrow('OPENAI_COMPATIBLE_HTML_RESPONSE');
 
       global.fetch = jest.fn(async () => ({ ok: true, text: async () => JSON.stringify({
         choices: [{ message: { tool_calls: [{ function: { name: 'get_user_warnings', arguments: '{bad' } }] } }],

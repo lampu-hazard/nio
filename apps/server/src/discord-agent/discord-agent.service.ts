@@ -185,9 +185,6 @@ export class DiscordAgentService {
       ? settings.allowedUserIds || []
       : (process.env.DISCORD_AGENT_ALLOWED_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean);
     if (!allowedUsers.includes('*') && !allowedUsers.includes(authorId)) return { allowed: false, reason: 'user-not-allowed', settings } as const;
-    if (settings?.allowedChannelIds?.length && !settings.allowedChannelIds.includes('*') && !settings.allowedChannelIds.includes(channelId)) {
-      return { allowed: false, reason: 'channel-not-allowed', settings } as const;
-    }
     if (settings?.excludedChannelIds?.includes('*') || settings?.excludedChannelIds?.includes(channelId)) {
       return { allowed: false, reason: 'channel-excluded', settings } as const;
     }

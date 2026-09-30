@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
   DiscordAgentService,
-  extractThoughtsAndContent,
   sanitizeSensitiveInfo,
   neutralizeMentions,
-  formatThoughtBlock,
   formatAgentResponse,
 } from './discord-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -97,6 +95,7 @@ describe('DiscordAgentService loop', () => {
       mockMemory as unknown as ConversationMemoryService,
       mockPluginTools as unknown as PluginToolRegistryService,
       mockMcpTools as unknown as McpToolService,
+      { start: jest.fn<any>(async () => ({ id: 'run-1' })), stage: jest.fn<any>(async () => undefined), evidence: jest.fn<any>(async () => undefined), proposal: jest.fn<any>(async () => undefined), finish: jest.fn<any>(async () => undefined) } as any,
     );
   });
 
@@ -602,7 +601,7 @@ describe('DiscordAgentService loop', () => {
     expect(result.content).toContain(`@${String.fromCharCode(8203)}here`);
   });
 
-  it('strips internal thought tags and outputs only clean response in handleMention', async () => {
+  it('does not return model-internal thought tags in handleMention', async () => {
     const sampleKey = ['sk', 'test', '12345678901234567890'].join('-');
     const providerMock = {
       generate: jest.fn<any>(async (): Promise<AiGenerateResult> => ({
@@ -622,7 +621,7 @@ describe('DiscordAgentService loop', () => {
 
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> siapa paling aktif di voice?');
 
-    expect(result.content).not.toContain('> 💭 **Proses Berpikir:**');
+    expect(result.content).not.toContain('<thought>');
     expect(result.content).not.toContain('Memeriksa voice leaderboard');
     expect(result.content).toContain('User paling aktif adalah Wign dengan durasi 2 jam.');
     expect(result.content).not.toContain(sampleKey);
@@ -679,9 +678,9 @@ describe('DiscordAgentService loop', () => {
     );
 
     expect(result.content).toBe('Leaderboard retrieved successfully.');
-    expect(progressCalls).toContain('💭 *Thinking...*');
-    expect(progressCalls).toContain('🔧 *Running tool: `get_voice_leaderboard`...*');
-    expect(progressCalls).toContain('💭 *Analyzing results...*');
+    expect(progressCalls).toContain('🧭 *Menyiapkan pemeriksaan...*');
+    expect(progressCalls).toContain('🔎 *Memeriksa sumber: `get_voice_leaderboard`...*');
+    expect(progressCalls).toContain('🧩 *Menyatukan temuan...*');
   });
 
   describe('getProvider', () => {
@@ -709,20 +708,7 @@ describe('DiscordAgentService loop', () => {
     });
   });
 
-  describe('Hermes thoughts and secret sanitization helpers', () => {
-    it('extracts thoughts from <thought> and <think> tags and cleans content', () => {
-      const raw = '<thought>Investigating user</thought>Halo dunia!\n<think>Next step</think>Semoga harimu menyenangkan.';
-      const { thoughts, cleanedContent } = extractThoughtsAndContent(raw);
-      expect(thoughts).toEqual(['Investigating user', 'Next step']);
-      expect(cleanedContent).toBe('Halo dunia!\nSemoga harimu menyenangkan.');
-    });
-
-    it('returns empty thoughts when no tags exist', () => {
-      const raw = 'Just plain response.';
-      const { thoughts, cleanedContent } = extractThoughtsAndContent(raw);
-      expect(thoughts).toEqual([]);
-      expect(cleanedContent).toBe('Just plain response.');
-    });
+  describe('response sanitization helpers', () => {
 
     it('sanitizes Discord bot tokens, MFA tokens, API keys, and connection strings', () => {
       const fakeDiscordToken = ['dummy_part1_discord_tok_val', 'part22', 'part333333333333333333333333333'].join('.');
@@ -776,27 +762,12 @@ describe('DiscordAgentService loop', () => {
       expect(neutralized).toBe(`Hello @${String.fromCharCode(8203)}everyone and @${String.fromCharCode(8203)}here!`);
     });
 
-    it('formats thought block with blockquotes and header', () => {
-      const thought = 'Step 1\nStep 2';
-      const formatted = formatThoughtBlock(thought);
-      expect(formatted).toBe('> 💭 **Proses Berpikir:**\n> Step 1\n> Step 2');
-    });
-
-    it('omits thoughts by default in formatAgentResponse', () => {
+    it('removes thought-tagged model text and truncates the public response', () => {
       const finalAnswer = 'Ini adalah jawaban final yang penting.';
-      const thought = 'Proses berpikir internal.';
-      const formatted = formatAgentResponse(finalAnswer, [thought]);
-      expect(formatted).toBe(finalAnswer);
-      expect(formatted).not.toContain('Proses Berpikir');
-    });
-
-    it('formats agent response and preserves final answer when thought exceeds budget if explicitly enabled', () => {
-      const finalAnswer = 'Ini adalah jawaban final yang penting.';
-      const giantThought = 'a'.repeat(2500);
-      const formatted = formatAgentResponse(finalAnswer, [giantThought], true);
+      const formatted = formatAgentResponse(`<think>internal</think>${finalAnswer}${'a'.repeat(2500)}`);
       expect(formatted).toContain(finalAnswer);
+      expect(formatted).not.toContain('internal');
       expect(formatted.length).toBeLessThanOrEqual(2000);
-      expect(formatted).toContain('*(dipersingkat...)*');
     });
   });
 });

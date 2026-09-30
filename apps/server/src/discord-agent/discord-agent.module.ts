@@ -12,6 +12,7 @@ import { AgentActionRendererService } from './agent-action-renderer.service';
 import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.service';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { McpToolService } from './mcp-tool.service';
+import { AgentRunService } from './agent-run.service';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { McpToolService } from './mcp-tool.service';
     DiscordAgentToolExecutorService,
     ConversationMemoryService,
     McpToolService,
+    AgentRunService,
   ],
   exports: [
     DiscordAgentService,
@@ -40,6 +42,7 @@ import { McpToolService } from './mcp-tool.service';
     DiscordAgentToolExecutorService,
     ConversationMemoryService,
     McpToolService,
+    AgentRunService,
   ],
 })
 export class DiscordAgentModule {}

@@ -17,6 +17,7 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { EmbedTemplateModule } from './embed-templates/embed-template.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { SentinelModule } from './sentinel/sentinel.module';
+import { OwnerModule } from './owner/owner.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SentinelModule } from './sentinel/sentinel.module';
     PrismaModule,
     R2Module,
     SentinelModule,
+    OwnerModule,
     AuthModule,
     DiscordModule,
     GuildsModule,

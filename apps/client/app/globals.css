@@ -2,21 +2,26 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #F4F4F5;
-  --bg-gradient: radial-gradient(circle at top left, #F8FAFC, #EEF2F6, #E0E7FF);
-  --panel: rgba(255, 255, 255, 0.76);
+  color-scheme: light;
+  --bg: #F5F7FB;
+  --bg-gradient: radial-gradient(circle at top left, #FBFCFE, #F2F5FA 58%, #E8EDFA);
+  --panel: rgba(255, 255, 255, 0.82);
   --panel-strong: #FFFFFF;
-  --border: rgba(226, 232, 240, 0.8);
+  --surface: #F8FAFC;
+  --surface-muted: #EEF2F7;
+  --border: #E5EAF2;
   --border-strong: #CBD5E1;
-  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.7);
 
-  --text: #0F172A;
+  --text: #172033;
+  --text-secondary: #475569;
+  --text-inverse: #FFFFFF;
   --muted: #64748B;
   --soft: #94A3B8;
 
   --brand: #4F46E5;
   --brand-2: #4338CA;
-  --ok: #4F46E5;
+  --ok: #15803D;
 
   --danger: #DC2626;
   --warning: #D97706;
@@ -28,23 +33,51 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #09090B;
-    --bg-gradient: radial-gradient(circle at top, #111827, #0B0F19, #030712);
-    --panel: rgba(17, 24, 39, 0.65);
-    --panel-strong: #09090B;
-    --border: rgba(31, 41, 55, 0.8);
-    --border-strong: #4B5563;
-    --glass-border: rgba(255, 255, 255, 0.06);
-
-    --text: #F9FAFB;
-    --muted: #9CA3AF;
-    --soft: #6B7280;
-
-    --brand: #6366F1;
-    --brand-2: #4F46E5;
-    --ok: #6366F1;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0B1020;
+    --bg-gradient: radial-gradient(circle at top left, #151D34, #0D1426 58%, #080D18);
+    --panel: rgba(19, 28, 48, 0.86);
+    --panel-strong: #111A2C;
+    --surface: #111A2C;
+    --surface-muted: #1B263B;
+    --border: #27334A;
+    --border-strong: #40506B;
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --text: #F1F5FB;
+    --text-secondary: #CBD5E1;
+    --text-inverse: #FFFFFF;
+    --muted: #9AA9BF;
+    --soft: #73839B;
+    --brand: #716CFF;
+    --brand-2: #5C57E8;
+    --ok: #4ADE80;
+    --danger: #F87171;
+    --warning: #FBBF24;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0B1020;
+  --bg-gradient: radial-gradient(circle at top left, #151D34, #0D1426 58%, #080D18);
+  --panel: rgba(19, 28, 48, 0.86);
+  --panel-strong: #111A2C;
+  --surface: #111A2C;
+  --surface-muted: #1B263B;
+  --border: #27334A;
+  --border-strong: #40506B;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --text: #F1F5FB;
+  --text-secondary: #CBD5E1;
+  --text-inverse: #FFFFFF;
+  --muted: #9AA9BF;
+  --soft: #73839B;
+  --brand: #716CFF;
+  --brand-2: #5C57E8;
+  --ok: #4ADE80;
+  --danger: #F87171;
+  --warning: #FBBF24;
 }
 
 * {

@@ -340,6 +340,36 @@ model DiscordAgentSettings {
   updatedAt            DateTime @updatedAt
 }
 
+model AgentRun {
+  id          String          @id @default(cuid())
+  guildId     String
+  channelId   String
+  userId      String
+  status      String          @default("PLANNING")
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+  events      AgentRunEvent[]
+
+  @@index([guildId, startedAt])
+  @@index([guildId, userId, startedAt])
+  @@index([status, startedAt])
+}
+
+model AgentRunEvent {
+  id        String   @id @default(cuid())
+  runId     String
+  sequence  Int
+  type      String
+  stage     String?
+  summary   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  run       AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sequence])
+  @@index([runId, createdAt])
+}
+
 model AgentInteractionLog {
   id           String   @id @default(cuid())
   guildId      String

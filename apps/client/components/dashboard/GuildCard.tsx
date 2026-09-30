@@ -2,7 +2,7 @@ import type { GuildSummary } from '@/lib/types';
 
 export function GuildCard({ guild }: { guild: GuildSummary }) {
   return (
-    <div className="card p-5 hover:border-[var(--border-strong)] transition-all">
+    <article className="card group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--brand)] hover:shadow-lg hover:shadow-indigo-950/5">
       <div className="flex items-center gap-4">
         {guild.iconUrl ? (
           <img src={guild.iconUrl} className="h-14 w-14 rounded-xl border border-[var(--border)] object-cover" alt="" />
@@ -26,6 +26,6 @@ export function GuildCard({ guild }: { guild: GuildSummary }) {
       >
         {guild.botInGuild ? 'Open Dashboard' : 'Invite Bot'}
       </a>
-    </div>
+    </article>
   );
 }

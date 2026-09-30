@@ -11,6 +11,7 @@ const guildLinks = [
   ['Plugins', (guildId: string) => `/dashboard/${guildId}/plugins`, false],
   ['Stickers', (guildId: string) => `/dashboard/${guildId}/stickers`, false],
   ['Moderation', (guildId: string) => `/dashboard/${guildId}/moderation`, false],
+  ['AI Agent', (guildId: string) => `/dashboard/${guildId}/ai-agent`, false],
   ['Booster Roles', (guildId: string) => `/dashboard/${guildId}/booster-roles`, false],
   ['Tako Rewards', (guildId: string) => `/dashboard/${guildId}/tako`, false],
   ['Embed Studio', (guildId: string) => `/dashboard/${guildId}/embed-templates`, false],

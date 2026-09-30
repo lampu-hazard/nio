@@ -82,8 +82,8 @@ export class AiAgentSettingsService {
   private validateBaseUrl(value: string) {
     let url: URL;
     try { url = new URL(value); } catch { throw new BadRequestException('Base URL must be a valid URL.'); }
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(url.hostname))) {
-      throw new BadRequestException('Base URL must use HTTPS (HTTP is allowed only for localhost).');
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new BadRequestException('Base URL must use HTTP or HTTPS.');
     }
     if (url.username || url.password || url.search || url.hash) throw new BadRequestException('Base URL cannot include credentials, query, or fragment.');
   }

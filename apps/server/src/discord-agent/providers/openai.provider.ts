@@ -39,6 +39,8 @@ export class OpenAiProvider implements AiProvider {
     const payload: Record<string, unknown> = {
       model: this.model,
       messages,
+      stream: true,
+      stream_options: { include_usage: true },
     };
 
     if (request.tools && request.tools.length > 0) {
@@ -48,6 +50,7 @@ export class OpenAiProvider implements AiProvider {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
     };
     if (this.apiKey) {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
@@ -62,6 +65,12 @@ export class OpenAiProvider implements AiProvider {
     if (!response.ok) {
       throw new Error(`OPENAI_HTTP_${response.status}: Provider request failed.`);
     }
+
+    const contentType = response.headers?.get('content-type') || '';
+    if (contentType.includes('text/event-stream') && response.body) {
+      return this.readEventStream(response, request);
+    }
+
     const body = await readProviderBody(response);
     const data = parseProviderJson(body, 'OpenAI-compatible');
     if (!Array.isArray(data?.choices) || !data.choices.length) {
@@ -133,6 +142,107 @@ export class OpenAiProvider implements AiProvider {
             },
           }
         : {}),
+    };
+  }
+
+  private async readEventStream(response: Response, request: AiGenerateRequest): Promise<AiGenerateResult> {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+    let buffer = '';
+    let content = '';
+    let finishReason: string | undefined;
+    let usage: any;
+    let sawDone = false;
+
+    const processEvent = async (event: string) => {
+      const data = event.split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      if (!data) return;
+      if (data === '[DONE]') {
+        sawDone = true;
+        return;
+      }
+      let chunk: any;
+      try {
+        chunk = JSON.parse(data);
+      } catch {
+        throw new Error('OPENAI_INVALID_STREAM_EVENT: Provider returned malformed stream data.');
+      }
+      const choice = chunk?.choices?.[0];
+      const delta = choice?.delta;
+      if (typeof delta?.content === 'string' && delta.content) {
+        content += delta.content;
+        await request.onTextDelta?.(delta.content);
+      }
+      if (Array.isArray(delta?.tool_calls)) {
+        for (const toolDelta of delta.tool_calls) {
+          const index = Number(toolDelta?.index);
+          if (!Number.isInteger(index) || index < 0) {
+            throw new Error('OPENAI_INVALID_TOOL_CALL: Streamed tool call has an invalid index.');
+          }
+          const current = toolCalls.get(index) || { id: '', name: '', arguments: '' };
+          if (typeof toolDelta.id === 'string') current.id += toolDelta.id;
+          if (typeof toolDelta.function?.name === 'string') current.name += toolDelta.function.name;
+          if (typeof toolDelta.function?.arguments === 'string') current.arguments += toolDelta.function.arguments;
+          toolCalls.set(index, current);
+        }
+      }
+      if (choice?.finish_reason) finishReason = String(choice.finish_reason).toLowerCase();
+      if (chunk?.usage) usage = chunk.usage;
+    };
+
+    try {
+      while (!sawDone) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let separator: number;
+        while ((separator = buffer.search(/\r?\n\r?\n/)) !== -1) {
+          const event = buffer.slice(0, separator);
+          const separatorLength = buffer.slice(separator).startsWith('\r\n\r\n') ? 4 : 2;
+          buffer = buffer.slice(separator + separatorLength);
+          await processEvent(event);
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) await processEvent(buffer);
+      if (!sawDone) throw new Error('OPENAI_TRUNCATED_STREAM: Provider stream ended before completion.');
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (!content && !toolCalls.size) {
+      throw new Error('OPENAI_INVALID_RESPONSE: Stream contained no assistant content or tool calls.');
+    }
+
+    const parts: AiPart[] = [];
+    if (content) parts.push({ type: 'text', text: content });
+    for (const [index, call] of [...toolCalls.entries()].sort(([a], [b]) => a - b)) {
+      if (!call.name) throw new Error('OPENAI_INVALID_TOOL_CALL: Tool call is missing a function name.');
+      let args: Record<string, unknown> = {};
+      if (call.arguments) {
+        try {
+          const parsed: unknown = JSON.parse(call.arguments);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+          args = parsed as Record<string, unknown>;
+        } catch {
+          throw new Error('OPENAI_INVALID_TOOL_ARGUMENTS: Tool arguments were not a valid JSON object.');
+        }
+      }
+      parts.push({ type: 'tool_call', id: call.id || `${call.name}:${index}`, name: call.name, arguments: args });
+    }
+
+    return {
+      message: { role: 'assistant', parts },
+      ...(finishReason ? { finishReason } : {}),
+      ...(usage ? { usage: {
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+        totalTokens: usage.total_tokens,
+      } } : {}),
     };
   }
 

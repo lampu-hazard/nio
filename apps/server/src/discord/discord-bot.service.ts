@@ -317,15 +317,27 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     }).catch(() => null);
 
     let lastProgressEdit = 0;
+    let pendingProgress: string | null = null;
+    let progressTimer: ReturnType<typeof setTimeout> | undefined;
     const onProgress = async (status: string) => {
       if (!loadingMessage) return;
-      const now = Date.now();
-      if (now - lastProgressEdit < 1000) return;
-      lastProgressEdit = now;
-      await loadingMessage.edit({
-        content: status,
-        allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
-      }).catch(() => null);
+      pendingProgress = status;
+      const editProgress = async () => {
+        progressTimer = undefined;
+        const progress = pendingProgress;
+        pendingProgress = null;
+        if (!progress) return;
+        lastProgressEdit = Date.now();
+        await loadingMessage.edit({
+          content: progress.slice(0, 1900),
+          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+        }).catch(() => null);
+      };
+      const wait = Math.max(0, 1000 - (Date.now() - lastProgressEdit));
+      if (!progressTimer) {
+        if (wait) progressTimer = setTimeout(() => { void editProgress(); }, wait);
+        else await editProgress();
+      }
     };
 
     let response: any;
@@ -361,6 +373,8 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       await loadingMessage?.delete().catch(() => null);
       return;
     }
+
+    if (progressTimer) clearTimeout(progressTimer);
 
     const replyPayload = {
       content: response.content,

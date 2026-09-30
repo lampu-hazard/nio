@@ -52,6 +52,7 @@ export type AiGenerateRequest = {
   systemPrompt: string;
   messages: AiMessage[];
   tools: AiToolDefinition[];
+  onTextDelta?: (text: string) => void | Promise<void>;
 };
 
 export type AiGenerateResult = {

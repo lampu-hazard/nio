@@ -78,6 +78,7 @@ const kineticRegistration = {
     GuildCommandSyncService,
     PluginToolRegistryService,
     PluginEventDispatcherService,
+    CredentialEncryptionService,
   ],
 })
 export class PluginsModule {}

@@ -22,6 +22,7 @@ import { PluginToolRegistryService } from '../plugins/plugin-tool-registry.servi
 import { ConversationMemoryService, ConversationTurn } from './conversation-memory.service';
 import { McpToolService } from './mcp-tool.service';
 import { AgentRunService } from './agent-run.service';
+import { AiAgentSettingsService } from './ai-agent-settings.service';
 
 const MAX_AGENT_TURNS = 5;
 const MAX_TOOL_CALLS_PER_TURN = 8;
@@ -172,6 +173,7 @@ export class DiscordAgentService {
     private readonly pluginTools: PluginToolRegistryService,
     @Optional() private readonly mcpTools?: McpToolService,
     @Optional() private readonly runs?: AgentRunService,
+    @Optional() private readonly aiSettings?: AiAgentSettingsService,
   ) {}
 
   async canHandle(guildId: string, channelId: string, authorId: string) {
@@ -180,11 +182,12 @@ export class DiscordAgentService {
     const isEnabled = settings?.enabled ?? isGlobalEnabled;
     if (!isEnabled) return { allowed: false, settings };
 
-    const allowedUsers = settings?.allowedUserIds?.length
-      ? settings.allowedUserIds
+    const allowedUsers = settings
+      ? settings.allowedUserIds || []
       : (process.env.DISCORD_AGENT_ALLOWED_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean);
     if (!allowedUsers.includes(authorId)) return { allowed: false, settings };
     if (settings?.allowedChannelIds?.length && !settings.allowedChannelIds.includes(channelId)) return { allowed: false, settings };
+    if (settings?.excludedChannelIds?.includes(channelId)) return { allowed: false, settings };
     return { allowed: true, settings };
   }
 
@@ -222,7 +225,8 @@ export class DiscordAgentService {
 - Requesting Discord user ID: ${authorId}
 - Bot owner authorization: ${isBotOwner ? 'granted' : 'not granted'}`;
 
-    const provider = this.getProvider(providerName, modelName);
+    const apiKey = this.aiSettings?.decryptApiKey(settings?.encryptedApiKey);
+    const provider = this.getProvider(providerName, modelName, apiKey, settings?.baseUrl);
     const run = await this.runs?.start(guildId, channelId, authorId, settings?.messageRetentionDays ?? 30);
     const reportStage = async (stage: 'PLANNING' | 'INVESTIGATING' | 'SYNTHESIZING' | 'AWAITING_APPROVAL', message: string) => {
       if (run && this.runs) await this.runs.stage(run.id, stage, message).catch(() => undefined);
@@ -308,12 +312,13 @@ ${prompt || '(analisis pesan di atas)'}`;
           tools: availableTools,
         });
       } catch (err: any) {
-        const rawMessage = sanitizeSensitiveInfo(err?.message || String(err));
-        this.logger.warn(`AI provider request failed: ${rawMessage.slice(0, 160)}`);
-        if (rawMessage.includes('429')) {
+        const rawMessage = String(err?.message || err || 'Unknown provider error');
+        const safeCode = rawMessage.match(/\b(?:OPENAI|GEMINI)_[A-Z_]+\b/)?.[0] || 'AI_PROVIDER_ERROR';
+        this.logger.warn(`AI provider request failed provider=${providerName} code=${safeCode}`);
+        if (/HTTP_429\b/.test(rawMessage)) {
           finalContent = '⚠️ Batas kuota AI terlampaui (Rate Limit / Quota Exceeded). Mohon tunggu beberapa saat sebelum mencoba kembali.';
         } else {
-          finalContent = `⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI: ${rawMessage.slice(0, 100)}`;
+          finalContent = `⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI. Kode: ${safeCode}.`;
         }
         break;
       }
@@ -606,10 +611,10 @@ ${prompt || '(analisis pesan di atas)'}`;
     };
   }
 
-  private getProvider(provider: string, model: string): AiProvider {
+  private getProvider(provider: string, model: string, configuredApiKey?: string, configuredBaseUrl?: string | null): AiProvider {
     const normalized = (provider || '').toLowerCase();
     if (normalized === 'gemini') {
-      const apiKey = process.env.GEMINI_API_KEY || '';
+      const apiKey = configuredApiKey || process.env.GEMINI_API_KEY || '';
       return new GeminiProvider(apiKey, model);
     }
     if (
@@ -619,8 +624,9 @@ ${prompt || '(analisis pesan di atas)'}`;
       normalized === 'groq' ||
       normalized === 'ollama'
     ) {
-      const apiKey = process.env.OPENAI_API_KEY || '';
+      const apiKey = configuredApiKey || process.env.OPENAI_API_KEY || '';
       const baseUrl =
+        configuredBaseUrl ||
         process.env.OPENAI_BASE_URL ||
         process.env.OPENAI_API_BASE ||
         'https://api.openai.com/v1';

@@ -331,6 +331,8 @@ model DiscordAgentSettings {
   enabled              Boolean  @default(false)
   provider             String   @default("gemini")
   model                String   @default("gemini-2.5-flash")
+  baseUrl              String?
+  encryptedApiKey      String?
   allowedUserIds       String[] @default([])
   allowedChannelIds    String[] @default([])
   excludedChannelIds   String[] @default([])

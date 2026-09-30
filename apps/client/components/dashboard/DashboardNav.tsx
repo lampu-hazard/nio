@@ -2,7 +2,7 @@
 
 type DashboardNavProps = {
   guildId: string;
-  activeTab: 'panels' | 'plugins' | 'analytics' | 'audit-logs' | 'settings' | 'stickers' | 'moderation' | 'booster-roles' | 'tako' | 'embed-templates' | 'leaderboard';
+  activeTab: 'panels' | 'plugins' | 'analytics' | 'audit-logs' | 'settings' | 'stickers' | 'moderation' | 'booster-roles' | 'tako' | 'embed-templates' | 'leaderboard' | 'ai-agent';
 };
 
 const tabs = [
@@ -10,6 +10,7 @@ const tabs = [
   ['plugins', 'Plugins', (guildId: string) => `/dashboard/${guildId}/plugins`],
   ['stickers', 'Stickers', (guildId: string) => `/dashboard/${guildId}/stickers`],
   ['moderation', 'Moderation', (guildId: string) => `/dashboard/${guildId}/moderation`],
+  ['ai-agent', 'AI Agent', (guildId: string) => `/dashboard/${guildId}/ai-agent`],
   ['booster-roles', 'Booster Roles', (guildId: string) => `/dashboard/${guildId}/booster-roles`],
   ['tako', 'Tako Rewards', (guildId: string) => `/dashboard/${guildId}/tako`],
   ['embed-templates', 'Embed Studio', (guildId: string) => `/dashboard/${guildId}/embed-templates`],

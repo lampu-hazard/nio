@@ -7,6 +7,7 @@ import {
   AiProvider,
   AiToolDefinition,
 } from '../interfaces/ai-provider.interface';
+import { parseProviderJson, readProviderBody } from './provider-json';
 
 @Injectable()
 export class GeminiProvider implements AiProvider {
@@ -19,7 +20,7 @@ export class GeminiProvider implements AiProvider {
     if (!this.apiKey) throw new Error('Gemini API key is not configured.');
     if (!request.messages.length) throw new Error('Gemini request requires at least one message.');
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
     const payload: Record<string, unknown> = {
       contents: request.messages.map((message) => this.toGeminiMessage(message)),
       systemInstruction: { parts: [{ text: request.systemPrompt }] },
@@ -30,16 +31,22 @@ export class GeminiProvider implements AiProvider {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      const errText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
+      throw new Error(`GEMINI_HTTP_${response.status}: Provider request failed.`);
     }
+    const body = await readProviderBody(response);
 
-    const data: any = await response.json();
-    const rawParts = data?.candidates?.[0]?.content?.parts;
+    const data = parseProviderJson(body, 'Gemini');
+    if (!Array.isArray(data?.candidates) || !data.candidates.length) {
+      throw new Error('GEMINI_INVALID_RESPONSE: No response candidates returned.');
+    }
+    const rawParts = data.candidates[0]?.content?.parts;
+    if (!Array.isArray(rawParts)) {
+      throw new Error('GEMINI_INVALID_RESPONSE: Candidate content parts are missing.');
+    }
     const parts = Array.isArray(rawParts)
       ? rawParts.map((part: any, index: number) => this.fromGeminiPart(part, index)).filter(Boolean) as AiPart[]
       : [];
@@ -84,6 +91,9 @@ export class GeminiProvider implements AiProvider {
   private fromGeminiPart(part: any, index: number): AiPart | null {
     if (typeof part?.text === 'string') return { type: 'text', text: part.text };
     if (part?.functionCall?.name) {
+      if (part.functionCall.args != null && (typeof part.functionCall.args !== 'object' || Array.isArray(part.functionCall.args))) {
+        throw new Error('GEMINI_INVALID_TOOL_ARGUMENTS: Tool arguments must be a JSON object.');
+      }
       return {
         type: 'tool_call',
         id: typeof part.functionCall.id === 'string'

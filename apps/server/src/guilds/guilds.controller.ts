@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Query } from '@nestjs/common';
 import { Request } from 'express';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { GuildAccessGuard } from './guards/guild-access.guard';
@@ -23,8 +23,9 @@ export class GuildsController {
 
   @UseGuards(GuildAccessGuard)
   @Get(':guildId/members')
-  async members(@Param('guildId') guildId: string) {
-    return { ok: true, members: await this.guilds.getMembers(guildId) };
+  async members(@Param('guildId') guildId: string, @Query('query') query = '') {
+    if (query.length > 100) throw new BadRequestException('Member search query is too long.');
+    return { ok: true, members: await this.guilds.getMembers(guildId, query) };
   }
 
   @Get(':guildId/roles')

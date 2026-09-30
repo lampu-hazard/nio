@@ -53,28 +53,32 @@ export class GuildsService {
       .map((c) => ({ id: c.id, name: c.name, type: c.type }));
   }
 
-  async getMembers(guildId: string) {
-    const cached = this.memberListCache.get(guildId);
-    if (cached && cached.expiresAt > Date.now()) return cached.members;
+  async getMembers(guildId: string, searchQuery = '') {
+    const query = searchQuery.trim().slice(0, 100);
+    const cacheKey = query ? `${guildId}:${query.toLowerCase()}` : guildId;
+    const cache = query ? undefined : this.memberListCache.get(cacheKey);
+    if (cache && cache.expiresAt > Date.now()) return cache.members;
 
-    const pending = this.memberListRequests.get(guildId);
+    const pending = this.memberListRequests.get(cacheKey);
     if (pending) return pending;
 
     const request = (async () => {
       const guild = await this.getGuild(guildId);
-      // The GuildMembers intent keeps the member cache warm; avoid opcode-8 chunk requests that can be rate-limited.
-      const result = guild.members.cache
+      const members = query
+        ? await guild.members.search({ query, limit: 25, cache: false })
+        : guild.members.cache;
+      const result = members
         .filter((member) => !member.user.bot)
         .map((member) => ({ id: member.id, displayName: member.displayName, username: member.user.username, avatarUrl: member.displayAvatarURL({ size: 64 }) }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
-      this.memberListCache.set(guildId, { members: result, expiresAt: Date.now() + 5 * 60_000 });
+      if (!query) this.memberListCache.set(cacheKey, { members: result, expiresAt: Date.now() + 5 * 60_000 });
       return result;
     })();
-    this.memberListRequests.set(guildId, request);
+    this.memberListRequests.set(cacheKey, request);
     try {
       return await request;
     } finally {
-      this.memberListRequests.delete(guildId);
+      this.memberListRequests.delete(cacheKey);
     }
   }
 

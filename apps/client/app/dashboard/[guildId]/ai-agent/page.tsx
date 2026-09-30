@@ -43,6 +43,21 @@ export default function AiAgentPage({ params }: PageProps) {
     void load();
   }, [guildId, days]);
 
+  useEffect(() => {
+    if (!memberQuery.trim()) return;
+    const timer = setTimeout(() => {
+      const query = memberQuery.trim();
+      api<{ members: Member[] }>(`/guilds/${guildId}/members?query=${encodeURIComponent(query)}`)
+        .then((result) => setMembers((current) => {
+        const merged = new Map(current.map((member) => [member.id, member]));
+        for (const member of result.members || []) merged.set(member.id, member);
+        return [...merged.values()];
+      }))
+      .catch((err: any) => setError(err?.message || 'Gagal mencari anggota.'));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [guildId, memberQuery]);
+
   async function load() {
     try {
       setLoading(true);

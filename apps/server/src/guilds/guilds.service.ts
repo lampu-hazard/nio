@@ -50,6 +50,15 @@ export class GuildsService {
       .map((c) => ({ id: c.id, name: c.name, type: c.type }));
   }
 
+  async getMembers(guildId: string) {
+    const guild = await this.getGuild(guildId);
+    const members = await guild.members.fetch();
+    return members
+      .filter((member) => !member.user.bot)
+      .map((member) => ({ id: member.id, displayName: member.displayName, username: member.user.username, avatarUrl: member.displayAvatarURL({ size: 64 }) }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
   async getRoles(guildId: string) {
     const guild = await this.getGuild(guildId);
     await guild.roles.fetch();

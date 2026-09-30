@@ -15,9 +15,16 @@ export class GuildsController {
     return { ok: true, guilds: this.guilds.listManageable(req.session.guilds || []) };
   }
 
+  @UseGuards(GuildAccessGuard)
   @Get(':guildId/channels')
   async channels(@Param('guildId') guildId: string) {
     return { ok: true, channels: await this.guilds.getChannels(guildId) };
+  }
+
+  @UseGuards(GuildAccessGuard)
+  @Get(':guildId/members')
+  async members(@Param('guildId') guildId: string) {
+    return { ok: true, members: await this.guilds.getMembers(guildId) };
   }
 
   @Get(':guildId/roles')

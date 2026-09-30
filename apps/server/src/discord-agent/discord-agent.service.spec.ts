@@ -99,6 +99,20 @@ describe('DiscordAgentService loop', () => {
     );
   });
 
+  it.each([
+    [{ enabled: false, allowedUserIds: ['*'] }, 'user-1', 'channel-1', 'disabled'],
+    [{ enabled: true, allowedUserIds: ['other'] }, 'user-1', 'channel-1', 'user-not-allowed'],
+    [{ enabled: true, allowedUserIds: ['*'], allowedChannelIds: ['other-channel'] }, 'user-1', 'channel-1', 'channel-not-allowed'],
+    [{ enabled: true, allowedUserIds: ['*'], excludedChannelIds: ['channel-1'] }, 'user-1', 'channel-1', 'channel-excluded'],
+    [{ enabled: true, allowedUserIds: ['*'], allowedChannelIds: ['*'] }, 'user-1', 'channel-1', 'allowed'],
+  ] as const)('returns access reason %s', async (settings, userId, channelId, reason) => {
+    mockPrisma.discordAgentSettings.findUnique.mockResolvedValueOnce(settings as any);
+    await expect(service.getAccessDecision('guild-1', channelId, userId)).resolves.toMatchObject({
+      allowed: reason === 'allowed',
+      reason,
+    });
+  });
+
   it('returns null before AI work when requester is not allowed', async () => {
     mockPrisma.discordAgentSettings.findUnique.mockResolvedValueOnce({
       enabled: true,

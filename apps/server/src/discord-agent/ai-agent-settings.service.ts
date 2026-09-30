@@ -29,7 +29,7 @@ export class AiAgentSettingsService {
     if (effectiveProvider === 'gemini' && dto.baseUrl) throw new BadRequestException('Gemini does not use a custom base URL.');
     if (effectiveProvider === 'openai-compatible' && dto.baseUrl) this.validateBaseUrl(dto.baseUrl);
     for (const ids of [dto.allowedUserIds, dto.allowedChannelIds, dto.excludedChannelIds]) {
-      if (ids && (ids.length > 500 || ids.some((id) => !/^\d{5,25}$/.test(id)))) throw new BadRequestException('Discord ID list is invalid.');
+      if (ids && (ids.length > 500 || ids.some((id) => id !== '*' && !/^\d{5,25}$/.test(id)))) throw new BadRequestException('Discord ID list is invalid.');
     }
     if (dto.apiKey !== undefined && (!dto.apiKey.trim() || dto.apiKey.length > 512)) throw new BadRequestException('API key is invalid.');
     if (dto.apiKey && dto.clearApiKey) throw new BadRequestException('Choose either a new API key or clear the existing key.');

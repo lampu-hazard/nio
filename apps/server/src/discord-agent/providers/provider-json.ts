@@ -12,6 +12,9 @@ export function parseProviderJson(body: string, provider: string): Record<string
   if (!body.trim()) {
     throw new Error(`${code}_EMPTY_RESPONSE: Provider returned an empty response.`);
   }
+  if (/^\s*(?:<!doctype\s+html|<html\b)/i.test(body)) {
+    throw new Error(`${code}_HTML_RESPONSE: Provider returned an HTML page instead of API JSON.`);
+  }
   try {
     const value: unknown = JSON.parse(body);
     if (!value || typeof value !== 'object' || Array.isArray(value)) {

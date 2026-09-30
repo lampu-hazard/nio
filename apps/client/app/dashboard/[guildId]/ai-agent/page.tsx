@@ -88,7 +88,7 @@ export default function AiAgentPage({ params }: PageProps) {
       const payload: Record<string, unknown> = {
         enabled: settings.enabled, provider: settings.provider, model: settings.model.trim(),
         baseUrl: settings.provider === 'openai-compatible' ? settings.baseUrl : null,
-        allowedUserIds: settings.allowedUserIds, allowedChannelIds: settings.allowedChannelIds,
+        allowedUserIds: settings.allowedUserIds,
         excludedChannelIds: settings.excludedChannelIds,
       };
       if (apiKey.trim()) payload.apiKey = apiKey.trim();
@@ -107,14 +107,20 @@ export default function AiAgentPage({ params }: PageProps) {
     }
   }
 
-  function toggleChannel(field: 'allowedChannelIds' | 'excludedChannelIds', id: string) {
-    setSettings((current) => ({
-      ...current,
-      [field]: current[field].includes(id) ? current[field].filter((value) => value !== id && value !== '*') : [...current[field].filter((value) => value !== '*'), id],
-    }));
+  function toggleChannel(field: 'excludedChannelIds', id: string) {
+    setSettings((current) => {
+      const exclusions = current[field];
+      if (exclusions.includes('*')) {
+        return { ...current, [field]: channels.map((channel) => channel.id).filter((channelId) => channelId !== id) };
+      }
+      return {
+        ...current,
+        [field]: exclusions.includes(id) ? exclusions.filter((value) => value !== id) : [...exclusions, id],
+      };
+    });
   }
 
-  function setAllChannels(field: 'allowedChannelIds' | 'excludedChannelIds', checked: boolean) {
+  function setAllChannels(field: 'excludedChannelIds', checked: boolean) {
     setSettings((current) => ({ ...current, [field]: checked ? ['*'] : [] }));
   }
 
@@ -179,8 +185,8 @@ export default function AiAgentPage({ params }: PageProps) {
             </section>
 
             <section className="card space-y-5 p-5 sm:p-6">
-              <div><h2 className="text-lg font-bold text-[var(--text)]">Batas channel</h2><p className="mt-1 text-sm text-[var(--muted)]">Jika channel yang diizinkan dipilih, agent hanya merespons di channel tersebut.</p></div>
-              {(['allowedChannelIds', 'excludedChannelIds'] as const).map((field) => <fieldset key={field} className="space-y-2"><legend className="mb-2 text-sm font-semibold text-[var(--text)]">{field === 'allowedChannelIds' ? 'Channel yang diizinkan' : 'Channel yang dikecualikan'}</legend>{channels.length ? <><label className="mb-2 inline-flex items-center gap-2 text-xs text-[var(--muted)]"><input type="checkbox" checked={settings[field].includes('*')} onChange={(e) => setAllChannels(field, e.target.checked)} className="h-4 w-4" />Pilih semua channel</label><div className="grid gap-2 sm:grid-cols-2">{channels.map((channel) => <label key={`${field}-${channel.id}`} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings[field].includes(channel.id)} onChange={() => toggleChannel(field, channel.id)} className="h-4 w-4 shrink-0" /><span className="min-w-0 break-all">#{channel.name}</span></label>)}</div></> : <p className="text-sm text-[var(--muted)]">Daftar channel tidak tersedia.</p>}</fieldset>)}
+              <div><h2 className="text-lg font-bold text-[var(--text)]">Channel yang dikecualikan</h2><p className="mt-1 text-sm text-[var(--muted)]">Secara default AI merespons di semua channel. Centang hanya channel yang ingin diblokir.</p></div>
+              {channels.length ? <><label className="mb-2 inline-flex items-center gap-2 text-xs text-[var(--muted)]"><input type="checkbox" checked={settings.excludedChannelIds.includes('*')} onChange={(e) => setAllChannels('excludedChannelIds', e.target.checked)} className="h-4 w-4" />Kecualikan semua channel</label><div className="grid gap-2 sm:grid-cols-2">{channels.map((channel) => <label key={`excluded-${channel.id}`} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings.excludedChannelIds.includes(channel.id) || settings.excludedChannelIds.includes('*')} onChange={() => toggleChannel('excludedChannelIds', channel.id)} className="h-4 w-4 shrink-0" /><span className="min-w-0 break-all">#{channel.name}</span></label>)}</div></> : <p className="text-sm text-[var(--muted)]">Daftar channel tidak tersedia.</p>}
             </section>
             <div className="flex justify-end"><button type="submit" disabled={saving} className="btn btn-primary px-6 py-3">{saving ? 'Menyimpan…' : 'Simpan pengaturan'}</button></div>
           </form>

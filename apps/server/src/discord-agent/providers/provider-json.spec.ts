@@ -8,7 +8,12 @@ describe('parseProviderJson', () => {
 
   it('distinguishes empty and invalid JSON without including body contents', () => {
     expect(() => parseProviderJson('  ', 'gemini')).toThrow('GEMINI_EMPTY_RESPONSE');
-    expect(() => parseProviderJson('<html>proxy failure</html>', 'gemini')).toThrow('GEMINI_INVALID_JSON');
+    expect(() => parseProviderJson('<html>proxy failure</html>', 'gemini')).toThrow('GEMINI_HTML_RESPONSE');
+  });
+
+  it('identifies HTML responses without exposing the body', () => {
+    expect(() => parseProviderJson('<!doctype html><html>proxy failure</html>', 'openai-compatible')).toThrow('OPENAI_COMPATIBLE_HTML_RESPONSE');
+    expect(() => parseProviderJson('<!doctype html><html>proxy failure</html>', 'openai-compatible')).not.toThrow('proxy failure');
   });
 
   it('rejects non-object roots', () => {

@@ -13,6 +13,9 @@ import { DiscordAgentToolExecutorService } from './discord-agent-tool-executor.s
 import { ConversationMemoryService } from './conversation-memory.service';
 import { McpToolService } from './mcp-tool.service';
 import { AgentRunService } from './agent-run.service';
+import { AiAgentSettingsController } from './ai-agent-settings.controller';
+import { AiAgentSettingsService } from './ai-agent-settings.service';
+import { PluginsModule } from '../plugins/plugins.module';
 
 @Module({
   imports: [
@@ -21,7 +24,9 @@ import { AgentRunService } from './agent-run.service';
     forwardRef(() => StickersModule),
     EmbedTemplateModule,
     forwardRef(() => LeaderboardModule),
+    PluginsModule,
   ],
+  controllers: [AiAgentSettingsController],
   providers: [
     DiscordAgentService,
     DiscordAgentContextService,
@@ -32,6 +37,7 @@ import { AgentRunService } from './agent-run.service';
     ConversationMemoryService,
     McpToolService,
     AgentRunService,
+    AiAgentSettingsService,
   ],
   exports: [
     DiscordAgentService,
@@ -43,6 +49,7 @@ import { AgentRunService } from './agent-run.service';
     ConversationMemoryService,
     McpToolService,
     AgentRunService,
+    AiAgentSettingsService,
   ],
 })
 export class DiscordAgentModule {}

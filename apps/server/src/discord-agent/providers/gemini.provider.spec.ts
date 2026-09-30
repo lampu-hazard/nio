@@ -46,6 +46,27 @@ describe('GeminiProvider with Tool Calling', () => {
     }
   });
 
+  it('rejects malformed successful JSON and missing candidate envelopes', async () => {
+    const globalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({ ok: true, text: async () => '<html>proxy</html>' } as Response));
+    try {
+      await expect(provider.generate({
+        systemPrompt: 'System',
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'User' }] }],
+        tools: [],
+      })).rejects.toThrow('GEMINI_INVALID_JSON');
+
+      global.fetch = jest.fn(async () => ({ ok: true, text: async () => '{"candidates":[]}' } as Response));
+      await expect(provider.generate({
+        systemPrompt: 'System',
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'User' }] }],
+        tools: [],
+      })).rejects.toThrow('GEMINI_INVALID_RESPONSE');
+    } finally {
+      global.fetch = globalFetch;
+    }
+  });
+
   it('rejects requests without messages', async () => {
     await expect(
       provider.generate({

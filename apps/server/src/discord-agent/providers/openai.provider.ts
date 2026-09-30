@@ -10,6 +10,7 @@ import {
   AiToolDefinition,
   AiToolResultPart,
 } from '../interfaces/ai-provider.interface';
+import { parseProviderJson, readProviderBody } from './provider-json';
 
 @Injectable()
 export class OpenAiProvider implements AiProvider {
@@ -59,14 +60,27 @@ export class OpenAiProvider implements AiProvider {
     });
 
     if (!response.ok) {
-      const errText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`OpenAI API returned status ${response.status}: ${errText}`);
+      throw new Error(`OPENAI_HTTP_${response.status}: Provider request failed.`);
     }
-
-    const data: any = await response.json();
-    const choice = data?.choices?.[0];
+    const body = await readProviderBody(response);
+    const data = parseProviderJson(body, 'OpenAI-compatible');
+    if (!Array.isArray(data?.choices) || !data.choices.length) {
+      throw new Error('OPENAI_INVALID_RESPONSE: No completion choices returned.');
+    }
+    const choice = data.choices[0];
     const choiceMessage = choice?.message;
-
+    if (!choiceMessage || typeof choiceMessage !== 'object') {
+      throw new Error('OPENAI_INVALID_RESPONSE: Missing assistant message in provider response.');
+    }
+    if (choiceMessage.content != null && typeof choiceMessage.content !== 'string' && !Array.isArray(choiceMessage.content)) {
+      throw new Error('OPENAI_INVALID_RESPONSE: Assistant content has an unsupported shape.');
+    }
+    if (choiceMessage.content != null && typeof choiceMessage.content !== 'string') {
+      throw new Error('OPENAI_INVALID_RESPONSE: Assistant content must be text or null.');
+    }
+    if (choiceMessage.tool_calls != null && !Array.isArray(choiceMessage.tool_calls)) {
+      throw new Error('OPENAI_INVALID_RESPONSE: Tool calls must be an array.');
+    }
     const parts: AiPart[] = [];
     if (typeof choiceMessage?.content === 'string' && choiceMessage.content.length > 0) {
       parts.push({ type: 'text', text: choiceMessage.content });
@@ -80,11 +94,20 @@ export class OpenAiProvider implements AiProvider {
             args = tc.function.arguments;
           } else if (typeof tc.function.arguments === 'string') {
             try {
-              args = JSON.parse(tc.function.arguments);
+              const parsed: unknown = JSON.parse(tc.function.arguments);
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('Tool arguments must be a JSON object.');
+              }
+              args = parsed as Record<string, unknown>;
             } catch {
-              args = { raw: tc.function.arguments };
+              throw new Error('OPENAI_INVALID_TOOL_ARGUMENTS: Tool arguments were not a valid JSON object.');
             }
+          } else {
+            throw new Error('OPENAI_INVALID_TOOL_ARGUMENTS: Tool arguments must be a JSON object.');
           }
+        }
+        if (!tc?.function?.name || typeof tc.function.name !== 'string') {
+          throw new Error('OPENAI_INVALID_TOOL_CALL: Tool call is missing a function name.');
         }
         parts.push({
           type: 'tool_call',

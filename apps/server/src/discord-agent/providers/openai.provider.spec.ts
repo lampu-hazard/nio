@@ -285,6 +285,29 @@ describe('OpenAiProvider with Tool Calling', () => {
     }
   });
 
+  it('rejects malformed successful JSON and malformed tool-call arguments safely', async () => {
+    const globalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({ ok: true, text: async () => '<html>proxy</html>' } as Response));
+    try {
+      await expect(provider.generate({
+        systemPrompt: '',
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
+        tools: [],
+      })).rejects.toThrow('OPENAI_COMPATIBLE_INVALID_JSON');
+
+      global.fetch = jest.fn(async () => ({ ok: true, text: async () => JSON.stringify({
+        choices: [{ message: { tool_calls: [{ function: { name: 'get_user_warnings', arguments: '{bad' } }] } }],
+      }) } as Response));
+      await expect(provider.generate({
+        systemPrompt: '',
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
+        tools: [],
+      })).rejects.toThrow('OPENAI_INVALID_TOOL_ARGUMENTS');
+    } finally {
+      global.fetch = globalFetch;
+    }
+  });
+
   it('throws descriptive error on non-ok HTTP status', async () => {
     const globalFetch = global.fetch;
     global.fetch = jest.fn(async () => ({
@@ -300,7 +323,7 @@ describe('OpenAiProvider with Tool Calling', () => {
           messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
           tools: [],
         }),
-      ).rejects.toThrow('OpenAI API returned status 429: Rate limit exceeded');
+      ).rejects.toThrow('OPENAI_HTTP_429');
     } finally {
       global.fetch = globalFetch;
     }

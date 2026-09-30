@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
 type Channel = { id: string; name: string };
 type Member = { id: string; displayName: string; username: string; avatarUrl: string };
@@ -148,14 +147,9 @@ export default function AiAgentPage({ params }: PageProps) {
 
 
   return (
-    <main className="px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Automations</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">AI Agent</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">Pilih provider, batasi siapa dan channel yang dapat mengakses AI, lalu pantau pemakaian token per anggota.</p>
-        </header>
-        <DashboardNav guildId={guildId} activeTab="ai-agent" />
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Pilih provider, batasi siapa dan channel yang dapat mengakses AI, lalu pantau pemakaian token per anggota.</p>
         {error && <div role="alert" className="notice notice-error">{error}</div>}
         {success && <div role="status" className="notice notice-success">{success}</div>}
         {loading ? <div className="card p-8 text-center text-[var(--muted)]">Memuat konfigurasi AI Agent…</div> : <>

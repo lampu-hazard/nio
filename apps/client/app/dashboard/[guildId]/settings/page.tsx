@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
 type ChannelOption = { id: string; name: string };
 
@@ -159,15 +158,9 @@ export default function SettingsPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Configuration</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Settings</h1>
-          <p className="mt-1 text-[var(--muted)]">Configure moderation, automation, and audit options for this server.</p>
-        </div>
-
-        <DashboardNav guildId={guildId} activeTab="settings" />
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Configure moderation, automation, and audit options for this server.</p>
 
         {error && <div className="notice notice-error mb-6">{error}</div>}
         {success && <div className="notice notice-success mb-6">{success}</div>}

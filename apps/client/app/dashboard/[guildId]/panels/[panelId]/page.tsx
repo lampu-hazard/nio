@@ -14,22 +14,19 @@ export default async function EditPanelPage({ params }: { params: Promise<{ guil
   const typeLabel = panel.type === 'RULES' ? 'Rules' : panel.type === 'ANNOUNCEMENT' ? 'Announcement' : 'Self Role';
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <a href={`/dashboard/${guildId}`} className="text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50">Back to server</a>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className={`badge ${panel.status === 'PUBLISHED' ? 'badge-live' : ''}`}>{panel.status === 'PUBLISHED' ? 'Live panel' : 'Draft panel'}</span>
-              <span className="badge">{typeLabel}</span>
-              <span className="badge">{panel.roles.length} roles</span>
-              <span className="badge">{channel ? `#${channel.name}` : 'No channel selected'}</span>
-            </div>
-            <h1 className="mt-4 text-4xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50 md:text-5xl">{panel.name}</h1>
-            <p className="mt-3 max-w-3xl text-zinc-500 dark:text-zinc-400">Edit panel identity, content, role components, and Discord publishing state.</p>
-          </div>
-          <a href={`/dashboard/${guildId}`} className="btn">Dashboard</a>
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <a href={`/dashboard/${guildId}`} className="w-fit text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]">Back to server</a>
+          <a href={`/dashboard/${guildId}`} className="btn w-fit">Dashboard</a>
         </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className={`badge ${panel.status === 'PUBLISHED' ? 'badge-live' : ''}`}>{panel.status === 'PUBLISHED' ? 'Live panel' : 'Draft panel'}</span>
+          <span className="badge">{typeLabel}</span>
+          <span className="badge">{panel.roles.length} roles</span>
+          <span className="badge">{channel ? `#${channel.name}` : 'No channel selected'}</span>
+        </div>
+        <p className="max-w-3xl text-sm leading-6 text-[var(--muted)]">Edit panel identity, content, role components, and Discord publishing state.</p>
 
         <PanelEditorWorkspace guildId={guildId} panel={panel} channels={channelsData.channels} availableRoles={rolesData.roles} />
       </div>

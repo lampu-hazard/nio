@@ -1,5 +1,4 @@
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 
 type AuditLogEntry = {
   id: string;
@@ -85,18 +84,12 @@ export default async function AuditLogsPage({
   ).catch(() => ({ ok: false, auditLogs: [] }));
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Audit</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Audit Logs</h1>
-          <p className="mt-1 text-[var(--muted)]">Chronological history of dashboard updates and panel actions.</p>
-        </div>
-
-        <DashboardNav guildId={guildId} activeTab="audit-logs" />
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Chronological history of dashboard updates and panel actions.</p>
 
         {/* Advanced Filters Bar */}
-        <div className="card p-5 mb-6 border border-[var(--border)] bg-[var(--panel)] backdrop-blur-md">
+        <div className="card p-5">
           <form method="GET" className="flex flex-wrap items-end gap-4">
             <div className="flex-1 min-w-[200px]">
               <label htmlFor="userId" className="field-label">Filter by User ID</label>

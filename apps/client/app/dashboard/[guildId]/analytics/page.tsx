@@ -1,5 +1,4 @@
 import { api } from '@/lib/api';
-import { DashboardNav } from '@/components/dashboard/DashboardNav';
 import { TradingViewChart } from '@/components/dashboard/TradingViewChart';
 import { CustomPieChart } from '@/components/dashboard/CustomPieChart';
 
@@ -64,14 +63,10 @@ export default async function AnalyticsPage({
   }));
 
   return (
-    <main className="px-6 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Analytics</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--text)]">Server Insights</h1>
-            <p className="mt-1 text-[var(--muted)]">Tinjau grafik keaktifan server, durasi voice session, dan aktivitas role.</p>
-          </div>
+    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Tinjau grafik keaktifan server, durasi voice session, dan aktivitas role.</p>
 
           {/* Timeframe Filter (applies to both stats & chart) */}
           <div className="flex gap-1.5 justify-end">
@@ -95,26 +90,24 @@ export default async function AnalyticsPage({
           </div>
         </div>
 
-        <DashboardNav guildId={guildId} activeTab="analytics" />
-
         {/* Info Cards */}
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          <div className="card p-6 border border-[var(--border)] bg-[var(--panel)]">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="card p-6">
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Role Added Log</div>
             <div className="mt-2 text-4xl font-extrabold text-[var(--text)]">+{analytics.adds}</div>
           </div>
-          <div className="card p-6 border border-[var(--border)] bg-[var(--panel)]">
+          <div className="card p-6">
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Role Removed Log</div>
             <div className="mt-2 text-4xl font-extrabold text-[var(--text)]">-{analytics.removes}</div>
           </div>
-          <div className="card p-6 border border-[var(--border)] bg-[var(--panel)]">
+          <div className="card p-6">
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Total Role Operations</div>
             <div className="mt-2 text-4xl font-extrabold text-[var(--text)]">{analytics.total}</div>
           </div>
         </div>
 
         {/* Interactive Charts Section */}
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           <TradingViewChart
             data={messageData}
             title="Keaktifan Chat (Jumlah Pesan / Hari)"
@@ -128,8 +121,8 @@ export default async function AnalyticsPage({
         </div>
 
         {/* Pie Chart & Recent Logs */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
-          <div className="card p-6 border border-[var(--border)] bg-[var(--panel)]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+          <div className="card p-6">
             <h3 className="text-sm font-bold tracking-tight text-[var(--text)] mb-4">Riwayat Aktivitas Role Terkini</h3>
             {analytics.recent.length === 0 ? (
               <div className="py-12 text-center text-xs text-[var(--muted)]">Belum ada log operasi role tercatat.</div>

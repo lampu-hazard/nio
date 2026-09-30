@@ -95,7 +95,24 @@ export default function AiAgentPage({ params }: PageProps) {
   function toggleChannel(field: 'allowedChannelIds' | 'excludedChannelIds', id: string) {
     setSettings((current) => ({
       ...current,
-      [field]: current[field].includes(id) ? current[field].filter((value) => value !== id) : [...current[field], id],
+      [field]: current[field].includes(id) ? current[field].filter((value) => value !== id && value !== '*') : [...current[field].filter((value) => value !== '*'), id],
+    }));
+  }
+
+  function setAllChannels(field: 'allowedChannelIds' | 'excludedChannelIds', checked: boolean) {
+    setSettings((current) => ({ ...current, [field]: checked ? ['*'] : [] }));
+  }
+
+  function setAllMembers(checked: boolean) {
+    setSettings((current) => ({ ...current, allowedUserIds: checked ? ['*'] : [] }));
+  }
+
+  function toggleMember(id: string) {
+    setSettings((current) => ({
+      ...current,
+      allowedUserIds: current.allowedUserIds.includes(id)
+        ? current.allowedUserIds.filter((value) => value !== id && value !== '*')
+        : [...current.allowedUserIds.filter((value) => value !== '*'), id],
     }));
   }
 
@@ -103,30 +120,11 @@ export default function AiAgentPage({ params }: PageProps) {
     `${member.displayName} ${member.username} ${member.id}`.toLowerCase().includes(memberQuery.toLowerCase()),
   );
 
-  function toggleMember(id: string) {
-    setSettings((current) => ({
-      ...current,
-      allowedUserIds: current.allowedUserIds.includes(id)
-        ? current.allowedUserIds.filter((value) => value !== id)
-        : [...current.allowedUserIds, id],
-    }));
-  }
-
-  function setAllChannels(field: 'allowedChannelIds' | 'excludedChannelIds', checked: boolean) {
-    setSettings((current) => ({
-      ...current,
-      [field]: checked ? channels.map((channel) => channel.id) : [],
-    }));
-  }
-
-  function setAllMembers(checked: boolean) {
-    setSettings((current) => ({ ...current, allowedUserIds: checked ? members.map((member) => member.id) : [] }));
-  }
-
   function displayUsageMember(id: string) {
     const member = members.find((candidate) => candidate.id === id);
     return member ? `${member.displayName} (@${member.username})` : `Anggota tidak ditemukan (${id})`;
   }
+
 
   return (
     <main className="px-4 py-8 sm:px-6">
@@ -160,21 +158,21 @@ export default function AiAgentPage({ params }: PageProps) {
 
             <section className="card space-y-5 p-5 sm:p-6">
               <div><h2 className="text-lg font-bold text-[var(--text)]">Akses anggota</h2><p className="mt-1 text-sm text-[var(--muted)]">Allowlist kosong berarti tidak ada anggota yang diizinkan.</p></div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><label className="min-w-0 flex-1"><span className="field-label">Cari anggota</span><input className="input" type="search" value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Nama atau username" /></label><label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]"><input type="checkbox" checked={members.length > 0 && settings.allowedUserIds.length === members.length} onChange={(e) => setAllMembers(e.target.checked)} className="h-4 w-4" />Pilih semua anggota</label></div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><label className="min-w-0 flex-1"><span className="field-label">Cari anggota</span><input className="input" type="search" value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Nama atau username" /></label><label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings.allowedUserIds.includes('*')} onChange={(e) => setAllMembers(e.target.checked)} className="h-4 w-4" />Pilih semua anggota</label></div>
               <div className="grid max-h-80 gap-2 overflow-y-auto sm:grid-cols-2">{filteredMembers.map((member) => <label key={member.id} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]"><input type="checkbox" checked={settings.allowedUserIds.includes(member.id)} onChange={() => toggleMember(member.id)} className="h-4 w-4 shrink-0" /><img src={member.avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full" /><span className="min-w-0"><span className="block truncate font-semibold">{member.displayName}</span><span className="block truncate text-xs text-[var(--muted)]">@{member.username}</span></span></label>)}{!filteredMembers.length && <p className="text-sm text-[var(--muted)]">Anggota tidak ditemukan.</p>}</div>
               <p className="text-xs text-[var(--muted)]">Dipilih: {settings.allowedUserIds.length} anggota</p>
             </section>
 
             <section className="card space-y-5 p-5 sm:p-6">
               <div><h2 className="text-lg font-bold text-[var(--text)]">Batas channel</h2><p className="mt-1 text-sm text-[var(--muted)]">Jika channel yang diizinkan dipilih, agent hanya merespons di channel tersebut.</p></div>
-              {(['allowedChannelIds', 'excludedChannelIds'] as const).map((field) => <fieldset key={field} className="space-y-2"><legend className="mb-2 text-sm font-semibold text-[var(--text)]">{field === 'allowedChannelIds' ? 'Channel yang diizinkan' : 'Channel yang dikecualikan'}</legend>{channels.length ? <><label className="mb-2 inline-flex items-center gap-2 text-xs text-[var(--muted)]"><input type="checkbox" checked={settings[field].length === channels.length} onChange={(e) => setAllChannels(field, e.target.checked)} className="h-4 w-4" />Pilih semua channel</label><div className="grid gap-2 sm:grid-cols-2">{channels.map((channel) => <label key={`${field}-${channel.id}`} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings[field].includes(channel.id)} onChange={() => toggleChannel(field, channel.id)} className="h-4 w-4 shrink-0" /><span className="min-w-0 break-all">#{channel.name}</span></label>)}</div></> : <p className="text-sm text-[var(--muted)]">Daftar channel tidak tersedia.</p>}</fieldset>)}
+              {(['allowedChannelIds', 'excludedChannelIds'] as const).map((field) => <fieldset key={field} className="space-y-2"><legend className="mb-2 text-sm font-semibold text-[var(--text)]">{field === 'allowedChannelIds' ? 'Channel yang diizinkan' : 'Channel yang dikecualikan'}</legend>{channels.length ? <><label className="mb-2 inline-flex items-center gap-2 text-xs text-[var(--muted)]"><input type="checkbox" checked={settings[field].includes('*')} onChange={(e) => setAllChannels(field, e.target.checked)} className="h-4 w-4" />Pilih semua channel</label><div className="grid gap-2 sm:grid-cols-2">{channels.map((channel) => <label key={`${field}-${channel.id}`} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings[field].includes(channel.id)} onChange={() => toggleChannel(field, channel.id)} className="h-4 w-4 shrink-0" /><span className="min-w-0 break-all">#{channel.name}</span></label>)}</div></> : <p className="text-sm text-[var(--muted)]">Daftar channel tidak tersedia.</p>}</fieldset>)}
             </section>
             <div className="flex justify-end"><button type="submit" disabled={saving} className="btn btn-primary px-6 py-3">{saving ? 'Menyimpan…' : 'Simpan pengaturan'}</button></div>
           </form>
 
           <section className="card space-y-4 p-5 sm:p-6">
             <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold text-[var(--text)]">Pemakaian token</h2><p className="mt-1 text-sm text-[var(--muted)]">Agregat per anggota; isi prompt dan jawaban tidak ditampilkan.</p></div><label><span className="field-label">Periode</span><select className="input" value={days} onChange={(e) => setDays(Number(e.target.value))}><option value={7}>7 hari</option><option value={30}>30 hari</option><option value={90}>90 hari</option></select></label></div>
-            <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-[var(--muted)]"><tr><th className="py-3 pr-4">Anggota</th><th className="py-3 pr-4 text-right">Permintaan</th><th className="py-3 pr-4 text-right">Gagal</th><th className="py-3 pr-4 text-right">Prompt tokens</th><th className="py-3 pr-4 text-right">Completion tokens</th><th className="py-3 text-right">Total tokens</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{usage.map((row) => <tr key={row.userId} className="text-[var(--text)]"><td className="py-3 pr-4"><span className="block font-semibold">{displayUsageMember(row.userId)}</span><span className="font-mono text-[11px] text-[var(--muted)]">{row.userId}</span></td><td className="py-3 pr-4 text-right tabular-nums">{row.requests.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.failures.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td><td className="py-3 text-right font-semibold tabular-nums">{row.totalTokens.toLocaleString()}</td></tr>)}</tbody></table></div>
+            <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-[var(--muted)]"><tr><th className="py-3 pr-4">Anggota</th><th className="py-3 pr-4 text-right">Permintaan</th><th className="py-3 pr-4 text-right">Gagal</th><th className="py-3 pr-4 text-right">Prompt tokens</th><th className="py-3 pr-4 text-right">Completion tokens</th><th className="py-3 text-right">Total tokens</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{usage.map((row) => <tr key={row.userId} className="text-[var(--text)]"><td className="py-3 pr-4"><span className="block font-semibold">{members.find((member) => member.id === row.userId)?.displayName || 'Anggota tidak ditemukan'}</span><span className="block text-xs text-[var(--muted)]">@{members.find((member) => member.id === row.userId)?.username || 'unknown'}</span></td><td className="py-3 pr-4 text-right tabular-nums">{row.requests.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.failures.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td><td className="py-3 text-right font-semibold tabular-nums">{row.totalTokens.toLocaleString()}</td></tr>)}</tbody></table></div>
             {!usage.length && <p className="py-4 text-center text-sm text-[var(--muted)]">Belum ada pemakaian AI pada periode ini.</p>}
           </section>
         </>}

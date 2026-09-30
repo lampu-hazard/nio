@@ -133,9 +133,11 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
 
       if (message.author.bot || !message.guild) return;
 
-      this.handleAgentMessage(message).catch(
-        (err) => this.logger.error(`Discord agent message error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
-      );
+      this.handleAgentMessage(message).catch((err) => {
+        const raw = String(err?.message || err || 'unknown');
+        const code = raw.match(/\b(?:OPENAI|GEMINI)_[A-Z0-9_]+\b/)?.[0] || 'AGENT_INVOCATION_ERROR';
+        this.logger.error(`Discord agent message error code=${code}`, undefined, 'DiscordBot');
+      });
 
       const name = message.content.trim().toLowerCase();
       if (!name || name.length > 32) return;
@@ -299,7 +301,11 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     const isMentioningBot = message.mentions.has(this.client.user);
     if (!isMentioningBot && !referencedBotMessageId) return;
 
-    if (!await this.canUseAgent(message)) return;
+    const decision = await this.agent.getAccessDecision(message.guild.id, message.channel.id, message.author.id);
+    if (!decision.allowed) {
+      this.logger.log(`AI agent denied reason=${decision.reason} guild=${message.guild.id} channel=${message.channel.id} user=${message.author.id}`, 'DiscordBot');
+      return;
+    }
 
     if (message.channel && typeof (message.channel as any).sendTyping === 'function') {
       await (message.channel as any).sendTyping().catch(() => null);
@@ -322,15 +328,34 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       }).catch(() => null);
     };
 
-    const response = await this.agent.handleMention(
-      message.guild.id,
-      message.channel.id,
-      message.author.id,
-      message.content,
-      referencedBotMessageId,
-      replyContext,
-      onProgress,
-    );
+    let response: any;
+    try {
+      response = await this.agent.handleMention(
+        message.guild.id,
+        message.channel.id,
+        message.author.id,
+        message.content,
+        referencedBotMessageId,
+        replyContext,
+        onProgress,
+      );
+    } catch (err: any) {
+      const raw = String(err?.message || err || 'unknown');
+      const code = raw.match(/\b(?:OPENAI|GEMINI)_[A-Z0-9_]+\b/)?.[0] || 'AGENT_INVOCATION_ERROR';
+      this.logger.error(`Discord agent invocation failed code=${code} guild=${message.guild.id}`, undefined, 'DiscordBot');
+      if (loadingMessage) {
+        await loadingMessage.edit({
+          content: '⚠️ AI Agent gagal memproses permintaan. Periksa konfigurasi provider atau log server.',
+          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+        }).catch(() => null);
+      } else {
+        await message.reply({
+          content: '⚠️ AI Agent gagal memproses permintaan. Periksa konfigurasi provider atau log server.',
+          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+        }).catch(() => null);
+      }
+      return;
+    }
 
     if (!response) {
       await loadingMessage?.delete().catch(() => null);

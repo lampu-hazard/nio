@@ -14,6 +14,9 @@ const ADMINISTRATOR = 0x8n;
 
 @Injectable()
 export class GuildsService {
+  private readonly memberListCache = new Map<string, { expiresAt: number; members: { id: string; displayName: string; username: string; avatarUrl: string }[] }>();
+  private readonly memberListRequests = new Map<string, Promise<{ id: string; displayName: string; username: string; avatarUrl: string }[]>>();
+
   constructor(
     private readonly bot: DiscordBotService,
     private readonly prisma: PrismaService,
@@ -44,19 +47,35 @@ export class GuildsService {
 
   async getChannels(guildId: string) {
     const guild = await this.getGuild(guildId);
-    await guild.channels.fetch();
+    await guild.channels.fetch().catch(() => null);
     return guild.channels.cache
       .filter((c) => c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement)
       .map((c) => ({ id: c.id, name: c.name, type: c.type }));
   }
 
   async getMembers(guildId: string) {
-    const guild = await this.getGuild(guildId);
-    const members = await guild.members.fetch();
-    return members
-      .filter((member) => !member.user.bot)
-      .map((member) => ({ id: member.id, displayName: member.displayName, username: member.user.username, avatarUrl: member.displayAvatarURL({ size: 64 }) }))
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const cached = this.memberListCache.get(guildId);
+    if (cached && cached.expiresAt > Date.now()) return cached.members;
+
+    const pending = this.memberListRequests.get(guildId);
+    if (pending) return pending;
+
+    const request = (async () => {
+      const guild = await this.getGuild(guildId);
+      // The GuildMembers intent keeps the member cache warm; avoid opcode-8 chunk requests that can be rate-limited.
+      const result = guild.members.cache
+        .filter((member) => !member.user.bot)
+        .map((member) => ({ id: member.id, displayName: member.displayName, username: member.user.username, avatarUrl: member.displayAvatarURL({ size: 64 }) }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      this.memberListCache.set(guildId, { members: result, expiresAt: Date.now() + 5 * 60_000 });
+      return result;
+    })();
+    this.memberListRequests.set(guildId, request);
+    try {
+      return await request;
+    } finally {
+      this.memberListRequests.delete(guildId);
+    }
   }
 
   async getRoles(guildId: string) {

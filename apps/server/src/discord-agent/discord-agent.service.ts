@@ -176,19 +176,27 @@ export class DiscordAgentService {
     @Optional() private readonly aiSettings?: AiAgentSettingsService,
   ) {}
 
-  async canHandle(guildId: string, channelId: string, authorId: string) {
+  async getAccessDecision(guildId: string, channelId: string, authorId: string) {
     const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
-    const isGlobalEnabled = process.env.DISCORD_AGENT_ENABLED === 'true';
-    const isEnabled = settings?.enabled ?? isGlobalEnabled;
-    if (!isEnabled) return { allowed: false, settings };
+    const isEnabled = settings?.enabled ?? process.env.DISCORD_AGENT_ENABLED === 'true';
+    if (!isEnabled) return { allowed: false, reason: 'disabled', settings } as const;
 
     const allowedUsers = settings
       ? settings.allowedUserIds || []
       : (process.env.DISCORD_AGENT_ALLOWED_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean);
-    if (!allowedUsers.includes(authorId)) return { allowed: false, settings };
-    if (settings?.allowedChannelIds?.length && !settings.allowedChannelIds.includes(channelId)) return { allowed: false, settings };
-    if (settings?.excludedChannelIds?.includes(channelId)) return { allowed: false, settings };
-    return { allowed: true, settings };
+    if (!allowedUsers.includes('*') && !allowedUsers.includes(authorId)) return { allowed: false, reason: 'user-not-allowed', settings } as const;
+    if (settings?.allowedChannelIds?.length && !settings.allowedChannelIds.includes('*') && !settings.allowedChannelIds.includes(channelId)) {
+      return { allowed: false, reason: 'channel-not-allowed', settings } as const;
+    }
+    if (settings?.excludedChannelIds?.includes('*') || settings?.excludedChannelIds?.includes(channelId)) {
+      return { allowed: false, reason: 'channel-excluded', settings } as const;
+    }
+    return { allowed: true, reason: 'allowed', settings } as const;
+  }
+
+  async canHandle(guildId: string, channelId: string, authorId: string) {
+    const { allowed, settings } = await this.getAccessDecision(guildId, channelId, authorId);
+    return { allowed, settings };
   }
 
   async handleMention(
@@ -313,7 +321,7 @@ ${prompt || '(analisis pesan di atas)'}`;
         });
       } catch (err: any) {
         const rawMessage = String(err?.message || err || 'Unknown provider error');
-        const safeCode = rawMessage.match(/\b(?:OPENAI|GEMINI)_[A-Z_]+\b/)?.[0] || 'AI_PROVIDER_ERROR';
+        const safeCode = rawMessage.match(/\b(?:OPENAI|GEMINI)_[A-Z0-9_]+\b/)?.[0] || 'AI_PROVIDER_ERROR';
         this.logger.warn(`AI provider request failed provider=${providerName} code=${safeCode}`);
         if (/HTTP_429\b/.test(rawMessage)) {
           finalContent = '⚠️ Batas kuota AI terlampaui (Rate Limit / Quota Exceeded). Mohon tunggu beberapa saat sebelum mencoba kembali.';

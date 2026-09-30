@@ -310,11 +310,20 @@ ${prompt || '(analisis pesan di atas)'}`;
       await reportStage(turns === 1 ? 'PLANNING' : 'SYNTHESIZING', turns === 1 ? '🧭 *Menyiapkan pemeriksaan...*' : '🧩 *Menyatukan temuan...*');
 
       let response: AiGenerateResult;
+      let streamedText = '';
       try {
         response = await provider.generate({
           systemPrompt: effectiveSystemPrompt,
           messages: [...messages],
           tools: availableTools,
+          onTextDelta: async (delta) => {
+            streamedText += delta;
+            if (!onProgress) return;
+            const safeText = sanitizeSensitiveInfo(neutralizeMentions(cleanModelText(streamedText)));
+            const stableEnd = Math.max(0, safeText.length - 128);
+            const stableText = safeText.slice(Math.max(0, stableEnd - 1500), stableEnd);
+            if (stableText) await onProgress(`✍️ ${stableText}`);
+          },
         });
       } catch (err: any) {
         const rawMessage = String(err?.message || err || 'Unknown provider error');

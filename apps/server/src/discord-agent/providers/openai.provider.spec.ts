@@ -51,6 +51,8 @@ describe('OpenAiProvider with Tool Calling', () => {
       expect(capturedUrl).toBe('https://api.openai.com/v1/chat/completions');
       expect(capturedHeaders['Authorization']).toBe('Bearer mock-openai-key');
       expect(capturedPayload.model).toBe('gpt-4o-mini');
+      expect(capturedPayload.stream).toBe(true);
+      expect(capturedPayload.stream_options).toEqual({ include_usage: true });
       expect(capturedPayload.messages).toEqual([
         { role: 'system', content: 'You are helpful.' },
         { role: 'user', content: 'Hi!' },
@@ -280,6 +282,55 @@ describe('OpenAiProvider with Tool Calling', () => {
           content: '{"ok":true,"value":{"warnings":[]}}',
         },
       ]);
+    } finally {
+      global.fetch = globalFetch;
+    }
+  });
+
+  it('parses streamed text and split tool-call deltas', async () => {
+    const globalFetch = global.fetch;
+    let capturedPayload: any;
+    const events = [
+      { choices: [{ delta: { content: 'Hello ' }, finish_reason: null }] },
+      { choices: [{ delta: { content: 'stream' }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'lookup', arguments: '{"id":' } }] }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"42"}' } }] }, finish_reason: null }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      { choices: [], usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 } },
+    ];
+    const wire = events.map((event) => `data: ${JSON.stringify(event)}\r\n\r\n`).join('') + 'data: [DONE]\n\n';
+    const encoder = new TextEncoder();
+    global.fetch = jest.fn(async (_url: any, options: any) => {
+      capturedPayload = JSON.parse(options.body);
+      const pieces = [wire.slice(0, 37), wire.slice(37, 141), wire.slice(141)];
+      return {
+        ok: true,
+        headers: { get: () => 'text/event-stream; charset=utf-8' },
+        body: new ReadableStream({
+          start(controller) {
+            for (const piece of pieces) controller.enqueue(encoder.encode(piece));
+            controller.close();
+          },
+        }),
+      } as unknown as Response;
+    });
+    const deltas: string[] = [];
+
+    try {
+      const result = await provider.generate({
+        systemPrompt: '',
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
+        tools: [],
+        onTextDelta: (delta) => { deltas.push(delta); },
+      });
+      expect(capturedPayload.stream).toBe(true);
+      expect(result.message.parts).toEqual([
+        { type: 'text', text: 'Hello stream' },
+        { type: 'tool_call', id: 'call_1', name: 'lookup', arguments: { id: '42' } },
+      ]);
+      expect(result.finishReason).toBe('tool_calls');
+      expect(result.usage).toEqual({ promptTokens: 11, completionTokens: 4, totalTokens: 15 });
+      expect(deltas).toEqual(['Hello ', 'stream']);
     } finally {
       global.fetch = globalFetch;
     }

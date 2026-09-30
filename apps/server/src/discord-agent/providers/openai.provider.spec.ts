@@ -336,6 +336,31 @@ describe('OpenAiProvider with Tool Calling', () => {
     }
   });
 
+  it('accepts SSE streams that end after the finish chunk without a done sentinel', async () => {
+    const globalFetch = global.fetch;
+    const wire = 'data: {"choices":[{"delta":{"content":"finished"},"finish_reason":null}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n';
+    const encoder = new TextEncoder();
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'text/event-stream' },
+      body: new ReadableStream({
+        start(controller) { controller.enqueue(encoder.encode(wire)); controller.close(); },
+      }),
+    } as unknown as Response));
+    try {
+      const result = await provider.generate({
+        systemPrompt: '',
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
+        tools: [],
+      });
+      expect(result.message.parts).toEqual([{ type: 'text', text: 'finished' }]);
+      expect(result.finishReason).toBe('stop');
+    } finally {
+      global.fetch = globalFetch;
+    }
+  });
+
   it('rejects malformed successful JSON and malformed tool-call arguments safely', async () => {
     const globalFetch = global.fetch;
     global.fetch = jest.fn(async () => ({ ok: true, text: async () => '<html>proxy</html>' } as Response));

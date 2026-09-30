@@ -209,7 +209,9 @@ export class OpenAiProvider implements AiProvider {
       }
       buffer += decoder.decode();
       if (buffer.trim()) await processEvent(buffer);
-      if (!sawDone) throw new Error('OPENAI_TRUNCATED_STREAM: Provider stream ended before completion.');
+      if (!sawDone && !finishReason) {
+        throw new Error('OPENAI_TRUNCATED_STREAM: Provider stream ended before completion.');
+      }
     } finally {
       reader.releaseLock();
     }

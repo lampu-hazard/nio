@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
 import { BadRequestException } from '@nestjs/common';
+import { Collection } from 'discord.js';
 import { GuildsService } from './guilds.service';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -26,6 +27,7 @@ describe('GuildsService', () => {
             has: jest.fn(),
             get: jest.fn(),
           },
+          fetch: jest.fn(),
         },
       },
     };
@@ -61,6 +63,51 @@ describe('GuildsService', () => {
       anomaly as unknown as DiscordAnomalyService,
       hallOfFame as unknown as HallOfFameService,
     );
+  });
+
+  describe('getMembers', () => {
+    const makeMember = (id: string, username: string, bot = false) => ({
+      id,
+      displayName: username,
+      user: { username, bot },
+      displayAvatarURL: () => `https://cdn.example/${id}.png`,
+    });
+
+    it('searches Discord with a bounded query without caching members', async () => {
+      const wanted = makeMember('1', 'Wanted');
+      const ignoredBot = makeMember('2', 'Bot', true);
+      const search = jest.fn<any>(async () => new Collection([[wanted.id, wanted], [ignoredBot.id, ignoredBot]]));
+      const guild = { members: { search, cache: new Map() } };
+      bot.client.guilds.fetch.mockResolvedValue(guild);
+
+      const result = await service.getMembers('guild-1', '  wanted  ');
+
+      expect(search).toHaveBeenCalledWith({ query: 'wanted', limit: 25, cache: false });
+      expect(result).toEqual([{ id: '1', displayName: 'Wanted', username: 'Wanted', avatarUrl: 'https://cdn.example/1.png' }]);
+    });
+
+    it('uses member cache for an empty query and caches the list', async () => {
+      const member = makeMember('1', 'Cached');
+      const cache = new Collection([[member.id, member]]);
+      const guild = { members: { search: jest.fn<any>(), cache } };
+      bot.client.guilds.fetch.mockResolvedValue(guild);
+
+      const first = await service.getMembers('guild-1');
+      const second = await service.getMembers('guild-1');
+
+      expect(guild.members.search).not.toHaveBeenCalled();
+      expect(first).toEqual(second);
+      expect(bot.client.guilds.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw away cached fallback when Discord search fails', async () => {
+      const search = jest.fn<any>(async () => { throw new Error('Discord unavailable'); });
+      const guild = { members: { search, cache: new Map() } };
+      bot.client.guilds.fetch.mockResolvedValue(guild);
+
+      await expect(service.getMembers('guild-1', 'name')).rejects.toThrow('Discord unavailable');
+      expect(search).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getSettings', () => {

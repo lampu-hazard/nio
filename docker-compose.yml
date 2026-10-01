@@ -155,9 +155,8 @@ services:
     restart: unless-stopped
     depends_on:
       - nio-server
-    environment:
-      - NODE_ENV=production
-      - BACKEND_URL=http://nio-server:3002
+    env_file:
+      - ./apps/owner/.env
     networks:
       - private
 

@@ -83,6 +83,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push owner console
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/owner
+          push: true
+          build-args: |
+            BACKEND_URL=http://nio-server:3002
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-owner:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nio-owner:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:

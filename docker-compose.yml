@@ -37,7 +37,6 @@ services:
     ports:
       - "50053:50053"
     environment:
-      - RUST_LOG=info
       - DATABASE_URL=postgresql://nio:nio-server@db:5432/nio-db
     depends_on:
       db:
@@ -127,7 +126,6 @@ services:
       - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
       - ANOMALY_ENGINE_URL=anomaly-engine:50051
       - ANALYTICS_ENGINE_URL=analytics-engine:50053
-
     networks:
       - private
 
@@ -140,6 +138,21 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    depends_on:
+      - nio-server
+    environment:
+      - NODE_ENV=production
+      - BACKEND_URL=http://nio-server:3002
+    networks:
+      - private
+
+  nio-owner:
+    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-owner:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/owner
+      dockerfile: Dockerfile
+    container_name: nio-owner
+    restart: unless-stopped
     depends_on:
       - nio-server
     environment:

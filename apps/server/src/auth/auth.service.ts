@@ -19,10 +19,10 @@ export class AuthService {
     private readonly logger: AppLogger,
   ) {}
 
-  getDiscordLoginUrl(state: string): string {
+  getDiscordLoginUrl(state: string, client: 'client' | 'owner' = 'client'): string {
     const params = new URLSearchParams({
       client_id: this.requiredEnv('DISCORD_CLIENT_ID'),
-      redirect_uri: this.redirectUri,
+      redirect_uri: this.redirectUri(client),
       response_type: 'code',
       scope: 'identify guilds',
       state,
@@ -30,14 +30,14 @@ export class AuthService {
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
   }
 
-  async exchangeCode(code: string) {
+  async exchangeCode(code: string, client: 'client' | 'owner' = 'client') {
     this.logger.debug('Exchanging OAuth code', 'Auth');
     const body = new URLSearchParams({
       client_id: this.requiredEnv('DISCORD_CLIENT_ID'),
       client_secret: this.requiredEnv('DISCORD_CLIENT_SECRET'),
       grant_type: 'authorization_code',
       code,
-      redirect_uri: this.redirectUri,
+      redirect_uri: this.redirectUri(client),
     });
 
     const response = await fetch(`${DISCORD_API}/oauth2/token`, {
@@ -83,7 +83,21 @@ export class AuthService {
     return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
   }
 
-  private get redirectUri() {
+  redirectUri(client: 'client' | 'owner') {
+    if (client === 'owner') {
+      const ownerUri = process.env.OWNER_DISCORD_REDIRECT_URI?.trim();
+      if (!ownerUri) throw new AppError('CONFIG_MISSING', 'Missing OWNER_DISCORD_REDIRECT_URI', 500);
+      let parsed: URL;
+      try {
+        parsed = new URL(ownerUri);
+      } catch {
+        throw new AppError('CONFIG_INVALID', 'OWNER_DISCORD_REDIRECT_URI must be an absolute URL', 500);
+      }
+      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && parsed.hostname === 'localhost')) {
+        throw new AppError('CONFIG_INVALID', 'OWNER_DISCORD_REDIRECT_URI must use HTTPS', 500);
+      }
+      return ownerUri;
+    }
     return process.env.DISCORD_REDIRECT_URI || 'http://localhost:3001/auth/discord/callback';
   }
 

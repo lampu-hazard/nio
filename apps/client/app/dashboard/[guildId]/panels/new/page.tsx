@@ -7,13 +7,21 @@ export default async function NewPanelPage({ params }: { params: Promise<{ guild
     .catch(() => ({ ok: true as const, channels: [] }));
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <a href={`/dashboard/${guildId}`} className="text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]">Back to server</a>
-          <span className="badge">Wizard</span>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <a href={`/dashboard/${guildId}`} className="text-xs font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]">
+              ← Panels
+            </a>
+            <span className="text-[var(--border)]">/</span>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Create New Panel</h2>
+          </div>
+          <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
+            Setup Wizard
+          </span>
         </div>
-        <p className="max-w-3xl text-sm leading-6 text-[var(--muted)]">Choose a panel type and nio will prepare the right form, template, and preview.</p>
 
         <NewPanelWizard guildId={guildId} channels={channelsData.channels} />
       </div>

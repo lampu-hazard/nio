@@ -25,6 +25,7 @@ const defaults: Settings = {
 
 export default function AiAgentPage({ params }: PageProps) {
   const { guildId } = use(params);
+  const [tab, setTab] = useState<'config' | 'access' | 'usage'>('config');
   const [settings, setSettings] = useState<Settings>(defaults);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -147,50 +148,307 @@ export default function AiAgentPage({ params }: PageProps) {
 
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Pilih provider, batasi siapa dan channel yang dapat mengakses AI, lalu pantau pemakaian token per anggota.</p>
-        {error && <div role="alert" className="notice notice-error">{error}</div>}
-        {success && <div role="status" className="notice notice-success">{success}</div>}
-        {loading ? <div className="card p-8 text-center text-[var(--muted)]">Memuat konfigurasi AI Agent…</div> : <>
-          <form onSubmit={save} className="max-w-4xl space-y-6">
-            <section className="card space-y-5 p-5 sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div><h2 className="text-lg font-bold text-[var(--text)]">Provider & model</h2><p className="mt-1 text-sm text-[var(--muted)]">Credential dienkripsi dan tidak pernah ditampilkan kembali.</p></div>
-                <label className="flex items-center gap-3 text-sm font-semibold text-[var(--text)]"><input type="checkbox" checked={settings.enabled} onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })} className="h-4 w-4" />Aktifkan AI Agent</label>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label><span className="field-label">Provider</span><select className="input" value={settings.provider} onChange={(e) => setSettings({ ...settings, provider: e.target.value as Settings['provider'] })}><option value="gemini">Google Gemini</option><option value="openai-compatible">OpenAI-compatible</option></select></label>
-                <label><span className="field-label">Model</span><input className="input" value={settings.model} maxLength={120} onChange={(e) => setSettings({ ...settings, model: e.target.value })} placeholder="gemini-2.5-flash" /></label>
-              </div>
-              {settings.provider === 'openai-compatible' && <label className="block"><span className="field-label">API base URL</span><input className="input" type="url" value={settings.baseUrl || ''} maxLength={500} onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value || null })} placeholder="http://localhost:11434/v1" /><span className="mt-1 block text-xs text-[var(--muted)]">HTTP dan HTTPS didukung. Gunakan base URL provider yang tepercaya.</span></label>}
-              <div className="space-y-3">
-                <label className="block"><span className="field-label">API key {settings.hasCredential ? '· sudah dikonfigurasi' : '· belum dikonfigurasi'}</span><input className="input" type="password" autoComplete="new-password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); if (e.target.value) setClearKey(false); }} placeholder={settings.hasCredential ? 'Masukkan key baru untuk mengganti' : 'Masukkan API key'} /></label>
-                {settings.hasCredential && <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]"><input type="checkbox" checked={clearKey} onChange={(e) => { setClearKey(e.target.checked); if (e.target.checked) setApiKey(''); }} />Hapus API key tersimpan</label>}
-              </div>
-              <p className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-xs leading-5 text-[var(--muted)]">MCP adalah integrasi tools, bukan provider model. Hak aksi tetap mengikuti izin Discord dan mekanisme persetujuan bot.</p>
-            </section>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Action & Tab Switcher Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">AI Agent Control</h2>
+            <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setTab('config')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  tab === 'config'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Model &amp; Key
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('access')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  tab === 'access'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Akses &amp; Saluran
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('usage')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  tab === 'usage'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Pemakaian Token
+              </button>
+            </div>
+          </div>
 
-            <section className="card space-y-5 p-5 sm:p-6">
-              <div><h2 className="text-lg font-bold text-[var(--text)]">Akses anggota</h2><p className="mt-1 text-sm text-[var(--muted)]">Allowlist kosong berarti tidak ada anggota yang diizinkan.</p></div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><label className="min-w-0 flex-1"><span className="field-label">Cari anggota</span><input className="input" type="search" value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Nama atau username" /></label><label className="flex items-center gap-2 pb-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings.allowedUserIds.includes('*')} onChange={(e) => setAllMembers(e.target.checked)} className="h-4 w-4" />Pilih semua anggota</label></div>
-              <div className="grid max-h-80 gap-2 overflow-y-auto sm:grid-cols-2">{filteredMembers.map((member) => <label key={member.id} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-sm text-[var(--text)]"><input type="checkbox" checked={settings.allowedUserIds.includes(member.id)} onChange={() => toggleMember(member.id)} className="h-4 w-4 shrink-0" /><img src={member.avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full" /><span className="min-w-0"><span className="block truncate font-semibold">{member.displayName}</span><span className="block truncate text-xs text-[var(--muted)]">@{member.username}</span></span></label>)}{!filteredMembers.length && <p className="text-sm text-[var(--muted)]">Anggota tidak ditemukan.</p>}</div>
-              <p className="text-xs text-[var(--muted)]">Dipilih: {settings.allowedUserIds.length} anggota</p>
-            </section>
+          <div className="flex items-center gap-3">
+            {error && <span className="text-xs font-semibold text-[var(--danger)]">{error}</span>}
+            {success && <span className="text-xs font-semibold text-[var(--ok)]">{success}</span>}
+            {tab !== 'usage' && (
+              <button
+                type="button"
+                onClick={(e) => void save(e as any)}
+                disabled={saving}
+                className="btn btn-primary text-xs font-bold py-1.5 px-4"
+              >
+                {saving ? 'Menyimpan…' : 'Simpan'}
+              </button>
+            )}
+          </div>
+        </div>
 
-            <section className="card space-y-5 p-5 sm:p-6">
-              <div><h2 className="text-lg font-bold text-[var(--text)]">Channel yang dikecualikan</h2><p className="mt-1 text-sm text-[var(--muted)]">Secara default AI merespons di semua channel. Centang hanya channel yang ingin diblokir.</p></div>
-              {channels.length ? <><label className="mb-2 inline-flex items-center gap-2 text-xs text-[var(--muted)]"><input type="checkbox" checked={settings.excludedChannelIds.includes('*')} onChange={(e) => setAllChannels('excludedChannelIds', e.target.checked)} className="h-4 w-4" />Kecualikan semua channel</label><div className="grid gap-2 sm:grid-cols-2">{channels.map((channel) => <label key={`excluded-${channel.id}`} className="flex min-w-0 items-center gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"><input type="checkbox" checked={settings.excludedChannelIds.includes(channel.id) || settings.excludedChannelIds.includes('*')} onChange={() => toggleChannel('excludedChannelIds', channel.id)} className="h-4 w-4 shrink-0" /><span className="min-w-0 break-all">#{channel.name}</span></label>)}</div></> : <p className="text-sm text-[var(--muted)]">Daftar channel tidak tersedia.</p>}
-            </section>
-            <div className="flex justify-end"><button type="submit" disabled={saving} className="btn btn-primary px-6 py-3">{saving ? 'Menyimpan…' : 'Simpan pengaturan'}</button></div>
-          </form>
+        {loading ? (
+          <div className="card p-8 text-center text-xs text-[var(--muted)]">Memuat konfigurasi AI Agent…</div>
+        ) : (
+          <div>
+            {tab === 'config' && (
+              <div className="grid gap-4 max-w-3xl">
+                <section className="card space-y-4 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Provider &amp; Model</h3>
+                      <p className="text-[11px] text-[var(--muted)]">Credential dienkripsi dan tidak pernah ditampilkan kembali.</p>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
+                      <input
+                        type="checkbox"
+                        checked={settings.enabled}
+                        onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })}
+                        className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Aktifkan AI Agent
+                    </label>
+                  </div>
 
-          <section className="card space-y-4 p-5 sm:p-6">
-            <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold text-[var(--text)]">Pemakaian token</h2><p className="mt-1 text-sm text-[var(--muted)]">Agregat per anggota; isi prompt dan jawaban tidak ditampilkan.</p></div><label><span className="field-label">Periode</span><select className="input" value={days} onChange={(e) => setDays(Number(e.target.value))}><option value={7}>7 hari</option><option value={30}>30 hari</option><option value={90}>90 hari</option></select></label></div>
-            <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-[var(--muted)]"><tr><th className="py-3 pr-4">Anggota</th><th className="py-3 pr-4 text-right">Permintaan</th><th className="py-3 pr-4 text-right">Gagal</th><th className="py-3 pr-4 text-right">Prompt tokens</th><th className="py-3 pr-4 text-right">Completion tokens</th><th className="py-3 text-right">Total tokens</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{usage.map((row) => <tr key={row.userId} className="text-[var(--text)]"><td className="py-3 pr-4"><span className="block font-semibold">{members.find((member) => member.id === row.userId)?.displayName || 'Anggota tidak ditemukan'}</span><span className="block text-xs text-[var(--muted)]">@{members.find((member) => member.id === row.userId)?.username || 'unknown'}</span></td><td className="py-3 pr-4 text-right tabular-nums">{row.requests.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.failures.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td><td className="py-3 pr-4 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td><td className="py-3 text-right font-semibold tabular-nums">{row.totalTokens.toLocaleString()}</td></tr>)}</tbody></table></div>
-            {!usage.length && <p className="py-4 text-center text-sm text-[var(--muted)]">Belum ada pemakaian AI pada periode ini.</p>}
-          </section>
-        </>}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label>
+                      <span className="field-label">Provider</span>
+                      <select
+                        className="input py-1.5 text-xs"
+                        value={settings.provider}
+                        onChange={(e) => setSettings({ ...settings, provider: e.target.value as Settings['provider'] })}
+                      >
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openai-compatible">OpenAI-compatible</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span className="field-label">Model</span>
+                      <input
+                        className="input py-1.5 text-xs"
+                        value={settings.model}
+                        maxLength={120}
+                        onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+                        placeholder="gemini-2.5-flash"
+                      />
+                    </label>
+                  </div>
+
+                  {settings.provider === 'openai-compatible' && (
+                    <label className="block">
+                      <span className="field-label">API base URL</span>
+                      <input
+                        className="input py-1.5 text-xs"
+                        type="url"
+                        value={settings.baseUrl || ''}
+                        maxLength={500}
+                        onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value || null })}
+                        placeholder="http://localhost:11434/v1"
+                      />
+                    </label>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="block">
+                      <span className="field-label">
+                        API Key {settings.hasCredential ? '· tersimpan' : '· belum disetel'}
+                      </span>
+                      <input
+                        className="input py-1.5 text-xs"
+                        type="password"
+                        autoComplete="new-password"
+                        value={apiKey}
+                        onChange={(e) => {
+                          setApiKey(e.target.value);
+                          if (e.target.value) setClearKey(false);
+                        }}
+                        placeholder={settings.hasCredential ? 'Ketik untuk mengganti API key baru' : 'Masukkan API key'}
+                      />
+                    </label>
+                    {settings.hasCredential && (
+                      <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                        <input
+                          type="checkbox"
+                          checked={clearKey}
+                          onChange={(e) => {
+                            setClearKey(e.target.checked);
+                            if (e.target.checked) setApiKey('');
+                          }}
+                        />
+                        Hapus API key yang tersimpan
+                      </label>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {tab === 'access' && (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section className="card space-y-3 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Akses Anggota</h3>
+                      <p className="text-[11px] text-[var(--muted)]">Allowlist izin berbicara dengan AI.</p>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
+                      <input
+                        type="checkbox"
+                        checked={settings.allowedUserIds.includes('*')}
+                        onChange={(e) => setAllMembers(e.target.checked)}
+                        className="h-3.5 w-3.5"
+                      />
+                      Semua anggota
+                    </label>
+                  </div>
+                  <input
+                    className="input py-1.5 text-xs"
+                    type="search"
+                    value={memberQuery}
+                    onChange={(e) => setMemberQuery(e.target.value)}
+                    placeholder="Cari nama atau username..."
+                  />
+                  <div className="grid max-h-72 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                    {filteredMembers.map((member) => (
+                      <label
+                        key={member.id}
+                        className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-xs text-[var(--text)] cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={settings.allowedUserIds.includes(member.id)}
+                          onChange={() => toggleMember(member.id)}
+                          className="h-3.5 w-3.5 shrink-0"
+                        />
+                        <img src={member.avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full" />
+                        <span className="min-w-0">
+                          <span className="block truncate font-semibold">{member.displayName}</span>
+                          <span className="block truncate text-[10px] text-[var(--muted)]">@{member.username}</span>
+                        </span>
+                      </label>
+                    ))}
+                    {!filteredMembers.length && <p className="text-xs text-[var(--muted)] py-4 text-center col-span-full">Tidak ada anggota cocok.</p>}
+                  </div>
+                  <p className="text-[11px] text-[var(--muted)]">Dipilih: {settings.allowedUserIds.length} anggota</p>
+                </section>
+
+                <section className="card space-y-3 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Saluran yang Dikecualikan</h3>
+                      <p className="text-[11px] text-[var(--muted)]">Centang saluran yang dilarang merespons.</p>
+                    </div>
+                    {channels.length > 0 && (
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
+                        <input
+                          type="checkbox"
+                          checked={settings.excludedChannelIds.includes('*')}
+                          onChange={(e) => setAllChannels('excludedChannelIds', e.target.checked)}
+                          className="h-3.5 w-3.5"
+                        />
+                        Semua
+                      </label>
+                    )}
+                  </div>
+                  {channels.length ? (
+                    <div className="grid max-h-72 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                      {channels.map((channel) => (
+                        <label
+                          key={`excluded-${channel.id}`}
+                          className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text)] cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={settings.excludedChannelIds.includes(channel.id) || settings.excludedChannelIds.includes('*')}
+                            onChange={() => toggleChannel('excludedChannelIds', channel.id)}
+                            className="h-3.5 w-3.5 shrink-0"
+                          />
+                          <span className="min-w-0 truncate">#{channel.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--muted)]">Daftar channel tidak tersedia.</p>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {tab === 'usage' && (
+              <section className="card p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Agregat Pemakaian Token</h3>
+                    <p className="text-[11px] text-[var(--muted)]">Pemakaian token per anggota.</p>
+                  </div>
+                  <select
+                    className="input py-1 text-xs w-28"
+                    value={days}
+                    onChange={(e) => setDays(Number(e.target.value))}
+                  >
+                    <option value={7}>7 hari</option>
+                    <option value={30}>30 hari</option>
+                    <option value={90}>90 hari</option>
+                  </select>
+                </div>
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-[var(--border)] uppercase tracking-wider text-[10px] text-[var(--muted)] sticky top-0 bg-[var(--panel)]">
+                      <tr>
+                        <th className="py-2 pr-3">Anggota</th>
+                        <th className="py-2 pr-3 text-right">Permintaan</th>
+                        <th className="py-2 pr-3 text-right">Gagal</th>
+                        <th className="py-2 pr-3 text-right">Prompt</th>
+                        <th className="py-2 pr-3 text-right">Completion</th>
+                        <th className="py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {usage.map((row) => (
+                        <tr key={row.userId} className="text-[var(--text)]">
+                          <td className="py-2 pr-3">
+                            <span className="font-semibold block truncate max-w-[180px]">
+                              {members.find((member) => member.id === row.userId)?.displayName || 'Anggota'}
+                            </span>
+                            <span className="text-[10px] text-[var(--muted)] block truncate">
+                              @{members.find((member) => member.id === row.userId)?.username || row.userId}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{row.requests.toLocaleString()}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{row.failures.toLocaleString()}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td>
+                          <td className="py-2 text-right font-bold tabular-nums">{row.totalTokens.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!usage.length && <p className="py-6 text-center text-xs text-[var(--muted)]">Belum ada pemakaian AI pada periode ini.</p>}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </div>
     </main>
   );

@@ -7,7 +7,7 @@ type SidebarProps = {
 };
 
 const guildLinks = [
-  ['Overview', (guildId: string) => `/dashboard/${guildId}`, true],
+  ['Panels', (guildId: string) => `/dashboard/${guildId}`, true],
   ['Plugins', (guildId: string) => `/dashboard/${guildId}/plugins`, false],
   ['Stickers', (guildId: string) => `/dashboard/${guildId}/stickers`, false],
   ['Moderation', (guildId: string) => `/dashboard/${guildId}/moderation`, false],

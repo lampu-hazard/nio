@@ -58,108 +58,100 @@ export default async function LeaderboardPage({
   const remaining = leaderboardData.filter((u) => u.rank > 3);
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">View the most active members in chat and voice.</p>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-wrap gap-2">
-            <a
-              href={`?type=chat&days=${days}`}
-              className={`btn px-4 py-2 rounded-md font-semibold ${
-                type === 'chat'
-                  ? 'bg-indigo-600 text-white border-transparent dark:bg-indigo-500'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--panel-strong)]'
-              }`}
-            >
-              💬 Chat Activity
-            </a>
-            <a
-              href={`?type=voice&days=${days}`}
-              className={`btn px-4 py-2 rounded-md font-semibold ${
-                type === 'voice'
-                  ? 'bg-indigo-600 text-white border-transparent dark:bg-indigo-500'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--panel-strong)]'
-              }`}
-            >
-              🔊 Voice Activity
-            </a>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Header & Controls Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Activity Leaderboard</h2>
+            <p className="text-xs text-[var(--muted)]">Most active server members in chat and voice channels.</p>
           </div>
 
-            <div className="flex flex-wrap gap-2">
-            {[
-              { id: '7', label: '7 Days' },
-              { id: '30', label: '30 Days' },
-              { id: 'all', label: 'All Time' },
-            ].map((d) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Type Switcher */}
+            <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
               <a
-                key={d.id}
-                href={`?type=${type}&days=${d.id}`}
-                className={`btn px-3 py-1.5 text-xs rounded-md font-medium ${
-                  days === d.id
-                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--panel-strong)]'
+                href={`?type=chat&days=${days}`}
+                className={`rounded-md px-2.5 py-1 font-semibold transition-all ${
+                  type === 'chat'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
                 }`}
               >
-                {d.label}
+                💬 Chat
               </a>
-            ))}
+              <a
+                href={`?type=voice&days=${days}`}
+                className={`rounded-md px-2.5 py-1 font-semibold transition-all ${
+                  type === 'voice'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                🔊 Voice
+              </a>
+            </div>
+
+            {/* Timeframe Filter */}
+            <div className="flex gap-1">
+              {[
+                { id: '7', label: '7D' },
+                { id: '30', label: '30D' },
+                { id: 'all', label: 'All' },
+              ].map((d) => (
+                <a
+                  key={d.id}
+                  href={`?type=${type}&days=${d.id}`}
+                  className={`btn px-2.5 py-1 text-xs rounded-md font-semibold transition-all ${
+                    days === d.id
+                      ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-500/10'
+                      : 'text-[var(--muted)] hover:bg-[var(--panel-strong)] border-transparent'
+                  }`}
+                >
+                  {d.label}
+                </a>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Podium Layout */}
+        {/* Compact Top 3 Cards */}
         {leaderboardData.length > 0 && (
-          <div className="mb-10 flex flex-col items-end justify-center gap-6 sm:flex-row sm:gap-4 md:gap-8">
-            {podium.map(({ rankSlot, user }) => {
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[rank1, rank2, rank3].filter(Boolean).map((user) => {
               if (!user) return null;
-              const isRank1 = rankSlot === 1;
-              const isRank2 = rankSlot === 2;
-              const podiumHeight = isRank1 ? 'h-52' : isRank2 ? 'h-40' : 'h-32';
-              const podiumColor = isRank1
-                ? 'border-yellow-400 bg-yellow-500/10'
+              const isRank1 = user.rank === 1;
+              const isRank2 = user.rank === 2;
+              const badgeBg = isRank1
+                ? 'bg-amber-500/20 text-amber-500 border-amber-500/30'
                 : isRank2
-                ? 'border-slate-300 bg-slate-500/10'
-                : 'border-amber-600 bg-amber-700/10';
+                ? 'bg-slate-400/20 text-slate-300 border-slate-400/30'
+                : 'bg-amber-700/20 text-amber-600 border-amber-700/30';
 
               return (
                 <div
                   key={user.userId}
-                  className={`flex w-full flex-col items-center justify-end sm:w-44 md:w-52`}
+                  className="card flex items-center justify-between p-3"
                 >
-                  <div className="relative mb-3 flex flex-col items-center">
-                    {/* Podium Badge */}
-                    <div
-                      className={`absolute -top-3 flex h-6 w-6 items-center justify-center rounded-full text-xs font-black text-white ${
-                        isRank1
-                          ? 'bg-yellow-500'
-                          : isRank2
-                          ? 'bg-slate-400'
-                          : 'bg-amber-700'
-                      }`}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-black border shrink-0 ${badgeBg}`}
                     >
-                      {user.rank}
-                    </div>
+                      #{user.rank}
+                    </span>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={getAvatarUrl(user.userId, user.avatar)}
                       alt={user.displayName}
-                      className="h-16 w-16 rounded-full border-2 border-[var(--border)] object-cover shadow-sm md:h-20 md:w-20"
+                      className="h-8 w-8 rounded-full border border-[var(--border)] object-cover shrink-0"
                     />
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-bold text-[var(--text)]">{user.displayName}</div>
+                      <div className="truncate text-[10px] text-[var(--muted)]">@{user.username}</div>
+                    </div>
                   </div>
-
-                  <div className="w-full text-center">
-                    <div className="truncate text-sm font-bold text-[var(--text)]">{user.displayName}</div>
-                    <div className="text-xs text-[var(--muted)]">@{user.username}</div>
-                  </div>
-
-                  {/* Visual Podium Block */}
-                  <div
-                    className={`mt-4 flex w-full flex-col items-center justify-center rounded-t-xl border-t border-x px-4 py-6 shadow-sm ${podiumHeight} ${podiumColor}`}
-                  >
-                    <span className="text-2xl font-black text-[var(--text)]">{formatScore(user.score)}</span>
+                  <div className="text-right shrink-0 pl-2">
+                    <span className="text-sm font-black text-[var(--text)]">{formatScore(user.score)}</span>
                   </div>
                 </div>
               );
@@ -170,39 +162,39 @@ export default async function LeaderboardPage({
         {/* Ranking List Table */}
         <div className="card overflow-hidden">
           {leaderboardData.length === 0 ? (
-            <div className="p-8 text-center text-[var(--muted)]">No activity found for this period.</div>
+            <div className="p-8 text-center text-xs text-[var(--muted)]">No activity found for this period.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--border)] bg-[var(--panel-strong)] text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted)]">
-                    <th className="px-6 py-4 w-20">Rank</th>
-                    <th className="px-6 py-4">User</th>
-                    <th className="px-6 py-4 text-right">Score</th>
+            <div className="overflow-x-auto max-h-[520px]">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+                  <tr>
+                    <th className="py-2.5 px-3 w-16">Rank</th>
+                    <th className="py-2.5 px-3">User</th>
+                    <th className="py-2.5 px-3 text-right">Score</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
                   {remaining.map((user) => (
                     <tr
                       key={user.userId}
-                      className="text-sm text-[var(--text)] transition-colors hover:bg-[var(--panel-strong)]"
+                      className="text-[var(--text)] transition-colors hover:bg-[var(--surface)]/50"
                     >
-                      <td className="px-6 py-4 font-bold text-[var(--text-secondary)]">#{user.rank}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
+                      <td className="py-2 px-3 font-bold text-[var(--muted)]">#{user.rank}</td>
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-2.5">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={getAvatarUrl(user.userId, user.avatar)}
                             alt={user.displayName}
-                            className="h-8 w-8 rounded-full border border-[var(--border)] object-cover"
+                            className="h-6 w-6 rounded-full border border-[var(--border)] object-cover shrink-0"
                           />
-                          <div>
-                            <div className="font-bold">{user.displayName}</div>
-                            <div className="text-xs text-[var(--muted)]">@{user.username}</div>
+                          <div className="min-w-0">
+                            <span className="font-semibold block truncate text-xs">{user.displayName}</span>
+                            <span className="text-[10px] text-[var(--muted)] block truncate">@{user.username}</span>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right font-black text-lg">
+                      <td className="py-2 px-3 text-right font-black tabular-nums">
                         {formatScore(user.score)}
                       </td>
                     </tr>

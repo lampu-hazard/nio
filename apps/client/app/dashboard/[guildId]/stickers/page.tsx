@@ -118,19 +118,33 @@ export default function StickersPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Send sticker images when users type specific keyword triggers.</p>
-        {error && <div className="notice notice-error mb-6">{error}</div>}
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Sticker Keywords</h2>
+            <p className="text-xs text-[var(--muted)]">Send sticker images automatically when users type matching trigger words.</p>
+          </div>
+          <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
+            {stickers.length} stickers
+          </span>
+        </div>
+
+        {error && <div className="notice notice-error" role="alert">{error}</div>}
 
         {loading ? (
-          <div className="flex h-64 items-center justify-center text-[var(--muted)]">Loading stickers...</div>
+          <div className="card p-8 text-center text-xs text-[var(--muted)]">Loading stickers...</div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3">
+            {/* Upload Sticker Form */}
             <div className="lg:col-span-1">
-              <div className="card p-6">
-                <h2 className="text-lg font-bold text-[var(--text)]">Create Sticker</h2>
-                <form onSubmit={handleUpload} className="mt-5 space-y-4">
+              <div className="card p-4 space-y-3">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Add New Sticker</h3>
+                  <p className="text-[11px] text-[var(--muted)]">Attach an image and define its trigger keyword.</p>
+                </div>
+                <form onSubmit={handleUpload} className="space-y-3">
                   <label className="block">
                     <span className="field-label">Keyword Trigger</span>
                     <input
@@ -140,27 +154,26 @@ export default function StickersPage({ params }: PageProps) {
                       placeholder="e.g. hello"
                       disabled={uploading}
                       maxLength={32}
-                      className="input"
+                      className="input py-1.5 text-xs"
                     />
-                    <p className="mt-2 text-xs text-[var(--muted)]">Lowercase letters, numbers, and dashes only. Exact message match.</p>
+                    <p className="mt-1 text-[10px] text-[var(--muted)]">Alphanumeric and dash only (exact match).</p>
                   </label>
 
                   <label className="block">
-                    <span className="field-label">Image File</span>
+                    <span className="field-label">Image File (PNG, JPG, GIF ≤ 2MB)</span>
                     <input
                       id="sticker-file-input"
                       type="file"
                       accept="image/png, image/jpeg, image/gif"
                       disabled={uploading}
                       onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      className="block w-full text-sm text-[var(--muted)] file:mr-4 file:rounded-md file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[var(--text)] hover:file:bg-[var(--surface-muted)] dark:hover:file:bg-[var(--surface-muted)]"
+                      className="block w-full text-xs text-[var(--muted)] file:mr-3 file:rounded-md file:border file:border-[var(--border)] file:bg-[var(--surface)] file:px-3 file:py-1 file:text-xs file:font-semibold file:text-[var(--text)] hover:file:bg-[var(--surface-muted)] cursor-pointer"
                     />
-                    <p className="mt-2 text-xs text-[var(--muted)]">Supports PNG, JPG, or GIF. Max 2MB.</p>
                   </label>
 
                   {uploading && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs text-[var(--muted)]">
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px] text-[var(--muted)]">
                         <span>Uploading file...</span>
                         <span>{uploadProgress}%</span>
                       </div>
@@ -170,31 +183,43 @@ export default function StickersPage({ params }: PageProps) {
                     </div>
                   )}
 
-                  <button type="submit" disabled={uploading} className="btn btn-primary w-full">
+                  <button type="submit" disabled={uploading} className="btn btn-primary w-full py-1.5 text-xs font-bold">
                     {uploading ? 'Uploading...' : 'Save Sticker'}
                   </button>
                 </form>
               </div>
             </div>
 
+            {/* Sticker Collection Grid */}
             <div className="lg:col-span-2">
-              <div className="card p-6">
-                <h2 className="text-lg font-bold text-[var(--text)]">Sticker Collection ({stickers.length})</h2>
+              <div className="card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Sticker Collection</h3>
+                  <span className="text-xs text-[var(--muted)]">{stickers.length} configured</span>
+                </div>
                 {stickers.length === 0 ? (
-                  <div className="py-12 text-center text-sm text-[var(--muted)]">No stickers uploaded yet. Use the form to add one.</div>
+                  <div className="py-8 text-center text-xs text-[var(--muted)]">No stickers uploaded yet. Use the form to add one.</div>
                 ) : (
-                  <div className="mt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+                  <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 max-h-[500px] overflow-y-auto p-1">
                     {stickers.map((sticker) => (
-                      <div key={sticker.id} className="group flex flex-col rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-colors hover:bg-[var(--surface-muted)]">
-                        <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-[var(--surface-muted)] p-2">
+                      <div key={sticker.id} className="group flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5 transition-colors hover:bg-[var(--surface-muted)]">
+                        <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-[var(--surface-muted)] p-1.5">
                           <img src={sticker.url} alt={sticker.name} className="max-h-full max-w-full object-contain" />
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="mt-2 flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[var(--text)]" title={sticker.name}>{sticker.name}</p>
-                            <p className="text-xs text-[var(--muted)]">{sticker.type.split('/')[1]?.toUpperCase() || 'IMAGE'}</p>
+                            <p className="truncate text-xs font-semibold text-[var(--text)]" title={sticker.name}>{sticker.name}</p>
+                            <span className="rounded border border-[var(--border)] bg-[var(--panel)] px-1 py-0.2 text-[9px] font-mono text-[var(--muted)]">
+                              {sticker.type.split('/')[1]?.toUpperCase() || 'IMG'}
+                            </span>
                           </div>
-                          <button onClick={() => handleDelete(sticker.id)} className="btn btn-danger h-8 px-3 text-xs" title="Delete sticker">Delete</button>
+                          <button
+                            onClick={() => handleDelete(sticker.id)}
+                            className="rounded px-2 py-0.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
+                            title="Delete sticker"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     ))}

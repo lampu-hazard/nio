@@ -84,117 +84,115 @@ export default async function AuditLogsPage({
   ).catch(() => ({ ok: false, auditLogs: [] }));
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Chronological history of dashboard updates and panel actions.</p>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Audit Logs</h2>
+            <p className="text-xs text-[var(--muted)]">Chronological history of dashboard updates and panel actions.</p>
+          </div>
+          <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
+            {data.auditLogs?.length || 0} events
+          </span>
+        </div>
 
-        {/* Advanced Filters Bar */}
-        <div className="card p-5">
-          <form method="GET" className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <label htmlFor="userId" className="field-label">Filter by User ID</label>
+        {/* Compact Filters Bar */}
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5">
+          <form method="GET" className="flex flex-wrap items-center gap-2 text-xs">
+            <input
+              type="text"
+              id="userId"
+              name="userId"
+              defaultValue={userId}
+              placeholder="Filter by User ID..."
+              className="input py-1 text-xs flex-1 min-w-[180px]"
+            />
+
+            <select
+              id="action"
+              name="action"
+              defaultValue={action}
+              className="input py-1 text-xs w-40"
+            >
+              <option value="">All Actions</option>
+              <option value="PANEL_CREATE">Panel Create</option>
+              <option value="PANEL_UPDATE">Panel Update</option>
+              <option value="PANEL_PUBLISH">Panel Publish</option>
+              <option value="PANEL_UNPUBLISH">Panel Unpublish</option>
+              <option value="PANEL_ARCHIVE">Panel Archive</option>
+              <option value="PANEL_ROLE_ADD">Panel Role Add</option>
+              <option value="PANEL_ROLE_REMOVE">Panel Role Remove</option>
+              <option value="SLOWMODE_LEVEL_CHANGED">Slowmode Changed</option>
+            </select>
+
+            <label className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--panel)] text-[var(--text-secondary)] cursor-pointer text-xs">
               <input
-                type="text"
-                id="userId"
-                name="userId"
-                defaultValue={userId}
-                placeholder="Discord User ID (e.g. 1514...)"
-                className="input"
+                type="checkbox"
+                name="excludeSystem"
+                value="true"
+                defaultChecked={excludeSystem === 'true'}
+                className="h-3.5 w-3.5 rounded text-indigo-600 focus:ring-indigo-500"
               />
-            </div>
+              <span>Hide System</span>
+            </label>
 
-            <div className="min-w-[180px]">
-              <label htmlFor="action" className="field-label">Action Type</label>
-              <select
-                id="action"
-                name="action"
-                defaultValue={action}
-                className="input select-native"
-                style={{ appearance: 'none', WebkitAppearance: 'none' }}
+            <button
+              type="submit"
+              className="btn btn-primary py-1 px-3 text-xs font-bold"
+            >
+              Filter
+            </button>
+            {(userId || excludeSystem === 'true' || action) && (
+              <a
+                href="?"
+                className="btn py-1 px-2.5 text-xs font-semibold text-[var(--muted)] hover:text-[var(--text)]"
               >
-                <option value="">All Actions</option>
-                <option value="PANEL_CREATE">Panel Create</option>
-                <option value="PANEL_UPDATE">Panel Update</option>
-                <option value="PANEL_PUBLISH">Panel Publish</option>
-                <option value="PANEL_UNPUBLISH">Panel Unpublish</option>
-                <option value="PANEL_ARCHIVE">Panel Archive</option>
-                <option value="PANEL_ROLE_ADD">Panel Role Add</option>
-                <option value="PANEL_ROLE_REMOVE">Panel Role Remove</option>
-                <option value="SLOWMODE_LEVEL_CHANGED">Slowmode Changed</option>
-              </select>
-            </div>
-
-            <div className="flex items-center h-[46px] px-3 border border-[var(--border)] bg-[var(--panel-strong)] rounded-lg">
-              <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="excludeSystem"
-                  value="true"
-                  defaultChecked={excludeSystem === 'true'}
-                  className="rounded border-[var(--border)] text-indigo-600 focus:ring-indigo-500"
-                />
-                <span className="text-[var(--text-secondary)]">Hide System Actions</span>
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-lg border-transparent shadow-md transition-all cursor-pointer"
-              >
-                Apply Filters
-              </button>
-              {(userId || excludeSystem === 'true' || action) && (
-                <a
-                  href="?"
-                  className="btn bg-[var(--panel-strong)] border-[var(--border)] text-[var(--text)] font-semibold px-4 py-2.5 rounded-lg hover:border-[var(--border-strong)] transition-all flex items-center justify-center"
-                >
-                  Reset
-                </a>
-              )}
-            </div>
+                Reset
+              </a>
+            )}
           </form>
         </div>
 
         {/* Audit Log Entries List */}
         <div className="card overflow-hidden">
-          <div className="p-6">
-            {!data.auditLogs || data.auditLogs.length === 0 ? (
-              <div className="py-12 text-center text-[var(--muted)]">
-                No activity matches your filters.
-              </div>
-            ) : (
-              <div className="flow-root">
-                <ul className="-my-6 divide-y divide-[var(--border)]">
-                  {data.auditLogs.map((log) => (
-                    <li key={log.id} className="py-5 transition-colors hover:bg-[var(--panel-strong)]/10 px-2 rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <img className="h-10 w-10 shrink-0 rounded-full bg-[var(--surface-muted)] border border-[var(--border)]" src={getUserAvatar(log.user)} alt="" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-[var(--text)]">
+          {!data.auditLogs || data.auditLogs.length === 0 ? (
+            <div className="p-8 text-center text-xs text-[var(--muted)]">
+              No activity matches your filters.
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[580px]">
+              <ul className="divide-y divide-[var(--border)]">
+                {data.auditLogs.map((log) => (
+                  <li key={log.id} className="py-2.5 px-3.5 hover:bg-[var(--surface)]/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <img className="h-7 w-7 shrink-0 rounded-full bg-[var(--surface-muted)] border border-[var(--border)]" src={getUserAvatar(log.user)} alt="" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-xs font-bold text-[var(--text)]">
                             {log.user.globalName || log.user.username}
-                            <span className="font-normal text-[var(--muted)] text-xs"> @{log.user.username} ({log.userId})</span>
-                          </p>
-                          <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-                            {formatActionMessage(log.action, log.metadata, log.panel?.name)}
-                          </p>
-                          <p className="mt-1 text-xs text-[var(--muted)]">
+                          </span>
+                          <span className="truncate text-[10px] text-[var(--muted)]">@{log.user.username}</span>
+                          <span className="text-[10px] text-[var(--muted)] ml-auto whitespace-nowrap">
                             {new Date(log.createdAt).toLocaleString('en-US', {
-                              dateStyle: 'medium',
+                              dateStyle: 'short',
                               timeStyle: 'short',
                             })}
-                          </p>
+                          </span>
                         </div>
-                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${getActionBadgeStyle(log.action)}`}>
-                          {log.action.replace('PANEL_', '').replace('LEVEL_CHANGED', 'SLOWMODE')}
-                        </span>
+                        <p className="text-xs text-[var(--text-secondary)] truncate">
+                          {formatActionMessage(log.action, log.metadata, log.panel?.name)}
+                        </p>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ${getActionBadgeStyle(log.action)}`}>
+                        {log.action.replace('PANEL_', '').replace('LEVEL_CHANGED', 'SLOWMODE')}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
     </main>

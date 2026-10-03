@@ -40,3 +40,4 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 export function loginUrl() {
   return '/api/auth/discord';
 }
+

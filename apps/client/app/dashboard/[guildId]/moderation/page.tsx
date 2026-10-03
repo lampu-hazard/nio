@@ -119,109 +119,130 @@ export default function ModerationPage({ params }: PageProps) {
     const avatarInitial = displayName.charAt(0).toUpperCase();
 
     return (
-      <div className="flex min-w-48 items-center gap-3">
+      <div className="flex min-w-36 items-center gap-2">
         {profile?.avatarUrl ? (
           <img
             src={profile.avatarUrl}
             alt=""
-            className="h-9 w-9 rounded-full border border-[var(--border)] bg-[var(--panel-strong)] object-cover"
+            className="h-6 w-6 rounded-full border border-[var(--border)] bg-[var(--panel-strong)] object-cover shrink-0"
           />
         ) : (
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-xs font-bold text-[var(--muted)]">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-[10px] font-bold text-[var(--muted)] shrink-0">
             {avatarInitial}
           </div>
         )}
         <div className="min-w-0">
-          <div className="truncate font-semibold text-[var(--text)]">{displayName}</div>
-          <div className="truncate text-xs text-[var(--muted)]">{username}</div>
-          <div className="truncate font-mono text-[11px] text-[var(--muted)]">{fallbackId}</div>
+          <div className="truncate font-semibold text-xs text-[var(--text)]">{displayName}</div>
+          <div className="truncate text-[10px] text-[var(--muted)]">{username}</div>
         </div>
       </div>
     );
   };
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Manage server warnings, active points, auto-timeouts, and infraction logs.</p>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Action & Tab Switcher Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Moderation System</h2>
+            <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('config')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  activeTab === 'config'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Configuration
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('logs')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  activeTab === 'logs'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Warning Logs ({warnings.length})
+              </button>
+            </div>
+          </div>
 
-        {error && <div className="notice notice-error mb-6">{error}</div>}
-        {success && <div className="notice notice-success mb-6">{success}</div>}
-
-        <div className="flex gap-4 border-b border-[var(--border)] pb-px mb-6">
-          <button
-            onClick={() => setActiveTab('config')}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
-              activeTab === 'config' ? 'border-indigo-600 text-[var(--text)]' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
-            }`}
-          >
-            Configuration
-          </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
-              activeTab === 'logs' ? 'border-indigo-600 text-[var(--text)]' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
-            }`}
-          >
-            Warning Logs
-          </button>
+          <div className="flex items-center gap-3">
+            {error && <span className="text-xs font-semibold text-[var(--danger)]">{error}</span>}
+            {success && <span className="text-xs font-semibold text-[var(--ok)]">{success}</span>}
+            {activeTab === 'config' && (
+              <button
+                type="button"
+                onClick={(e) => void handleSaveSettings(e as any)}
+                disabled={saving}
+                className="btn btn-primary text-xs font-bold py-1.5 px-4"
+              >
+                {saving ? 'Saving...' : 'Save Settings'}
+              </button>
+            )}
+          </div>
         </div>
 
         {loading && warnings.length === 0 ? (
-          <div className="flex h-64 items-center justify-center text-[var(--muted)]">Loading moderation tools...</div>
+          <div className="card p-8 text-center text-xs text-[var(--muted)]">Loading moderation tools...</div>
         ) : activeTab === 'config' ? (
-          <form onSubmit={handleSaveSettings} className="space-y-6 max-w-3xl">
-            <section className="card p-6">
-              <h2 className="text-lg font-bold text-[var(--text)]">Auto Timeout</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">Mute members automatically when warning limits are reached.</p>
-
-              <div className="mt-5 space-y-4">
-                <label className="flex items-center justify-between gap-4 p-4 border border-[var(--border)] rounded-lg bg-[var(--surface)]">
-                  <span>
-                    <span className="block text-sm font-semibold text-[var(--text)]">Enable Timeout threshold</span>
-                    <span className="block text-xs text-[var(--muted)]">Mute members automatically when threshold limit is reached.</span>
-                  </span>
+          <form onSubmit={handleSaveSettings} className="space-y-4 max-w-3xl">
+            <section className="card p-4 space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Auto Timeout Threshold</h3>
+                  <p className="text-[11px] text-[var(--muted)]">Mute members automatically when warning limits are reached.</p>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
                   <input
                     type="checkbox"
                     checked={settings.warnLimitEnabled}
                     onChange={(e) => setSettings(prev => ({ ...prev, warnLimitEnabled: e.target.checked }))}
-                    className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:ring-zinc-50"
+                    className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
                   />
+                  Enable Auto Timeout
                 </label>
+              </div>
 
-                {settings.warnLimitEnabled && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="field-label">Warning Limit</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={settings.warnLimitThreshold}
-                        onChange={(e) => setSettings(prev => ({ ...prev, warnLimitThreshold: parseInt(e.target.value) || 3 }))}
-                        className="input"
-                      />
-                    </label>
+              {settings.warnLimitEnabled && (
+                <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-[var(--border)]">
+                  <label className="block">
+                    <span className="field-label">Warning Limit (Strikes)</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={settings.warnLimitThreshold}
+                      onChange={(e) => setSettings(prev => ({ ...prev, warnLimitThreshold: parseInt(e.target.value) || 3 }))}
+                      className="input py-1.5 text-xs"
+                    />
+                  </label>
 
-                    <label className="block">
-                      <span className="field-label">Timeout Duration (Minutes)</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={settings.warnTimeoutDurationMin}
-                        onChange={(e) => setSettings(prev => ({ ...prev, warnTimeoutDurationMin: parseInt(e.target.value) || 60 }))}
-                        className="input"
-                      />
-                    </label>
-                  </div>
-                )}
+                  <label className="block">
+                    <span className="field-label">Timeout Duration (Minutes)</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={settings.warnTimeoutDurationMin}
+                      onChange={(e) => setSettings(prev => ({ ...prev, warnTimeoutDurationMin: parseInt(e.target.value) || 60 }))}
+                      className="input py-1.5 text-xs"
+                    />
+                  </label>
+                </div>
+              )}
 
-                <label className="block">
-                  <span className="field-label">Warning Expiry Days</span>
+              <div className="pt-2 border-t border-[var(--border)]">
+                <label className="block max-w-xs">
+                  <span className="field-label">Warning Expiry Window</span>
                   <select
                     value={settings.warnExpiryDays}
                     onChange={(e) => setSettings(prev => ({ ...prev, warnExpiryDays: parseInt(e.target.value) || 0 }))}
-                    className="input"
+                    className="input py-1.5 text-xs"
                   >
                     <option value={7}>7 Days</option>
                     <option value={30}>30 Days</option>
@@ -231,102 +252,89 @@ export default function ModerationPage({ params }: PageProps) {
                 </label>
               </div>
             </section>
-
-            <button type="submit" disabled={saving} className="btn btn-primary px-6 py-3">
-              {saving ? 'Saving...' : 'Save Settings'}
-            </button>
           </form>
         ) : (
-          <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-4 items-end bg-[var(--surface)] p-4 rounded-xl border border-[var(--border)]">
-              <label className="block md:col-span-2">
-                <span className="field-label">Search user</span>
-                <input
-                  type="text"
-                  placeholder="Search by User ID..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="input"
-                />
-              </label>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-xs">
+              <input
+                type="text"
+                placeholder="Search user ID or name..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input py-1 text-xs flex-1 min-w-[180px]"
+              />
 
-              <label className="block">
-                <span className="field-label">Status</span>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
-                  className="input"
-                >
-                  <option value="all">All Warnings</option>
-                  <option value="active">Active</option>
-                  <option value="expired">Expired</option>
-                </select>
-              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as any)}
+                className="input py-1 text-xs w-32"
+              >
+                <option value="all">All Warnings</option>
+                <option value="active">Active</option>
+                <option value="expired">Expired</option>
+              </select>
 
-              <label className="block">
-                <span className="field-label">Sort</span>
-                <select
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value as any)}
-                  className="input"
-                >
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                </select>
-              </label>
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as any)}
+                className="input py-1 text-xs w-32"
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
             </div>
 
             <div className="card overflow-hidden">
-              <div className="p-6">
-                {warnings.length === 0 ? (
-                  <div className="py-12 text-center text-sm text-[var(--muted)]">No warnings found matching the criteria.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="border-b border-[var(--border)] text-[var(--muted)] font-semibold">
-                          <th className="pb-3">Offender</th>
-                          <th className="pb-3">Issued By</th>
-                          <th className="pb-3">Reason</th>
-                          <th className="pb-3">Date</th>
-                          <th className="pb-3">Status</th>
-                          <th className="pb-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--border)]">
-                        {warnings.map((w) => {
-                          const expired = isExpired(w.expiresAt);
-                          return (
-                            <tr key={w.id} className="text-[var(--text-secondary)]">
-                              <td className="py-4">{renderProfile(w.user, w.userId)}</td>
-                              <td className="py-4">{renderProfile(w.moderator, w.moderatorId)}</td>
-                              <td className="py-4 max-w-xs truncate" title={w.reason}>{w.reason}</td>
-                              <td className="py-4">
-                                {new Date(w.createdAt).toLocaleDateString(undefined, {
-                                  dateStyle: 'medium',
-                                })}
-                              </td>
-                              <td className="py-4">
-                                <span className={`badge ${!expired ? 'badge-live' : ''}`}>
-                                  {!expired ? 'Active' : 'Expired'}
-                                </span>
-                              </td>
-                              <td className="py-4 text-right">
-                                <button
-                                  onClick={() => handleRevoke(w.id)}
-                                  className="btn btn-danger h-8 px-3 text-xs"
-                                >
-                                  Revoke
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              {warnings.length === 0 ? (
+                <div className="p-8 text-center text-xs text-[var(--muted)]">No warnings found matching the criteria.</div>
+              ) : (
+                <div className="overflow-x-auto max-h-[500px]">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] text-[var(--muted)] uppercase tracking-wider text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Offender</th>
+                        <th className="py-2.5 px-3">Issued By</th>
+                        <th className="py-2.5 px-3">Reason</th>
+                        <th className="py-2.5 px-3">Date</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)] text-[var(--text)]">
+                      {warnings.map((w) => {
+                        const expired = isExpired(w.expiresAt);
+                        return (
+                          <tr key={w.id} className="hover:bg-[var(--surface)]/50">
+                            <td className="py-2 px-3">{renderProfile(w.user, w.userId)}</td>
+                            <td className="py-2 px-3">{renderProfile(w.moderator, w.moderatorId)}</td>
+                            <td className="py-2 px-3 max-w-xs truncate" title={w.reason}>{w.reason}</td>
+                            <td className="py-2 px-3 whitespace-nowrap text-[11px] text-[var(--muted)]">
+                              {new Date(w.createdAt).toLocaleDateString(undefined, {
+                                dateStyle: 'medium',
+                              })}
+                            </td>
+                            <td className="py-2 px-3 whitespace-nowrap">
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                !expired ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]'
+                              }`}>
+                                {!expired ? 'Active' : 'Expired'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => handleRevoke(w.id)}
+                                className="rounded px-2.5 py-1 text-[11px] font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
+                              >
+                                Revoke
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -14,19 +14,34 @@ export default async function EditPanelPage({ params }: { params: Promise<{ guil
   const typeLabel = panel.type === 'RULES' ? 'Rules' : panel.type === 'ANNOUNCEMENT' ? 'Announcement' : 'Self Role';
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <a href={`/dashboard/${guildId}`} className="w-fit text-sm font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]">Back to server</a>
-          <a href={`/dashboard/${guildId}`} className="btn w-fit">Dashboard</a>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1520px] space-y-4">
+        {/* Compact Header Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <a href={`/dashboard/${guildId}`} className="text-xs font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]">
+              ← Panels
+            </a>
+            <span className="text-[var(--border)]">/</span>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">{panel.name}</h2>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+              panel.status === 'PUBLISHED'
+                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]'
+            }`}>
+              {panel.status === 'PUBLISHED' ? 'Live' : 'Draft'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
+              {typeLabel}
+            </span>
+            <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
+              {channel ? `#${channel.name}` : 'No channel'}
+            </span>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className={`badge ${panel.status === 'PUBLISHED' ? 'badge-live' : ''}`}>{panel.status === 'PUBLISHED' ? 'Live panel' : 'Draft panel'}</span>
-          <span className="badge">{typeLabel}</span>
-          <span className="badge">{panel.roles.length} roles</span>
-          <span className="badge">{channel ? `#${channel.name}` : 'No channel selected'}</span>
-        </div>
-        <p className="max-w-3xl text-sm leading-6 text-[var(--muted)]">Edit panel identity, content, role components, and Discord publishing state.</p>
 
         <PanelEditorWorkspace guildId={guildId} panel={panel} channels={channelsData.channels} availableRoles={rolesData.roles} />
       </div>

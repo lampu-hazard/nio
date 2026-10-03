@@ -72,84 +72,95 @@ export default function BoosterRolesPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Review, audit, and delete custom roles created by active server boosters.</p>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Custom Booster Roles</h2>
+            <p className="text-xs text-[var(--muted)]">Review, audit, and manage personalized roles granted to Nitro server boosters.</p>
+          </div>
+          <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
+            {roles.length} roles
+          </span>
+        </div>
 
-        {error && <div className="notice notice-error mb-6">{error}</div>}
-        {success && <div className="notice notice-success mb-6">{success}</div>}
+        {error && <div className="notice notice-error" role="alert">{error}</div>}
+        {success && <div className="notice notice-success" role="status">{success}</div>}
 
         <section className="card overflow-hidden">
-          <div className="border-b border-[var(--border)] p-6">
-            <h2 className="text-lg font-bold text-[var(--text)]">Created Roles</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Members create these roles from their private `/booster-role` link.</p>
-          </div>
-
           {loading ? (
-            <div className="p-8 text-sm text-[var(--muted)]">Loading booster roles...</div>
+            <div className="p-8 text-center text-xs text-[var(--muted)]">Loading booster roles...</div>
           ) : roles.length === 0 ? (
-            <div className="p-8 text-sm text-[var(--muted)]">No booster custom roles have been created yet.</div>
+            <div className="p-8 text-center text-xs text-[var(--muted)]">No booster custom roles have been created yet.</div>
           ) : (
-            <div className="overflow-x-auto p-6">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border)] text-[var(--muted)]">
-                    <th className="pb-3">Member</th>
-                    <th className="pb-3">Role</th>
-                    <th className="pb-3">Style</th>
-                    <th className="pb-3">Status</th>
-                    <th className="pb-3">Updated</th>
-                    <th className="pb-3 text-right">Actions</th>
+            <div className="overflow-x-auto max-h-[600px]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+                  <tr>
+                    <th className="py-2.5 px-3">Member</th>
+                    <th className="py-2.5 px-3">Role</th>
+                    <th className="py-2.5 px-3">Style</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Updated</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--border)]">
+                <tbody className="divide-y divide-[var(--border)] text-[var(--text)]">
                   {roles.map((role) => (
-                    <tr key={role.id}>
-                      <td className="py-4">
-                        <div className="flex items-center gap-3">
+                    <tr key={role.id} className="hover:bg-[var(--surface)]/50 transition-colors">
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-2">
                           {role.user.avatarUrl ? (
-                            <img src={role.user.avatarUrl} alt="" className="h-9 w-9 rounded-full border border-[var(--border)]" />
+                            <img src={role.user.avatarUrl} alt="" className="h-6 w-6 rounded-full border border-[var(--border)] shrink-0" />
                           ) : (
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-xs font-bold text-[var(--muted)]">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-[10px] font-bold text-[var(--muted)] shrink-0">
                               {(role.user.displayName || role.user.username || role.userId).charAt(0).toUpperCase()}
                             </div>
                           )}
-                          <div>
-                            <div className="font-semibold text-[var(--text)]">{role.user.displayName || role.user.username || 'Unknown user'}</div>
-                            <div className="text-xs text-[var(--muted)]">{role.user.username ? `@${role.user.username}` : role.userId}</div>
+                          <div className="min-w-0">
+                            <span className="font-semibold block truncate text-xs">{role.user.displayName || role.user.username || 'Unknown'}</span>
+                            <span className="text-[10px] text-[var(--muted)] block truncate">{role.user.username ? `@${role.user.username}` : role.userId}</span>
                           </div>
                         </div>
                       </td>
-                      <td className="py-4">
-                        <div className="font-semibold text-[var(--text)]">{role.roleName}</div>
-                        <div className="font-mono text-xs text-[var(--muted)]">{role.roleId}</div>
-                        {!role.roleExists && <span className="badge mt-1">Missing in Discord</span>}
+                      <td className="py-2 px-3">
+                        <span className="font-semibold block text-xs truncate">{role.roleName}</span>
+                        <span className="font-mono text-[10px] text-[var(--muted)] block truncate">{role.roleId}</span>
+                        {!role.roleExists && <span className="rounded bg-rose-500/10 text-rose-500 text-[9px] px-1 py-0.2">Missing</span>}
                       </td>
-                      <td className="py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel-strong)]">
-                            {role.iconUrl ? <img src={role.iconUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xs text-[var(--muted)]">No icon</span>}
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] shrink-0">
+                            {role.iconUrl ? <img src={role.iconUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-[9px] text-[var(--muted)]">―</span>}
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-0.5">
                             <div
-                              className="h-5 w-24 rounded-full border border-[var(--border)]"
+                              className="h-3 w-16 rounded border border-[var(--border)]"
                               style={{ background: role.tertiaryColor ? `linear-gradient(135deg, ${role.primaryColor}, ${role.secondaryColor || role.primaryColor}, ${role.tertiaryColor})` : role.secondaryColor ? `linear-gradient(135deg, ${role.primaryColor}, ${role.secondaryColor})` : role.primaryColor }}
                             />
-                            <div className="font-mono text-[11px] text-[var(--muted)]">
-                              {[role.primaryColor, role.secondaryColor, role.tertiaryColor].filter(Boolean).join(' / ')}
+                            <div className="font-mono text-[9px] text-[var(--muted)]">
+                              {[role.primaryColor, role.secondaryColor, role.tertiaryColor].filter(Boolean).join(' · ')}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="py-4">
-                        <span className={`badge ${role.active ? 'badge-live' : ''}`}>
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          role.active ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]'
+                        }`}>
                           {role.active ? 'Active' : 'Revoked'}
                         </span>
-                        {role.revokedAt && <div className="mt-1 text-xs text-[var(--muted)]">Revoked {new Date(role.revokedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</div>}
+                        {role.revokedAt && <div className="text-[10px] text-[var(--muted)] mt-0.5">{new Date(role.revokedAt).toLocaleDateString()}</div>}
                       </td>
-                      <td className="py-4 text-[var(--muted)]">{new Date(role.updatedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</td>
-                      <td className="py-4 text-right">
-                        <button onClick={() => deleteRole(role)} className="btn btn-danger h-9 px-3 text-xs">Delete</button>
+                      <td className="py-2 px-3 text-[11px] text-[var(--muted)] whitespace-nowrap">{new Date(role.updatedAt).toLocaleDateString()}</td>
+                      <td className="py-2 px-3 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => deleteRole(role)}
+                          className="rounded px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}

@@ -115,29 +115,45 @@ export function PluginMarketplace({ guildId }: { guildId: string }) {
   };
 
   return (
-    <div>
-      {error && <div className="notice notice-error mb-6" role="alert">{error}</div>}
-      {success && <div className="notice notice-success mb-6" role="status">{success}</div>}
+    <div className="space-y-3">
+      {error && <div className="notice notice-error" role="alert">{error}</div>}
+      {success && <div className="notice notice-success" role="status">{success}</div>}
 
-      <div className="mb-6 flex flex-wrap gap-2" role="tablist" aria-label="Plugin filters">
-        {[
-          ['all', 'All plugins'],
-          ['installed', 'Installed'],
-          ['free', 'Free'],
-          ['premium', 'Premium'],
-        ].map(([value, label]) => (
-          <button key={value} type="button" role="tab" aria-selected={filter === value} onClick={() => setFilter(value as typeof filter)} className={`btn px-3 py-2 text-xs ${filter === value ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : ''}`}>
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1.5" role="tablist" aria-label="Plugin filters">
+        <div className="flex gap-1 text-xs">
+          {[
+            ['all', 'All plugins'],
+            ['installed', 'Installed'],
+            ['free', 'Free'],
+            ['premium', 'Premium'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={filter === value}
+              onClick={() => setFilter(value as typeof filter)}
+              className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                filter === value
+                  ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                  : 'text-[var(--muted)] hover:text-[var(--text)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[11px] text-[var(--muted)] pr-2">
+          {visiblePlugins.length} {visiblePlugins.length === 1 ? 'plugin' : 'plugins'}
+        </span>
       </div>
 
       {loading ? (
-        <div className="card flex min-h-48 items-center justify-center p-8 text-sm text-[var(--muted)]">Loading plugin marketplace...</div>
+        <div className="card flex min-h-36 items-center justify-center p-8 text-xs text-[var(--muted)]">Loading plugin marketplace...</div>
       ) : visiblePlugins.length === 0 ? (
-        <div className="card p-8 text-center text-sm text-[var(--muted)]">No plugins match this filter.</div>
+        <div className="card p-8 text-center text-xs text-[var(--muted)]">No plugins match this filter.</div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {visiblePlugins.map((plugin) => {
             const status = plugin.installationStatus;
             const unavailable = !plugin.available || status === 'UNAVAILABLE';
@@ -145,43 +161,116 @@ export function PluginMarketplace({ guildId }: { guildId: string }) {
             const busy = pending?.startsWith(`${plugin.id}:`);
             const kinetic = plugin.id === 'kinetic-hosting';
             return (
-              <article key={plugin.id} className="card flex flex-col p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-bold text-[var(--text)]">{plugin.name}</h2>
-                    <p className="mt-1 text-xs text-[var(--muted)]">v{plugin.version}</p>
+              <article key={plugin.id} className="card flex flex-col p-4 justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-[var(--text)]">{plugin.name}</h3>
+                      <p className="text-[10px] text-[var(--muted)]">v{plugin.version}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+                        {plugin.type}
+                      </span>
+                      {status && (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          status === 'INSTALLED'
+                            ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                            : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]'
+                        }`}>
+                          {statusLabels[status]}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="badge">{plugin.type}</span>
-                </div>
-                <p className="mt-5 min-h-16 text-sm leading-6 text-[var(--muted)]">{plugin.description}</p>
-                {status && <span className={`badge mt-4 w-fit ${statusClass(status)}`}>{statusLabels[status]}</span>}
-                {kinetic && <p className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--panel-strong)] p-3 text-xs leading-5 text-[var(--muted)]">Connect your own Kinetic Panel API key. It is encrypted on the server and never displayed or shared with other guilds.</p>}
-                {kinetic && status === 'INSTALLED' && (
-                  <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--panel-strong)] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-[var(--text)]">Kinetic connection</p>
-                        <p className="mt-1 text-xs text-[var(--muted)]">{plugin.credentialConfigured ? 'API key configured' : 'API key required before commands can run'}</p>
+                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{plugin.description}</p>
+                  {kinetic && (
+                    <p className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[11px] leading-4 text-[var(--muted)]">
+                      Connect your Kinetic Panel API key. Stored encrypted on the server.
+                    </p>
+                  )}
+                  {kinetic && status === 'INSTALLED' && (
+                    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[var(--text)]">Kinetic connection</span>
+                        <span className={`h-2 w-2 rounded-full ${plugin.credentialConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                       </div>
-                      <span className={`h-2.5 w-2.5 rounded-full ${plugin.credentialConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={credentialInput}
+                        onChange={(event) => setCredentialInput(event.target.value)}
+                        placeholder={plugin.credentialConfigured ? 'Replace API key...' : 'Paste Kinetic API key...'}
+                        className="input py-1 text-xs"
+                        disabled={busy}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-primary py-1 px-2.5 text-xs font-semibold"
+                          disabled={busy || !credentialInput.trim()}
+                          onClick={() => void configureKinetic(plugin)}
+                        >
+                          {busy ? 'Verifying...' : plugin.credentialConfigured ? 'Update key' : 'Connect key'}
+                        </button>
+                        {plugin.credentialConfigured && (
+                          <button
+                            type="button"
+                            className="btn py-1 px-2 text-xs font-semibold text-rose-500 hover:bg-rose-500/10"
+                            disabled={busy}
+                            onClick={() => void removeKineticCredential(plugin)}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <label className="mt-4 block">
-                      <span className="field-label">{plugin.credentialConfigured ? 'Replace API key' : 'Kinetic API key'}</span>
-                      <input type="password" autoComplete="new-password" value={credentialInput} onChange={(event) => setCredentialInput(event.target.value)} placeholder={plugin.credentialConfigured ? 'Enter a new key to replace it' : 'Paste your Kinetic API key'} className="input" disabled={busy} />
-                    </label>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button type="button" className="btn btn-primary" disabled={busy || !credentialInput.trim()} onClick={() => void configureKinetic(plugin)}>{busy ? 'Verifying...' : plugin.credentialConfigured ? 'Update key' : 'Connect key'}</button>
-                      {plugin.credentialConfigured && <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void removeKineticCredential(plugin)}>Remove key</button>}
-                    </div>
-                  </div>
-                )}
-                <div className="mt-auto flex flex-wrap gap-2 pt-6">
-                  {!status && !unavailable && !premiumLocked && <button type="button" className="btn btn-primary flex-1" disabled={busy} onClick={() => void mutate(plugin, 'install')}>{busy ? 'Installing...' : 'Install'}</button>}
-                  {premiumLocked && <span className="self-center text-xs font-semibold text-[var(--muted)]">Entitlement required</span>}
-                  {unavailable && <span className="self-center text-xs font-semibold text-[var(--muted)]">Not available in this deployment</span>}
-                  {status === 'INSTALLED' && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void mutate(plugin, 'disable')}>{busy ? 'Working...' : 'Disable'}</button>}
-                  {status === 'DISABLED' && <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void mutate(plugin, 'enable')}>{busy ? 'Working...' : 'Enable'}</button>}
-                  {status && status !== 'UNAVAILABLE' && <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void mutate(plugin, 'uninstall')}>Uninstall</button>}
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2 border-t border-[var(--border)] pt-3 text-xs">
+                  {!status && !unavailable && !premiumLocked && (
+                    <button
+                      type="button"
+                      className="btn btn-primary py-1 px-3 text-xs font-bold"
+                      disabled={busy}
+                      onClick={() => void mutate(plugin, 'install')}
+                    >
+                      {busy ? 'Installing...' : 'Install'}
+                    </button>
+                  )}
+                  {premiumLocked && <span className="text-[11px] font-semibold text-[var(--muted)]">Entitlement required</span>}
+                  {unavailable && <span className="text-[11px] font-semibold text-[var(--muted)]">Unavailable</span>}
+                  {status === 'INSTALLED' && (
+                    <button
+                      type="button"
+                      className="btn py-1 px-2.5 text-xs font-semibold"
+                      disabled={busy}
+                      onClick={() => void mutate(plugin, 'disable')}
+                    >
+                      {busy ? '...' : 'Disable'}
+                    </button>
+                  )}
+                  {status === 'DISABLED' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary py-1 px-2.5 text-xs font-semibold"
+                      disabled={busy}
+                      onClick={() => void mutate(plugin, 'enable')}
+                    >
+                      {busy ? '...' : 'Enable'}
+                    </button>
+                  )}
+                  {status && status !== 'UNAVAILABLE' && (
+                    <button
+                      type="button"
+                      className="rounded px-2 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
+                      disabled={busy}
+                      onClick={() => void mutate(plugin, 'uninstall')}
+                    >
+                      Uninstall
+                    </button>
+                  )}
                 </div>
               </article>
             );

@@ -265,60 +265,67 @@ export default function TakoDashboardPage({ params }: PageProps) {
   const webhookUrl = `${backendUrl}/guilds/${guildId}/tako/webhook`;
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Configure automatic role assignment for members supporting via Tako donations.</p>
-          <a href={`/dashboard/${guildId}/embed-templates`} className="btn btn-secondary w-fit px-4">
-            Custom Embed Templates
-          </a>
-        </div>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Action & Tab Switcher Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Tako Donation Gateway</h2>
+            <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('config')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  activeTab === 'config'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Configuration
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('logs')}
+                className={`rounded-md px-3 py-1 font-semibold transition-all ${
+                  activeTab === 'logs'
+                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Donation Logs ({donations.length})
+              </button>
+            </div>
+          </div>
 
-        {error && <div className="notice notice-error mb-6">{error}</div>}
-        {success && <div className="notice notice-success mb-6">{success}</div>}
-
-        <div className="flex gap-4 border-b border-[var(--border)] pb-px mb-6">
-          <button
-            onClick={() => setActiveTab('config')}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
-              activeTab === 'config' ? 'border-indigo-600 text-[var(--text)]' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
-            }`}
-          >
-            Configuration
-          </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
-              activeTab === 'logs' ? 'border-indigo-600 text-[var(--text)]' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
-            }`}
-          >
-            Donation Logs
-          </button>
+          <div className="flex items-center gap-2">
+            {error && <span className="text-xs font-semibold text-[var(--danger)]">{error}</span>}
+            {success && <span className="text-xs font-semibold text-[var(--ok)]">{success}</span>}
+            <a href={`/dashboard/${guildId}/embed-templates`} className="btn text-xs font-semibold py-1.5 px-3">
+              Embeds →
+            </a>
+            {activeTab === 'config' && (
+              <button
+                type="button"
+                onClick={(e) => void handleSaveSettings(e as any)}
+                disabled={saving}
+                className="btn btn-primary text-xs font-bold py-1.5 px-4"
+              >
+                {saving ? 'Saving...' : 'Save Settings'}
+              </button>
+            )}
+          </div>
         </div>
 
         {loading ? (
-          <div className="flex h-64 items-center justify-center text-[var(--muted)]">Loading Tako integration...</div>
+          <div className="card p-8 text-center text-xs text-[var(--muted)]">Loading Tako integration...</div>
         ) : activeTab === 'config' ? (
-          <form onSubmit={handleSaveSettings} className="space-y-6 max-w-3xl">
-            <section className="card border-indigo-500/30 bg-indigo-500/5 p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-[var(--text)]">Custom Embed Tampilan</h2>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    Atur tampilan pesan donasi Tako: DM sukses, announcement public, dan direct donation tanpa coding.
-                  </p>
-                </div>
-                <a href={`/dashboard/${guildId}/embed-templates`} className="btn btn-primary w-fit px-4">
-                  Buat Custom Embed
-                </a>
-              </div>
-            </section>
-
-            <section className="card p-6">
+          <form onSubmit={handleSaveSettings} className="space-y-4 max-w-4xl">
+            {/* Core Integration Settings */}
+            <section className="card p-4 space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-bold text-[var(--text)]">Tako Integration</h2>
-                  <p className="mt-1 text-sm text-[var(--muted)]">Enable or disable automatic role rewards from Tako donations.</p>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Tako Service Connection</h3>
+                  <p className="text-[11px] text-[var(--muted)]">Enable or disable automatic role rewards from Tako donations.</p>
                 </div>
                 <Switch
                   checked={settings.enabled}
@@ -328,62 +335,59 @@ export default function TakoDashboardPage({ params }: PageProps) {
               </div>
 
               {settings.enabled && (
-                <div className="mt-6 space-y-4">
-                  <label className="block">
-                    <span className="field-label">Tako Creator Slug</span>
-                    <input
-                      type="text"
-                      className="input"
-                      value={settings.creatorSlug || ''}
-                      onChange={(e) => setSettings((prev) => ({ ...prev, creatorSlug: e.target.value }))}
-                      placeholder="e.g. wignn"
-                      required
-                    />
-                    <p className="mt-1.5 text-xs text-[var(--muted)]">Your Tako username/creator identifier in URLs (e.g. tako.id/wignn).</p>
-                  </label>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-3 pt-2 border-t border-[var(--border)]">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <label className="block">
-                      <span className="field-label">Tako API Key</span>
+                      <span className="field-label">Creator Slug</span>
                       <input
-                        type="password"
-                        className="input"
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        placeholder="Paste your Tako API key"
+                        type="text"
+                        className="input py-1.5 text-xs"
+                        value={settings.creatorSlug || ''}
+                        onChange={(e) => setSettings((prev) => ({ ...prev, creatorSlug: e.target.value }))}
+                        placeholder="e.g. wignn"
                         required
                       />
                     </label>
 
                     <label className="block">
-                      <span className="field-label">Tako Webhook Token</span>
+                      <span className="field-label">API Key</span>
                       <input
                         type="password"
-                        className="input"
+                        className="input py-1.5 text-xs"
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        placeholder="Paste Tako API key"
+                        required
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="field-label">Webhook Token</span>
+                      <input
+                        type="password"
+                        className="input py-1.5 text-xs"
                         value={webhookTokenInput}
                         onChange={(e) => setWebhookTokenInput(e.target.value)}
-                        placeholder="Paste your Tako Webhook Token"
+                        placeholder="Paste Webhook Token"
                         required
                       />
                     </label>
                   </div>
 
                   <label className="block">
-                    <span className="field-label">Webhook URL (Copy to Tako Dashboard)</span>
+                    <span className="field-label">Webhook URL (Paste into Tako Dashboard)</span>
                     <div className="flex gap-2">
-                      <input type="text" className="input bg-[var(--panel-strong)] flex-1 font-mono text-xs select-all" value={webhookUrl} readOnly />
+                      <input type="text" className="input bg-[var(--panel-strong)] flex-1 font-mono text-xs select-all py-1.5" value={webhookUrl} readOnly />
                       <button
                         type="button"
                         onClick={() => {
                           navigator.clipboard.writeText(webhookUrl);
-                          alert('Copied webhook URL to clipboard!');
                         }}
-                        className="btn btn-secondary px-4 text-xs h-11"
+                        className="btn text-xs py-1.5 px-3"
                       >
-                        Copy
+                        Copy URL
                       </button>
                     </div>
-                    <p className="mt-1.5 text-xs text-[var(--muted)]">Add this endpoint URL to your Tako dashboard under "Notifikasi Webhook".</p>
                   </label>
                 </div>
               )}
@@ -391,33 +395,36 @@ export default function TakoDashboardPage({ params }: PageProps) {
 
             {settings.enabled && (
               <>
-                <section className="card p-6 space-y-4">
-                  <h2 className="text-lg font-bold text-[var(--text)]">Role Rewards Configuration</h2>
+                {/* Role Rewards & Tiers */}
+                <section className="card p-4 space-y-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Role Rewards &amp; Tiers</h3>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block">
-                      <span className="field-label">Reward Role</span>
-                      <select
-                        value={settings.rewardRoleId || ''}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, rewardRoleId: e.target.value || null }))}
-                        className="input"
-                        required
-                      >
-                        <option value="">Select a role...</option>
-                        {roles.map((role) => (
-                          <option key={role.id} value={role.id}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="btn btn-secondary mt-2 h-9 px-3 text-xs"
-                        disabled={creatingRole === 'base'}
-                        onClick={() => createCustomRole('Tako Supporter', (roleId) => setSettings((prev) => ({ ...prev, rewardRoleId: roleId })), 'base')}
-                      >
-                        {creatingRole === 'base' ? 'Creating...' : 'Create custom reward role'}
-                      </button>
+                      <span className="field-label">Default Supporter Role</span>
+                      <div className="flex gap-2">
+                        <select
+                          value={settings.rewardRoleId || ''}
+                          onChange={(e) => setSettings((prev) => ({ ...prev, rewardRoleId: e.target.value || null }))}
+                          className="input py-1.5 text-xs flex-1"
+                          required
+                        >
+                          <option value="">Select a role...</option>
+                          {roles.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {role.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="btn text-xs py-1.5 px-2.5 shrink-0"
+                          disabled={creatingRole === 'base'}
+                          onClick={() => createCustomRole('Tako Supporter', (roleId) => setSettings((prev) => ({ ...prev, rewardRoleId: roleId })), 'base')}
+                        >
+                          {creatingRole === 'base' ? '...' : '＋ Role'}
+                        </button>
+                      </div>
                     </label>
 
                     <label className="block">
@@ -425,7 +432,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
                       <input
                         type="number"
                         min="1000"
-                        className="input"
+                        className="input py-1.5 text-xs"
                         value={settings.minimumAmount}
                         onChange={(e) => setSettings((prev) => ({ ...prev, minimumAmount: parseInt(e.target.value) || 10000 }))}
                         required
@@ -435,233 +442,205 @@ export default function TakoDashboardPage({ params }: PageProps) {
 
                   <div>
                     <span className="field-label">Allowed Payment Methods</span>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {['qris', 'gopay', 'dana', 'paypal'].map((method) => {
                         const selected = settings.paymentMethods.includes(method);
                         return (
-                          <label key={method} className="flex items-center gap-3 rounded-lg border border-[var(--border)] p-3 bg-[var(--surface)] cursor-pointer">
+                          <label key={method} className="flex items-center gap-2 rounded-lg border border-[var(--border)] p-2 bg-[var(--surface)] cursor-pointer text-xs">
                             <input
                               type="checkbox"
                               checked={selected}
                               onChange={() => togglePaymentMethod(method)}
-                              className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:ring-zinc-50"
+                              className="h-3.5 w-3.5"
                             />
-                            <span className="text-sm font-semibold">{method.toUpperCase()}</span>
+                            <span className="font-semibold uppercase">{method}</span>
                           </label>
                         );
                       })}
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                    <div className="flex items-center justify-between gap-4">
+                  {/* Cumulative Reward Tiers */}
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-[var(--text)]">Cumulative Reward Tiers</p>
-                        <p className="mt-1 text-xs text-[var(--muted)]">Assign stacked Discord roles when a donor reaches total donation thresholds.</p>
+                        <span className="text-xs font-semibold text-[var(--text)]">Cumulative Reward Tiers</span>
+                        <p className="text-[10px] text-[var(--muted)]">Stacked roles when donor reaches total amount.</p>
                       </div>
-                      <button type="button" onClick={addRewardTier} className="btn btn-secondary h-9 px-3 text-xs" disabled={settings.rewardTiers.length >= 10}>
-                        Add Tier
+                      <button type="button" onClick={addRewardTier} className="btn py-1 px-2.5 text-xs font-semibold" disabled={settings.rewardTiers.length >= 10}>
+                        ＋ Add Tier
                       </button>
                     </div>
 
-                    <div className="mt-4 space-y-3">
-                      {settings.rewardTiers.length === 0 ? (
-                        <p className="text-xs text-[var(--muted)]">No cumulative tiers configured yet.</p>
-                      ) : settings.rewardTiers.map((tier, index) => (
-                        <div key={tier.id || index} className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                          <label className="block">
-                            <span className="field-label">Threshold (Rp)</span>
-                            <input
-                              type="number"
-                              min="1000"
-                              className="input"
-                              value={tier.thresholdAmount}
-                              onChange={(e) => updateRewardTier(index, { thresholdAmount: parseInt(e.target.value) || 1000 })}
-                            />
-                          </label>
-                          <label className="block">
-                            <span className="field-label">Label</span>
-                            <input
-                              type="text"
-                              className="input"
-                              value={tier.label}
-                              onChange={(e) => updateRewardTier(index, { label: e.target.value })}
-                              placeholder="VIP Donatur"
-                            />
-                          </label>
-                          <label className="block">
-                            <span className="field-label">Tier Role</span>
-                            <select
-                              value={tier.roleId}
-                              onChange={(e) => updateRewardTier(index, { roleId: e.target.value })}
-                              className="input"
-                            >
-                              <option value="">Select a role...</option>
-                              {roles.map((role) => (
-                                <option key={role.id} value={role.id}>
-                                  {role.name}
-                                </option>
-                              ))}
-                            </select>
+                    {settings.rewardTiers.length === 0 ? (
+                      <p className="text-[11px] text-[var(--muted)] py-2">No cumulative tiers configured yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {settings.rewardTiers.map((tier, index) => (
+                          <div key={tier.id || index} className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-2 text-xs sm:grid-cols-[1fr_1fr_1.5fr_auto] items-end">
+                            <label className="block">
+                              <span className="field-label">Threshold (Rp)</span>
+                              <input
+                                type="number"
+                                min="1000"
+                                className="input py-1 text-xs"
+                                value={tier.thresholdAmount}
+                                onChange={(e) => updateRewardTier(index, { thresholdAmount: parseInt(e.target.value) || 1000 })}
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="field-label">Tier Label</span>
+                              <input
+                                type="text"
+                                className="input py-1 text-xs"
+                                value={tier.label}
+                                onChange={(e) => updateRewardTier(index, { label: e.target.value })}
+                                placeholder="VIP Donatur"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="field-label">Role</span>
+                              <select
+                                value={tier.roleId}
+                                onChange={(e) => updateRewardTier(index, { roleId: e.target.value })}
+                                className="input py-1 text-xs"
+                              >
+                                <option value="">Select a role...</option>
+                                {roles.map((role) => (
+                                  <option key={role.id} value={role.id}>
+                                    {role.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
                             <button
                               type="button"
-                              className="btn btn-secondary mt-2 h-9 px-3 text-xs"
-                              disabled={creatingRole === `tier-${index}`}
-                              onClick={() => createCustomRole(tier.label || `Tako Tier ${index + 1}`, (roleId) => updateRewardTier(index, { roleId }), `tier-${index}`)}
+                              onClick={() => removeRewardTier(index)}
+                              className="rounded px-2 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors h-7"
                             >
-                              {creatingRole === `tier-${index}` ? 'Creating...' : 'Create custom tier role'}
+                              Remove
                             </button>
-                          </label>
-                          <button type="button" onClick={() => removeRewardTier(index)} className="btn btn-secondary h-11 self-end px-3 text-xs">
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="card p-6 space-y-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h2 className="text-lg font-bold text-[var(--text)]">Notifications</h2>
-                      <p className="mt-1 text-sm text-[var(--muted)]">Configure notification channels here. Customize the embed text and layout in Embed Studio.</p>
-                    </div>
-                    <a href={`/dashboard/${guildId}/embed-templates`} className="btn btn-secondary h-9 w-fit px-3 text-xs">
-                      Customize embeds
-                    </a>
-                  </div>
-
-                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-[var(--text)]">Direct Donation Notifications</p>
-                        <p className="mt-1 text-xs text-[var(--muted)]">Send a clean Discord notification when someone donates directly from Tako without using /donate-role.</p>
-                      </div>
-                      <Switch
-                        checked={settings.directNotificationsEnabled}
-                        label="Toggle direct donation notifications"
-                        onClick={() => setSettings((prev) => ({ ...prev, directNotificationsEnabled: !prev.directNotificationsEnabled }))}
-                      />
-                    </div>
-
-                    {settings.directNotificationsEnabled && (
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        <label className="block">
-                          <span className="field-label">Notification Channel</span>
-                          <select
-                            value={settings.directNotificationChannelId || 'none'}
-                            onChange={(e) => setSettings((prev) => ({ ...prev, directNotificationChannelId: e.target.value === 'none' ? null : e.target.value }))}
-                            className="input"
-                          >
-                            <option value="none">Disabled</option>
-                            {channels.map((ch) => (
-                              <option key={ch.id} value={ch.id}>
-                                #{ch.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="block">
-                          <span className="field-label">Minimum Notify Amount (Rp)</span>
-                          <input
-                            type="number"
-                            min="0"
-                            className="input"
-                            value={settings.directNotifyMinimumAmount}
-                            onChange={(e) => setSettings((prev) => ({ ...prev, directNotifyMinimumAmount: parseInt(e.target.value) || 0 }))}
-                          />
-                        </label>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
                 </section>
+
+                {/* Notifications Configuration */}
+                <section className="card p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Direct Donation Notifications</h3>
+                      <p className="text-[11px] text-[var(--muted)]">Send notifications when someone donates via Tako web profile directly.</p>
+                    </div>
+                    <Switch
+                      checked={settings.directNotificationsEnabled}
+                      label="Toggle direct donation notifications"
+                      onClick={() => setSettings((prev) => ({ ...prev, directNotificationsEnabled: !prev.directNotificationsEnabled }))}
+                    />
+                  </div>
+
+                  {settings.directNotificationsEnabled && (
+                    <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-[var(--border)]">
+                      <label className="block">
+                        <span className="field-label">Notification Channel</span>
+                        <select
+                          value={settings.directNotificationChannelId || 'none'}
+                          onChange={(e) => setSettings((prev) => ({ ...prev, directNotificationChannelId: e.target.value === 'none' ? null : e.target.value }))}
+                          className="input py-1.5 text-xs"
+                        >
+                          <option value="none">Disabled</option>
+                          {channels.map((ch) => (
+                            <option key={ch.id} value={ch.id}>
+                              #{ch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="field-label">Minimum Notification Amount (Rp)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          className="input py-1.5 text-xs"
+                          value={settings.directNotifyMinimumAmount}
+                          onChange={(e) => setSettings((prev) => ({ ...prev, directNotifyMinimumAmount: parseInt(e.target.value) || 0 }))}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </section>
               </>
             )}
-
-            <div className="flex justify-end">
-              <button type="submit" disabled={saving} className="btn btn-primary px-6 py-3">
-                {saving ? 'Saving...' : 'Save Settings'}
-              </button>
-            </div>
           </form>
         ) : (
           <section className="card overflow-hidden">
-            <div className="border-b border-[var(--border)] p-6">
-              <h2 className="text-lg font-bold text-[var(--text)]">Donation Logs</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">Track completed payments and role assignments from supporters.</p>
-            </div>
-
             {donations.length === 0 ? (
-              <div className="p-8 text-center text-sm text-[var(--muted)]">No donation events recorded yet.</div>
+              <div className="p-8 text-center text-xs text-[var(--muted)]">No donation events recorded yet.</div>
             ) : (
-              <div className="overflow-x-auto p-6">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--border)] text-[var(--muted)]">
-                      <th className="pb-3">Donor</th>
-                      <th className="pb-3">Amount</th>
-                      <th className="pb-3">Transaction</th>
-                      <th className="pb-3">Status</th>
-                      <th className="pb-3">Date</th>
-                      <th className="pb-3 text-right">Actions</th>
+              <div className="overflow-x-auto max-h-[600px]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+                    <tr>
+                      <th className="py-2.5 px-3">Donor</th>
+                      <th className="py-2.5 px-3">Amount</th>
+                      <th className="py-2.5 px-3">Transaction</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Date</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--border)]">
+                  <tbody className="divide-y divide-[var(--border)] text-[var(--text)]">
                     {donations.map((log) => (
-                      <tr key={log.id} className="text-[var(--text-secondary)]">
-                        <td className="py-4">
-                          <div className="flex items-center gap-3">
+                      <tr key={log.id} className="hover:bg-[var(--surface)]/50 transition-colors">
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
                             {log.user.avatarUrl ? (
-                              <img src={log.user.avatarUrl} alt="" className="h-9 w-9 rounded-full border border-[var(--border)]" />
+                              <img src={log.user.avatarUrl} alt="" className="h-6 w-6 rounded-full border border-[var(--border)] shrink-0" />
                             ) : (
-                              <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-xs font-bold text-[var(--muted)]">
+                              <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel-strong)] text-[10px] font-bold text-[var(--muted)] shrink-0">
                                 {(log.user.displayName || log.user.username || log.discordUserId).charAt(0).toUpperCase()}
                               </div>
                             )}
-                            <div>
-                              <div className="font-semibold text-[var(--text)]">{log.user.displayName || log.senderName}</div>
-                              <div className="text-xs text-[var(--muted)]">{log.user.username ? `@${log.user.username}` : log.email}</div>
+                            <div className="min-w-0">
+                              <span className="font-semibold block truncate text-xs">{log.user.displayName || log.senderName}</span>
+                              <span className="text-[10px] text-[var(--muted)] block truncate">{log.user.username ? `@${log.user.username}` : log.email}</span>
                             </div>
                           </div>
                         </td>
-                        <td className="py-4">
-                          <div className="font-semibold text-[var(--text)]">Rp{log.amount.toLocaleString('id-ID')}</div>
-                          <div className="text-xs text-[var(--muted)]">{log.paymentMethod.toUpperCase()}</div>
+                        <td className="py-2 px-3 whitespace-nowrap">
+                          <span className="font-bold text-xs block text-[var(--text)]">Rp{log.amount.toLocaleString('id-ID')}</span>
+                          <span className="text-[10px] text-[var(--muted)] uppercase">{log.paymentMethod}</span>
                         </td>
-                        <td className="py-4">
-                          <div className="font-mono text-xs text-[var(--text)]">{log.transactionId || 'None'}</div>
-                          {log.message && <div className="text-xs text-[var(--muted)] truncate max-w-xs">{log.message}</div>}
+                        <td className="py-2 px-3">
+                          <span className="font-mono text-[10px] text-[var(--text)] block truncate max-w-[120px]">{log.transactionId || '―'}</span>
+                          {log.message && <span className="text-[10px] text-[var(--muted)] block truncate max-w-[160px]">{log.message}</span>}
                         </td>
-                        <td className="py-4">
+                        <td className="py-2 px-3 whitespace-nowrap">
                           <span
-                            className={`badge ${
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                               log.status === 'ROLE_ASSIGNED'
-                                ? 'badge-live'
+                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
                                 : log.status === 'FAILED'
-                                  ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-                                  : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                                  ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                                  : 'bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]'
                             }`}
                           >
-                            {log.status === 'ROLE_ASSIGNED' ? 'Role Assigned' : log.status}
+                            {log.status === 'ROLE_ASSIGNED' ? 'Assigned' : log.status}
                           </span>
-                          {log.failureReason && (
-                            <div className="text-xs text-red-500 mt-1 max-w-xs leading-4" title={log.failureReason}>
-                              {log.failureReason}
-                            </div>
-                          )}
                         </td>
-                        <td className="py-4 text-[var(--muted)]">
+                        <td className="py-2 px-3 text-[11px] text-[var(--muted)] whitespace-nowrap">
                           {new Date(log.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                         </td>
-                        <td className="py-4 text-right">
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
                           {(log.status === 'FAILED' || log.status === 'PAID' || log.status === 'PENDING') && (
                             <button
                               onClick={() => handleRetryRole(log.id)}
-                              className="btn btn-secondary h-8 px-3 text-xs"
+                              className="btn py-1 px-2 text-xs font-semibold"
                             >
-                              Assign Role
+                              Assign
                             </button>
                           )}
                         </td>

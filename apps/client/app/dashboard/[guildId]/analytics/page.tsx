@@ -63,25 +63,28 @@ export default async function AnalyticsPage({
   }));
 
   return (
-    <main className="px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
-      <div className="mx-auto max-w-[1440px] space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Tinjau grafik keaktifan server, durasi voice session, dan aktivitas role.</p>
+    <main className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        {/* Compact Header & Timeframe Filter */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Server Analytics</h2>
+            <p className="text-xs text-[var(--muted)]">Activity charts, voice session duration, and role logs.</p>
+          </div>
 
-          {/* Timeframe Filter (applies to both stats & chart) */}
-          <div className="flex gap-1.5 justify-end">
+          <div className="flex gap-1">
             {[
-              { id: '7', label: '7 Hari' },
-              { id: '30', label: '30 Hari' },
-              { id: 'all', label: 'Semua Waktu' },
+              { id: '7', label: '7D' },
+              { id: '30', label: '30D' },
+              { id: 'all', label: 'All' },
             ].map((d) => (
               <a
                 key={d.id}
                 href={`?days=${d.id}`}
-                className={`btn px-3.5 py-2 text-xs rounded-lg font-bold border transition-all ${
+                className={`btn px-2.5 py-1 text-xs rounded-md font-semibold transition-all ${
                   days === d.id
-                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-500/5'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--panel-strong)] border-transparent'
+                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-500/10'
+                    : 'text-[var(--muted)] hover:bg-[var(--panel-strong)] border-transparent'
                 }`}
               >
                 {d.label}
@@ -90,53 +93,53 @@ export default async function AnalyticsPage({
           </div>
         </div>
 
-        {/* Info Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="card p-6">
-            <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Role Added Log</div>
-            <div className="mt-2 text-4xl font-extrabold text-[var(--text)]">+{analytics.adds}</div>
+        {/* Compact Metrics Row */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="card p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Role Added Log</div>
+            <div className="mt-1 text-2xl font-black text-[var(--ok)]">+{analytics.adds}</div>
           </div>
-          <div className="card p-6">
-            <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Role Removed Log</div>
-            <div className="mt-2 text-4xl font-extrabold text-[var(--text)]">-{analytics.removes}</div>
+          <div className="card p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Role Removed Log</div>
+            <div className="mt-1 text-2xl font-black text-[var(--danger)]">-{analytics.removes}</div>
           </div>
-          <div className="card p-6">
-            <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Total Role Operations</div>
-            <div className="mt-2 text-4xl font-extrabold text-[var(--text)]">{analytics.total}</div>
+          <div className="card p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Total Role Operations</div>
+            <div className="mt-1 text-2xl font-black text-[var(--text)]">{analytics.total}</div>
           </div>
         </div>
 
         {/* Interactive Charts Section */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           <TradingViewChart
             data={messageData}
-            title="Keaktifan Chat (Jumlah Pesan / Hari)"
+            title="Chat Messages / Day"
             color="#6366f1"
           />
           <TradingViewChart
             data={voiceData}
-            title="Keaktifan Voice (Durasi Voice / Menit / Hari)"
+            title="Voice Minutes / Day"
             color="#a855f7"
           />
         </div>
 
         {/* Pie Chart & Recent Logs */}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
-          <div className="card p-6">
-            <h3 className="text-sm font-bold tracking-tight text-[var(--text)] mb-4">Riwayat Aktivitas Role Terkini</h3>
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+          <div className="card p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)] mb-3">Recent Role Activity</h3>
             {analytics.recent.length === 0 ? (
-              <div className="py-12 text-center text-xs text-[var(--muted)]">Belum ada log operasi role tercatat.</div>
+              <div className="py-8 text-center text-xs text-[var(--muted)]">No role operations recorded.</div>
             ) : (
-              <div className="flow-root">
-                <ul className="-my-5 divide-y divide-[var(--border)]">
+              <div className="flow-root max-h-[300px] overflow-y-auto">
+                <ul className="divide-y divide-[var(--border)]">
                   {analytics.recent.map((log) => (
-                    <li key={log.id} className="py-4">
-                      <div className="flex items-center space-x-4">
+                    <li key={log.id} className="py-2.5">
+                      <div className="flex items-center space-x-3">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-semibold text-[var(--text)]">
                             @{log.username || `User#${log.userId.slice(0, 4)}`}
                           </p>
-                          <p className="truncate text-xs text-[var(--muted)]">
+                          <p className="truncate text-[11px] text-[var(--muted)]">
                             Role: <span className="font-semibold text-[var(--text-secondary)]">{log.roleName || `Role#${log.roleId.slice(0, 4)}`}</span>
                           </p>
                         </div>

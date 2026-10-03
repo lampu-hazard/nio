@@ -1,21 +1,9 @@
 import { loginUrl } from '@/lib/api';
 
-const FEATURES = [
-  {
-    title: 'Rules Panels',
-    description: 'Create server rules, verification guides, and FAQs with banners, thumbnails, and Discord markdown.',
-    label: 'Rules',
-  },
-  {
-    title: 'Self Role Panels',
-    description: 'Let members choose roles with polished buttons or dropdown menus. Reorder roles visually.',
-    label: 'Roles',
-  },
-  {
-    title: 'Announcement Panels',
-    description: 'Publish announcements, events, changelogs, and updates without writing commands.',
-    label: 'Updates',
-  },
+const CAPABILITIES = [
+  { name: 'Panels', detail: 'Rules, roles, and announcements', mark: '01' },
+  { name: 'Automation', detail: 'Moderation and server workflows', mark: '02' },
+  { name: 'Signals', detail: 'Audit trails and community insights', mark: '03' },
 ];
 
 type HomePageProps = {
@@ -27,71 +15,54 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const hasAuthError = params?.authError === '1';
 
   return (
-    <main className="shell overflow-hidden">
-      <section className="container-wide grid min-h-[calc(100vh-80px)] items-center gap-12 py-10 xl:grid-cols-[1.05fr_.95fr]">
-        <div>
-          <div className="badge mb-6">Discord Panel Builder</div>
-          <h1 className="max-w-5xl text-5xl font-black leading-[0.95] tracking-tight text-[var(--text)] md:text-7xl">
-            Build clean Discord panels without commands.
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-[var(--text-secondary)]">
-            nio helps server administrators create rules, announcements, and self-role panels with live previews, audit trails, and one-click Discord publishing.
-          </p>
-          {hasAuthError && (
-            <div className="notice notice-error mt-6 max-w-2xl">
-              Login failed. Please try again.
-            </div>
-          )}
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a href={loginUrl()} className="btn btn-primary px-6 py-4">Login with Discord</a>
-            <a href="#features" className="btn px-6 py-4">View features</a>
-          </div>
-          <div id="features" className="mt-10 grid gap-4 md:grid-cols-3">
-            {FEATURES.map((feature) => (
-              <div key={feature.title} className="card-flat p-5 border border-[var(--border)] bg-[var(--panel-strong)]">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">{feature.label}</div>
-                <h3 className="mt-4 font-bold text-[var(--text)]">{feature.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{feature.description}</p>
-              </div>
-            ))}
-          </div>
+    <main className="home-page">
+      <header className="home-nav">
+        <a className="home-wordmark" href="/" aria-label="nio home">nio<span>.</span></a>
+        <span className="home-nav-note">Discord, in good order.</span>
+        <a className="home-nav-login" href={loginUrl()}>Sign in <span aria-hidden="true">↗</span></a>
+      </header>
+
+      <section className="home-hero" aria-labelledby="home-title">
+        <div className="home-copy">
+          <p className="home-intro">A calmer way to run your server</p>
+          <h1 id="home-title">Make room for the community.</h1>
+          <p className="home-description">nio brings the everyday work of a Discord server into one clear workspace—from the first welcome to the quiet routines that keep things running.</p>
+          {hasAuthError && <div className="notice notice-error home-error" role="alert">Discord sign-in did not complete. Start again when you’re ready.</div>}
+          <a href={loginUrl()} className="home-cta">Continue with Discord <span aria-hidden="true">↗</span></a>
+          <p className="home-permission">Your Discord permissions determine which servers you can manage.</p>
         </div>
 
-        <div className="card p-5 md:p-7">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold text-[var(--muted)]">Live Discord preview</div>
-              <h2 className="text-2xl font-bold tracking-tight text-[var(--text)]">Server Rules</h2>
-            </div>
-            <span className="badge badge-live">Ready</span>
-          </div>
-
-          <div className="rounded-2xl border border-[#2b2d31] bg-[#313338] p-4 shadow-sm">
-            <div className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-black text-zinc-950">n</div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-white">nio</span>
-                  <span className="rounded bg-[#5865f2] px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">app</span>
-                  <span className="text-xs text-[#949ba4]">Today at 14:35</span>
+        <div className="home-preview-wrap" aria-label="Example Discord rules panel">
+          <div className="home-preview-caption"><span>In your server</span><span className="home-live"><i /> Published panel</span></div>
+          <article className="discord-preview">
+            <div className="discord-channel"><span className="channel-hash">#</span> start-here <span className="channel-chevron">⌄</span></div>
+            <div className="discord-message">
+              <div className="discord-avatar" aria-hidden="true">n</div>
+              <div className="discord-message-body">
+                <div className="discord-author">nio <span className="discord-app-tag">APP</span> <time>Today at 14:35</time></div>
+                <div className="discord-embed">
+                  <span className="embed-rule" />
+                  <p className="embed-kicker">A NOTE FOR EVERYONE</p>
+                  <h2>Good to have you here.</h2>
+                  <p>Find your way around, meet the people here, and help us keep this a good place to be.</p>
+                  <div className="embed-divider" />
+                  <p className="embed-rules"><b>Be kind.</b> Treat people with respect.<br /><b>Stay on topic.</b> Use the right channels.<br /><b>Ask for help.</b> The moderators are here.</p>
+                  <div className="embed-tags"><span>Community guide</span><span>Updated today</span></div>
                 </div>
-                <div className="mt-3 rounded-2xl border border-white/10 bg-[#2b2d31] p-6">
-                  <div className="text-3xl font-black tracking-tight text-white">SERVER RULES</div>
-                  <p className="mt-2 text-sm text-[#dbdee1]">A concise, structured panel rendered directly inside Discord.</p>
-                </div>
-                <div className="mt-3 rounded border border-black/20 bg-[#2b2d31] p-4" style={{ borderLeft: '4px solid #FAFAFA' }}>
-                  <div className="text-lg font-black text-white">Welcome to server-rules</div>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#dbdee1]">**1. BASIC**\n• Respect every member and staff.\n• No spam, toxicity, scams, or harmful links.\n\n**2. GENERAL**\n• Use channels correctly.\n• Follow moderator instructions.</p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <div className="rounded-lg border border-white/10 bg-[#2b2d31] px-3 py-2 text-sm font-semibold text-[#dbdee1]">Gamer</div>
-                  <div className="rounded-lg border border-white/10 bg-[#2b2d31] px-3 py-2 text-sm font-semibold text-[#dbdee1]">Artist</div>
-                </div>
+                <div className="discord-reaction">✦ <span>12</span></div>
               </div>
             </div>
-          </div>
+            <div className="discord-footer"><span>Message from nio</span><span>Designed in your dashboard</span></div>
+          </article>
+          <div className="preview-index"><span>01</span><span>One panel, ready to publish</span></div>
         </div>
       </section>
+
+      <section className="home-capabilities" aria-label="What nio helps you do">
+        <div className="capabilities-heading"><p>Less busywork, more belonging.</p><span>Tools for the everyday life of a server.</span></div>
+        <div className="capability-list">{CAPABILITIES.map((item) => <article className="capability" key={item.name}><span className="capability-mark">{item.mark}</span><div><h2>{item.name}</h2><p>{item.detail}</p></div><span className="capability-spark" aria-hidden="true">✳</span></article>)}</div>
+      </section>
+      <footer className="home-footer"><span>nio · made for your corner of Discord</span><a href="/privacy">Privacy</a></footer>
     </main>
   );
 }

@@ -146,20 +146,6 @@ services:
     networks:
       - private
 
-  nio-owner:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-owner:${IMAGE_TAG:-latest}
-    build:
-      context: ./apps/owner
-      dockerfile: Dockerfile
-    container_name: nio-owner
-    restart: unless-stopped
-    depends_on:
-      - nio-server
-    env_file:
-      - ./apps/owner/.env
-    networks:
-      - private
-
 volumes:
   db_data:
 

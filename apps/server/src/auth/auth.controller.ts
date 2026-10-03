@@ -10,27 +10,17 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Get('discord')
-  async login(@Req() req: Request, @Res() res: Response, @Query('client') clientQuery?: string) {
-    const client = clientQuery === 'owner' ? 'owner' : 'client';
-    if (clientQuery && clientQuery !== 'owner' && clientQuery !== 'client') return res.status(400).send('Invalid client.');
-    if (client === 'owner' && !process.env.OWNER_DISCORD_REDIRECT_URI) return res.status(404).send('Owner login is not configured.');
+  async login(@Req() req: Request, @Res() res: Response) {
     const state = randomBytes(24).toString('hex');
     req.session.oauthState = state;
-    req.session.oauthClient = client;
     await this.saveSession(req);
-    return res.redirect(this.authService.getDiscordLoginUrl(state, client));
+    return res.redirect(this.authService.getDiscordLoginUrl(state));
   }
 
   @Get('discord/callback')
   async callback(@Req() req: Request, @Res() res: Response, @Query('code') code?: string, @Query('state') state?: string) {
-    const client = req.session.oauthClient === 'owner' ? 'owner' : 'client';
-    if (!req.session.oauthClient) return res.status(400).send('OAuth session is missing. Start login again.');
-    const frontendUrl = client === 'owner'
-      ? (process.env.OWNER_FRONTEND_URL || '')
-      : (process.env.FRONTEND_URL || 'http://localhost:3000');
-    if (client === 'owner' && !this.isOwnerFrontendUrl(frontendUrl)) {
-      return res.status(500).send('Owner frontend URL must be an HTTPS origin.');
-    }
+    if (!req.session.oauthState) return res.status(400).send('OAuth session is missing. Start login again.');
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const failureUrl = `${frontendUrl}/?authError=1`;
     if (!code) return res.redirect(failureUrl);
     if (!state || !req.session.oauthState || state !== req.session.oauthState) {
@@ -38,7 +28,7 @@ export class AuthController {
     }
 
     try {
-      const token = await this.authService.exchangeCode(code, client);
+      const token = await this.authService.exchangeCode(code);
       const [discordUser, guilds] = await Promise.all([
         this.authService.fetchUser(token.access_token),
         this.authService.fetchGuilds(token.access_token),
@@ -56,10 +46,10 @@ export class AuthController {
       req.session.oauthState = undefined;
       await this.saveSession(req);
 
-      return res.redirect(client === 'owner' ? frontendUrl : `${frontendUrl}/dashboard`);
+      return res.redirect(`${frontendUrl}/dashboard`);
     } catch (error) {
       console.error('[OAuth callback error]', error);
-      return res.redirect(`${frontendUrl}/?authError=1`);
+      return res.redirect(failureUrl);
     }
   }
 
@@ -71,21 +61,13 @@ export class AuthController {
       sessionID: req.sessionID,
       hasUser: !!req.session?.user,
     });
-    return { ok: true, user, guilds: req.session.guilds || [] };
+    const ownerId = process.env.OWNER_DISCORD_ID?.trim();
+    return { ok: true, user, guilds: req.session.guilds || [], isOwner: Boolean(ownerId && req.session.user?.id === ownerId) };
   }
 
   @Post('logout')
   logout(@Req() req: Request, @Res() res: Response) {
     req.session.destroy(() => res.json({ ok: true }));
-  }
-
-  private isOwnerFrontendUrl(value: string) {
-    try {
-      const url = new URL(value);
-      return url.origin === value && (url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === 'localhost'));
-    } catch {
-      return false;
-    }
   }
 
   private saveSession(req: Request) {

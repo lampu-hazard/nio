@@ -47,6 +47,15 @@ describe('AiAgentSettingsService', () => {
     expect(result).not.toHaveProperty('apiKey');
   });
 
+  it('throws friendly BadRequestException when encryption key is not configured', async () => {
+    encryption.encrypt.mockImplementationOnce(() => {
+      throw new Error('Plugin credential encryption is not configured');
+    });
+    await expect(service.updateSettings('guild-1', { apiKey: 'secret' })).rejects.toThrow(
+      'PLUGIN_CREDENTIALS_ENCRYPTION_KEY belum dikonfigurasi',
+    );
+  });
+
   it('returns per-user token totals and failure counts without prompts', async () => {
     const result = await service.getUsage('guild-1', 500);
     expect(result.days).toBe(90);

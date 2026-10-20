@@ -43,7 +43,15 @@ export class AiAgentSettingsService {
 
     const { apiKey, clearApiKey, ...fields } = dto;
     const update: Record<string, unknown> = { ...fields };
-    if (apiKey) update.encryptedApiKey = this.encryption.encrypt(apiKey.trim());
+    if (apiKey) {
+      try {
+        update.encryptedApiKey = this.encryption.encrypt(apiKey.trim());
+      } catch {
+        throw new BadRequestException(
+          'Gagal mengenkripsi API Key: PLUGIN_CREDENTIALS_ENCRYPTION_KEY belum dikonfigurasi di file .env server (minimal 32 karakter).',
+        );
+      }
+    }
     if (clearApiKey) update.encryptedApiKey = null;
     const row = await this.prisma.discordAgentSettings.upsert({
       where: { guildId },

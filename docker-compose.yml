@@ -47,6 +47,7 @@ services:
       - ./apps/server/.env
     environment:
       - NODE_ENV=production
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://nio:nio-server@db:5432/nio-db}
     command: ["bun", "run", "prisma:deploy"]
     networks:
       - private
@@ -72,6 +73,7 @@ services:
     environment:
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://nio:nio-server@db:5432/nio-db}
     networks:
       - private
 

@@ -60,7 +60,14 @@ jobs:
           script: |
             export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:$PATH"
             export IMAGE_TAG="${{ github.sha }}"
-            cd ${{ secrets.VPS_PROJECT_PATH || './nio-server' }}
+            TARGET_DIR="${{ secrets.VPS_PROJECT_PATH || '' }}"
+            if [ -n "$TARGET_DIR" ] && [ -d "$TARGET_DIR" ]; then
+              cd "$TARGET_DIR"
+            elif [ -d "$HOME/nio" ]; then
+              cd "$HOME/nio"
+            elif [ -d "$HOME/nio-server" ]; then
+              cd "$HOME/nio-server"
+            fi
             git fetch origin main
             git reset --hard origin/main
             docker compose pull

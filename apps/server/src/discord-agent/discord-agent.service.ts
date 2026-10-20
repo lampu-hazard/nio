@@ -119,6 +119,45 @@ export function formatAgentResponse(finalText: string): string {
   return cleanFinal;
 }
 
+export function compactHistoryMessages(messages: AiMessage[]): AiMessage[] {
+  if (messages.length <= 4) return messages;
+
+  return messages.map((msg, index) => {
+    if (index >= messages.length - 2 || msg.role !== 'user' || !msg.parts) {
+      return msg;
+    }
+
+    const compactedParts = msg.parts.map((part) => {
+      if (part.type === 'tool_result' && part.result?.ok && part.result.value) {
+        const serialized = JSON.stringify(part.result.value);
+        if (serialized.length > 2000) {
+          const val = part.result.value as any;
+          const preview = Array.isArray(val)
+            ? `Array(${val.length} item) - contoh awal: ${JSON.stringify(val.slice(0, 2))}`
+            : typeof val === 'object' && val !== null
+            ? `Object keys: [${Object.keys(val).join(', ')}]`
+            : serialized.slice(0, 300);
+
+          return {
+            ...part,
+            result: {
+              ok: true,
+              value: {
+                _compacted: true,
+                note: `Hasil tool ${part.name} dari turn sebelumnya diringkas untuk efisiensi context window.`,
+                preview,
+              },
+            },
+          };
+        }
+      }
+      return part;
+    });
+
+    return { ...msg, parts: compactedParts };
+  });
+}
+
 let cachedDefaultSystemPrompt: string | null = null;
 
 function loadDefaultSystemPrompt() {
@@ -287,6 +326,7 @@ ${prompt || '(analisis pesan di atas)'}`;
     let turns = 0;
     let totalToolCalls = 0;
     let finalContent = '';
+    let lastEmittedText = '';
     let hasPartialResults = false;
     const proposalIds: string[] = [];
     const callCounts = new Map<string, number>();
@@ -314,7 +354,7 @@ ${prompt || '(analisis pesan di atas)'}`;
       try {
         response = await provider.generate({
           systemPrompt: effectiveSystemPrompt,
-          messages: [...messages],
+          messages: compactHistoryMessages([...messages]),
           tools: availableTools,
           onTextDelta: async (delta) => {
             streamedText += delta;
@@ -352,32 +392,36 @@ ${prompt || '(analisis pesan di atas)'}`;
       if (textParts.length > 0) {
         const fullTurnText = textParts.map((p) => p.text).join('\n');
         const cleanText = cleanModelText(fullTurnText);
-        if (cleanText) finalContent = cleanText;
+        if (cleanText) lastEmittedText = cleanText;
       }
 
       const toolCalls = assistantMessage.parts.filter((p): p is AiToolCallPart => p.type === 'tool_call');
       if (toolCalls.length === 0) {
+        if (lastEmittedText) finalContent = lastEmittedText;
         break;
       }
 
       const callsToProcess = toolCalls.slice(0, MAX_TOOL_CALLS_PER_TURN);
-      const toolResultParts: AiToolResultPart[] = [];
+      const toolNames = callsToProcess.map((c) => `\`${c.name}\``).join(', ');
+      this.logger.log(`🔧 [Tool Call${callsToProcess.length > 1 ? 's' : ''}] ${callsToProcess.map((c) => c.name).join(', ')}`);
+      await reportStage('INVESTIGATING', `🔎 *Memeriksa sumber: ${toolNames}...*`);
+
       let shouldTerminateForRepetition = false;
 
+      interface CallPlan {
+        call: AiToolCallPart;
+        preError?: { code: string; message: string };
+      }
+
+      const plannedCalls: CallPlan[] = [];
+
       for (const call of callsToProcess) {
-        this.logger.log(`🔧 [Tool Call] ${call.name}`);
-        await reportStage('INVESTIGATING', `🔎 *Memeriksa sumber: \`${call.name}\`...*`);
         totalToolCalls++;
         if (totalToolCalls > MAX_TOTAL_TOOL_CALLS) {
           hasPartialResults = true;
-          toolResultParts.push({
-            type: 'tool_result',
-            toolCallId: call.id,
-            name: call.name,
-            result: {
-              ok: false,
-              error: { code: 'CALL_LIMIT_EXCEEDED', message: 'Total tool call limit reached (max 20).' },
-            },
+          plannedCalls.push({
+            call,
+            preError: { code: 'CALL_LIMIT_EXCEEDED', message: 'Total tool call limit reached (max 20).' },
           });
           continue;
         }
@@ -387,99 +431,100 @@ ${prompt || '(analisis pesan di atas)'}`;
         callCounts.set(signature, count);
         if (count >= 3) {
           shouldTerminateForRepetition = true;
-          toolResultParts.push({
-            type: 'tool_result',
-            toolCallId: call.id,
-            name: call.name,
-            result: {
-              ok: false,
-              error: { code: 'REPEATED_CALL_TERMINATED', message: 'Repeated identical tool call detected 3 times. Terminating.' },
-            },
+          plannedCalls.push({
+            call,
+            preError: { code: 'REPEATED_CALL_TERMINATED', message: 'Repeated identical tool call detected 3 times. Terminating.' },
           });
           break;
         }
 
-        const mcpResolved = this.mcpTools?.resolve(call.name);
-        const toolDef = toolMap.get(call.name);
-        const safety = mcpResolved?.safety || toolDef?.safety;
+        plannedCalls.push({ call });
+      }
 
-        if (!safety) {
-          toolResultParts.push({
-            type: 'tool_result',
-            toolCallId: call.id,
-            name: call.name,
-            result: {
-              ok: false,
-              error: { code: 'UNKNOWN_TOOL', message: `Unknown or disallowed tool: ${call.name}` },
-            },
-          });
-          continue;
-        }
-
-        if (safety.mode === 'write' || safety.proposalRequired) {
-          try {
-            let proposalResult: any;
-            if (mcpResolved) {
-              const proposal = await this.proposals.createProposal({
-                guildId,
-                channelId,
-                requestedById: authorId,
-                targetUserId: null,
-                recommendation: {
-                  type: 'MCP_TOOL_CALL',
-                  reason: String((call.arguments as any)?.reason || `MCP tool call: ${call.name}`),
-                  mcpServer: mcpResolved.config.name,
-                  mcpTool: mcpResolved.remoteName,
-                  mcpArguments: call.arguments,
-                },
-              });
-              proposalResult = {
-                proposalCreated: true,
-                proposalId: proposal.id,
-                actionType: 'MCP_TOOL_CALL',
-              };
-            } else {
-              proposalResult = await this.executor.execute(call.name, call.arguments, {
-                guildId,
-                channelId,
-                requestedById: authorId,
-              });
-            }
-
-            if (proposalResult?.proposalCreated && proposalResult.proposalId) {
-              if (proposalIds.length < MAX_PROPOSALS) {
-                proposalIds.push(proposalResult.proposalId);
-              }
-              this.logger.log(`📝 [Proposal Created] id=${proposalResult.proposalId} action=${call.name}`);
-              if (run && this.runs) await this.runs.proposal(run.id, proposalResult.proposalId, call.name).catch(() => undefined);
-            }
-
-            toolResultParts.push({
+      const toolResultParts: AiToolResultPart[] = await Promise.all(
+        plannedCalls.map(async ({ call, preError }): Promise<AiToolResultPart> => {
+          if (preError) {
+            return {
               type: 'tool_result',
               toolCallId: call.id,
               name: call.name,
-              result: {
-                ok: true,
-                value: {
-                  ...proposalResult,
-                  status: 'PROPOSAL_PENDING_CONFIRMATION',
-                  message: 'Action proposal created. Awaiting human moderator approval.',
-                },
-              },
-            });
-          } catch (propErr: any) {
-            this.logger.warn(`📝 [Proposal Failed: ${call.name}] error=${sanitizeSensitiveInfo(propErr.message || String(propErr)).slice(0, 160)}`);
-            toolResultParts.push({
+              result: { ok: false, error: preError },
+            };
+          }
+
+          const mcpResolved = this.mcpTools?.resolve(call.name);
+          const toolDef = toolMap.get(call.name);
+          const safety = mcpResolved?.safety || toolDef?.safety;
+
+          if (!safety) {
+            return {
               type: 'tool_result',
               toolCallId: call.id,
               name: call.name,
               result: {
                 ok: false,
-                error: { code: 'PROPOSAL_CREATION_FAILED', message: propErr.message || String(propErr) },
+                error: { code: 'UNKNOWN_TOOL', message: `Unknown or disallowed tool: ${call.name}` },
               },
-            });
+            };
           }
-        } else {
+
+          if (safety.mode === 'write' || safety.proposalRequired) {
+            try {
+              let proposalResult: any;
+              if (mcpResolved) {
+                const proposal = await this.proposals.createProposal({
+                  guildId,
+                  channelId,
+                  requestedById: authorId,
+                  targetUserId: null,
+                  recommendation: {
+                    type: 'MCP_TOOL_CALL',
+                    reason: String((call.arguments as any)?.reason || `MCP tool call: ${call.name}`),
+                    mcpServer: mcpResolved.config.name,
+                    mcpTool: mcpResolved.remoteName,
+                    mcpArguments: call.arguments,
+                  },
+                });
+                proposalResult = {
+                  proposalCreated: true,
+                  proposalId: proposal.id,
+                  actionType: 'MCP_TOOL_CALL',
+                };
+              } else {
+                proposalResult = await this.executor.execute(call.name, call.arguments, {
+                  guildId,
+                  channelId,
+                  requestedById: authorId,
+                });
+              }
+
+              return {
+                type: 'tool_result',
+                toolCallId: call.id,
+                name: call.name,
+                result: {
+                  ok: true,
+                  value: {
+                    ...proposalResult,
+                    status: 'PROPOSAL_PENDING_CONFIRMATION',
+                    message: 'Action proposal created. Awaiting human moderator approval.',
+                  },
+                },
+              };
+            } catch (propErr: any) {
+              this.logger.warn(`📝 [Proposal Failed: ${call.name}] error=${sanitizeSensitiveInfo(propErr.message || String(propErr)).slice(0, 160)}`);
+              return {
+                type: 'tool_result',
+                toolCallId: call.id,
+                name: call.name,
+                result: {
+                  ok: false,
+                  error: { code: 'PROPOSAL_CREATION_FAILED', message: propErr.message || String(propErr) },
+                },
+              };
+            }
+          }
+
           try {
             let res: any;
             if (mcpResolved) {
@@ -506,7 +551,9 @@ ${prompt || '(analisis pesan di atas)'}`;
               const summary = outcome === 'EMPTY' ? `${call.name} selesai tanpa hasil.` : `${call.name} selesai; hasil tersedia${outcome === 'PARTIAL' ? ' dan dipotong sesuai batas ukuran' : ''}.`;
               await this.runs.evidence(run.id, call.name, outcome, summary).catch(() => undefined);
             }
-            toolResultParts.push({
+
+            this.logger.log(`📥 [Tool Result: ${call.name}] ok=true`);
+            return {
               type: 'tool_result',
               toolCallId: call.id,
               name: call.name,
@@ -514,13 +561,12 @@ ${prompt || '(analisis pesan di atas)'}`;
                 ok: true,
                 value: cappedVal,
               },
-            });
-            this.logger.log(`📥 [Tool Result: ${call.name}] ok=true`);
+            };
           } catch (execErr: any) {
             hasPartialResults = true;
             if (run && this.runs) await this.runs.evidence(run.id, call.name, 'FAILED', `${call.name} gagal dijalankan.`).catch(() => undefined);
             this.logger.warn(`📥 [Tool Result: ${call.name}] ok=false error=${execErr.message || String(execErr)}`);
-            toolResultParts.push({
+            return {
               type: 'tool_result',
               toolCallId: call.id,
               name: call.name,
@@ -528,8 +574,20 @@ ${prompt || '(analisis pesan di atas)'}`;
                 ok: false,
                 error: { code: 'EXECUTION_ERROR', message: execErr.message || String(execErr) },
               },
-            });
+            };
           }
+        }),
+      );
+
+      for (const resPart of toolResultParts) {
+        const val = resPart.result?.ok ? (resPart.result.value as any) : null;
+        if (val?.proposalCreated && val?.proposalId) {
+          const propId = String(val.proposalId);
+          if (proposalIds.length < MAX_PROPOSALS) {
+            proposalIds.push(propId);
+          }
+          this.logger.log(`📝 [Proposal Created] id=${propId} action=${resPart.name}`);
+          if (run && this.runs) await this.runs.proposal(run.id, propId, resPart.name).catch(() => undefined);
         }
       }
 
@@ -555,7 +613,7 @@ ${prompt || '(analisis pesan di atas)'}`;
         const synthesisRes = await provider.generate({
           systemPrompt: effectiveSystemPrompt,
           messages: [
-            ...messages,
+            ...compactHistoryMessages(messages),
             {
               role: 'user',
               parts: [{ type: 'text', text: 'Semua pemanggilan tool telah selesai. Sekarang, berikan jawaban akhir yang jelas, lengkap, dan informatif kepada pengguna berdasarkan data dan temuan tool di atas.' }],
@@ -573,6 +631,10 @@ ${prompt || '(analisis pesan di atas)'}`;
       } catch (synthErr) {
         this.logger.warn(`Failed to synthesize final response after turn exhaustion: ${synthErr}`);
       }
+    }
+
+    if (!finalContent && lastEmittedText) {
+      finalContent = lastEmittedText;
     }
 
     if (!finalContent) {

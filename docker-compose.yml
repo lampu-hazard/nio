@@ -1,6 +1,6 @@
 services:
   slowmode-engine:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-slowmode-engine:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-slowmode-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/slowmode-engine
       dockerfile: Dockerfile
@@ -14,7 +14,7 @@ services:
       - private
 
   anomaly-engine:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-anomaly-engine:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-anomaly-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/anomaly-engine
       dockerfile: Dockerfile
@@ -28,7 +28,7 @@ services:
       - private
 
   analytics-engine:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-analytics-engine:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-analytics-engine:${IMAGE_TAG:-latest}
     build:
       context: ./services/analytics-engine
       dockerfile: Dockerfile
@@ -79,7 +79,7 @@ services:
       - private
 
   nio-migrate:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-server:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -97,7 +97,7 @@ services:
       - private
 
   nio-server:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-server:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-server:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -130,7 +130,7 @@ services:
       - private
 
   nio-client:
-    image: ${DOCKERHUB_NAMESPACE:?Set DOCKERHUB_NAMESPACE in the root .env file}/nio-client:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-client:${IMAGE_TAG:-latest}
     build:
       context: ./apps/client
       dockerfile: Dockerfile

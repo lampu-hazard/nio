@@ -4,6 +4,7 @@ import {
   sanitizeSensitiveInfo,
   neutralizeMentions,
   formatAgentResponse,
+  compactHistoryMessages,
 } from './discord-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
@@ -783,6 +784,42 @@ describe('DiscordAgentService loop', () => {
       expect(formatted).toContain(finalAnswer);
       expect(formatted).not.toContain('internal');
       expect(formatted.length).toBeLessThanOrEqual(2000);
+    });
+
+    it('compacts bulky tool results in older turns while preserving recent turns and user prompt', () => {
+      const largeData = Array.from({ length: 50 }, (_, i) => ({ id: `item-${i}`, name: `channel-${i}`, topic: 'some channel description' }));
+      const messages: any[] = [
+        { role: 'user', parts: [{ type: 'text', text: 'initial prompt' }] },
+        { role: 'assistant', parts: [{ type: 'tool_call', id: 'call-1', name: 'get_channels', arguments: {} }] },
+        {
+          role: 'user',
+          parts: [{
+            type: 'tool_result',
+            toolCallId: 'call-1',
+            name: 'get_channels',
+            result: { ok: true, value: largeData },
+          }],
+        },
+        { role: 'assistant', parts: [{ type: 'tool_call', id: 'call-2', name: 'get_info', arguments: {} }] },
+        {
+          role: 'user',
+          parts: [{
+            type: 'tool_result',
+            toolCallId: 'call-2',
+            name: 'get_info',
+            result: { ok: true, value: largeData },
+          }],
+        },
+      ];
+
+      const compacted = compactHistoryMessages(messages);
+      expect((compacted[0].parts![0] as any).text).toBe('initial prompt');
+      // Turn 1 tool result is older than last 2 messages and large, so it is compacted
+      expect((compacted[2].parts![0] as any).result.value).toMatchObject({
+        _compacted: true,
+      });
+      // Most recent tool result (turn 2) is within last 2 messages, so it stays raw and uncompacted
+      expect((compacted[4].parts![0] as any).result.value).toEqual(largeData);
     });
   });
 });

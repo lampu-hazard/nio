@@ -2,7 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Client, Message, TextChannel } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { RustSlowmodeClientService } from './rust-slowmode-client.service';
+import { SlowmodeEngineService } from './slowmode-engine.service';
 
 interface SlowmodeSettings {
   enabled: boolean;
@@ -22,7 +22,7 @@ export class DiscordSlowmodeService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: AppLogger,
-    private readonly rustClient: RustSlowmodeClientService,
+    private readonly slowmodeEngine: SlowmodeEngineService,
   ) {}
 
   setClient(client: Pick<Client, 'channels'>) {
@@ -91,7 +91,7 @@ export class DiscordSlowmodeService implements OnModuleInit, OnModuleDestroy {
     const channel = this.asSlowmodeChannel(message.channel as TextChannel);
     if (!channel) return;
 
-    const result = await this.rustClient.analyze(
+    const result = await this.slowmodeEngine.analyze(
       message.guild.id,
       channel.id,
       message.author.id,
@@ -121,7 +121,7 @@ export class DiscordSlowmodeService implements OnModuleInit, OnModuleDestroy {
         const channel = await this.resolveChannel(channelId);
         if (!channel) continue;
 
-        const result = await this.rustClient.analyze(
+        const result = await this.slowmodeEngine.analyze(
           guildId,
           channelId,
           'SYSTEM',

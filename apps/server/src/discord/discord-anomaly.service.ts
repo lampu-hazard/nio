@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { Message } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../logger/logger.service';
-import { RustAnomalyClientService } from './rust-anomaly-client.service';
+import { AnomalyEngineService } from './anomaly-engine.service';
 import { SentinelService } from '../sentinel/sentinel.service';
 
 interface AnomalySettings {
@@ -21,7 +21,7 @@ export class DiscordAnomalyService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: AppLogger,
-    private readonly rustClient: RustAnomalyClientService,
+    private readonly anomalyEngine: AnomalyEngineService,
     @Optional() private readonly sentinelService?: SentinelService,
   ) {}
 
@@ -145,7 +145,7 @@ export class DiscordAnomalyService implements OnModuleInit {
         ? 2
         : 3;
 
-    const response = await this.rustClient.analyze({
+    const response = await this.anomalyEngine.analyze({
       guildId: message.guild.id,
       channelId: message.channel.id,
       userId: message.author.id,

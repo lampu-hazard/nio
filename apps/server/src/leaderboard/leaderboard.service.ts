@@ -1,7 +1,6 @@
-import { Injectable, Inject, Optional, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordBotService } from '../discord/discord-bot.service';
-import { RustAnalyticsClientService } from '../discord/rust-analytics-client.service';
 
 @Injectable()
 export class LeaderboardService {
@@ -9,27 +8,10 @@ export class LeaderboardService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => DiscordBotService))
     private readonly bot: DiscordBotService,
-    @Optional() private readonly rustAnalytics?: RustAnalyticsClientService,
   ) {}
 
   async getChatLeaderboard(guildId: string, days: string, limit: number) {
     const candidateLimit = Math.max(limit * 2, 50);
-
-    if (this.rustAnalytics) {
-      try {
-        const entries = await this.rustAnalytics.getChatLeaderboard(guildId, days, candidateLimit);
-        if (entries && entries.length > 0) {
-          const candidates = entries.map((row) => ({
-            userId: row.userId,
-            score: row.score,
-          }));
-          return await this.resolveAndFilterLeaderboard(guildId, candidates, limit);
-        }
-      } catch {
-        // Fall back to Prisma DB aggregate if Rust client fails
-      }
-    }
-
     const gteDate = days === 'all' ? undefined : new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
 
     const aggregates = await this.prisma.discordMessageLog.groupBy({
@@ -56,22 +38,6 @@ export class LeaderboardService {
 
   async getVoiceLeaderboard(guildId: string, days: string, limit: number) {
     const candidateLimit = Math.max(limit * 2, 50);
-
-    if (this.rustAnalytics) {
-      try {
-        const entries = await this.rustAnalytics.getVoiceLeaderboard(guildId, days, candidateLimit);
-        if (entries && entries.length > 0) {
-          const candidates = entries.map((row) => ({
-            userId: row.userId,
-            score: row.score,
-          }));
-          return await this.resolveAndFilterLeaderboard(guildId, candidates, limit);
-        }
-      } catch {
-        // Fall back to Prisma DB aggregate if Rust client fails
-      }
-    }
-
     const gteDate = days === 'all' ? undefined : new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
 
     const aggregates = await this.prisma.voiceSession.groupBy({

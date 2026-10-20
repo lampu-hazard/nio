@@ -1,35 +1,4 @@
 services:
-  anomaly-engine:
-    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-anomaly-engine:${IMAGE_TAG:-latest}
-    build:
-      context: ./services/anomaly-engine
-      dockerfile: Dockerfile
-    container_name: nio-anomaly-engine
-    restart: unless-stopped
-    ports:
-      - "50051:50051"
-    environment:
-      - RUST_LOG=info
-    networks:
-      - private
-
-  analytics-engine:
-    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-analytics-engine:${IMAGE_TAG:-latest}
-    build:
-      context: ./services/analytics-engine
-      dockerfile: Dockerfile
-    container_name: nio-analytics-engine
-    restart: unless-stopped
-    ports:
-      - "50053:50053"
-    environment:
-      - DATABASE_URL=postgresql://nio:nio-server@db:5432/nio-db
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - private
-
   db:
     image: postgres:16-alpine
     container_name: nio-db
@@ -98,17 +67,11 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      anomaly-engine:
-        condition: service_started
-      analytics-engine:
-        condition: service_started
     env_file:
       - ./apps/server/.env
     environment:
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
-      - ANOMALY_ENGINE_URL=anomaly-engine:50051
-      - ANALYTICS_ENGINE_URL=analytics-engine:50053
     networks:
       - private
 

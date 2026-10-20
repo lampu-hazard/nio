@@ -3,13 +3,13 @@ import { Message } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
-import { RustAnomalyClientService } from './rust-anomaly-client.service';
+import { AnomalyEngineService } from './anomaly-engine.service';
 
 describe('DiscordAnomalyService', () => {
   let service: DiscordAnomalyService;
   let prisma: any;
   let logger: any;
-  let rustClient: any;
+  let anomalyEngine: any;
 
   const makeMessage = (content = 'Hello', urls: string[] = []) => ({
     id: 'message-1',
@@ -37,13 +37,13 @@ describe('DiscordAnomalyService', () => {
       log: jest.fn(),
       error: jest.fn(),
     };
-    rustClient = {
+    anomalyEngine = {
       analyze: jest.fn(),
     };
     service = new DiscordAnomalyService(
       prisma as unknown as PrismaService,
       logger as unknown as AppLogger,
-      rustClient as unknown as RustAnomalyClientService,
+      anomalyEngine as unknown as AnomalyEngineService,
     );
   });
 
@@ -64,7 +64,7 @@ describe('DiscordAnomalyService', () => {
 
     await service.handleMessage(message);
 
-    expect(rustClient.analyze).not.toHaveBeenCalled();
+    expect(anomalyEngine.analyze).not.toHaveBeenCalled();
   });
 
   it('calls rust client if enabled and deletes message when critical finding occurs in DELETE_HIGH_CONFIDENCE mode', async () => {
@@ -78,7 +78,7 @@ describe('DiscordAnomalyService', () => {
       enforcementMode: 'DELETE_HIGH_CONFIDENCE',
     });
 
-    rustClient.analyze.mockResolvedValue({
+    anomalyEngine.analyze.mockResolvedValue({
       decision: 3, // DELETE_MESSAGE
       severity: 4, // CRITICAL
       confidence: 0.95,
@@ -100,7 +100,7 @@ describe('DiscordAnomalyService', () => {
 
     await service.handleMessage(message);
 
-    expect(rustClient.analyze).toHaveBeenCalledWith({
+    expect(anomalyEngine.analyze).toHaveBeenCalledWith({
       guildId: 'guild-1',
       channelId: 'channel-1',
       userId: 'user-1',
@@ -168,7 +168,7 @@ describe('DiscordAnomalyService', () => {
       enforcementMode: 'AUDIT_ONLY',
     });
 
-    rustClient.analyze.mockResolvedValue({
+    anomalyEngine.analyze.mockResolvedValue({
       decision: 3, // DELETE_MESSAGE
       severity: 4, // CRITICAL
       confidence: 0.95,
@@ -190,7 +190,7 @@ describe('DiscordAnomalyService', () => {
 
     await service.handleMessage(message);
 
-    expect(rustClient.analyze).toHaveBeenCalled();
+    expect(anomalyEngine.analyze).toHaveBeenCalled();
     expect(message.delete).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalled();
   });
@@ -216,7 +216,7 @@ describe('DiscordAnomalyService', () => {
     const sentinelAnomalyService = new DiscordAnomalyService(
       prisma as unknown as PrismaService,
       logger as unknown as AppLogger,
-      rustClient as unknown as RustAnomalyClientService,
+      anomalyEngine as unknown as AnomalyEngineService,
       mockSentinel,
     );
 
@@ -233,7 +233,7 @@ describe('DiscordAnomalyService', () => {
     await sentinelAnomalyService.handleMessage(message);
 
     expect(mockSentinel.inspectMessage).toHaveBeenCalled();
-    expect(rustClient.analyze).not.toHaveBeenCalled();
+    expect(anomalyEngine.analyze).not.toHaveBeenCalled();
     expect(message.delete).toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -270,7 +270,7 @@ describe('DiscordAnomalyService', () => {
     const sentinelAnomalyService = new DiscordAnomalyService(
       prisma as unknown as PrismaService,
       logger as unknown as AppLogger,
-      rustClient as unknown as RustAnomalyClientService,
+      anomalyEngine as unknown as AnomalyEngineService,
       mockSentinel,
     );
 
@@ -287,7 +287,7 @@ describe('DiscordAnomalyService', () => {
     await sentinelAnomalyService.handleMessage(message);
 
     expect(mockSentinel.inspectMessage).toHaveBeenCalled();
-    expect(rustClient.analyze).not.toHaveBeenCalled();
+    expect(anomalyEngine.analyze).not.toHaveBeenCalled();
     expect(message.delete).toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalled();
   });

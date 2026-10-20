@@ -406,6 +406,14 @@ export class DiscordAgentToolExecutorService {
           this.requireString(args.messageId, 'messageId'),
         );
 
+      case 'recover_panel_from_message':
+        return this.recoverPanelFromMessage(
+          context.guildId,
+          args.channelId || context.channelId,
+          this.requireString(args.messageId, 'messageId'),
+          context.requestedById,
+        );
+
       case 'find_duplicate_messages':
         return this.findDuplicateMessages(context.guildId, args.limit, args.hours);
 
@@ -2503,5 +2511,152 @@ export class DiscordAgentToolExecutorService {
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  private async recoverPanelFromMessage(
+    guildId: string,
+    channelId: string,
+    messageId: string,
+    requestedById: string,
+  ) {
+    const guild = await this.getGuild(guildId);
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) {
+      throw new BadRequestException('Channel is not text-based or not available.');
+    }
+
+    const message = await channel.messages.fetch(messageId).catch(() => null);
+    if (!message) {
+      throw new BadRequestException(`Message ${messageId} not found in channel ${channelId}.`);
+    }
+
+    const embed = message.embeds?.[0];
+    const title = embed?.title || 'Restored Panel';
+    const description = embed?.description || null;
+    const color = embed?.hexColor || '#5865F2';
+    const imageUrl = embed?.image?.url || null;
+    const thumbnailUrl = embed?.thumbnail?.url || null;
+
+    let extractedPanelId: string | null = null;
+    let panelMode: 'BUTTONS' | 'MENU' = 'BUTTONS';
+    const roles: Array<{
+      roleId: string;
+      label: string;
+      emoji: string | null;
+      buttonStyle: 'PRIMARY' | 'SECONDARY' | 'SUCCESS' | 'DANGER';
+      position: number;
+    }> = [];
+
+    const styleMap: Record<number, 'PRIMARY' | 'SECONDARY' | 'SUCCESS' | 'DANGER'> = {
+      1: 'PRIMARY',
+      2: 'SECONDARY',
+      3: 'SUCCESS',
+      4: 'DANGER',
+    };
+
+    for (const row of ((message.components || []) as any[])) {
+      for (const comp of row.components || []) {
+        if (comp.customId?.startsWith('sr:')) {
+          const parts = comp.customId.split(':');
+          if (parts.length >= 3) {
+            if (!extractedPanelId) extractedPanelId = parts[1];
+            roles.push({
+              roleId: parts[2],
+              label: comp.label || parts[2],
+              emoji: comp.emoji?.id ? `<:${comp.emoji.name}:${comp.emoji.id}>` : comp.emoji?.name || null,
+              buttonStyle: styleMap[comp.style] || 'SECONDARY',
+              position: roles.length,
+            });
+          }
+        } else if (comp.customId?.startsWith('sr-menu:')) {
+          panelMode = 'MENU';
+          const parts = comp.customId.split(':');
+          if (parts.length >= 2 && !extractedPanelId) extractedPanelId = parts[1];
+          for (const opt of comp.options || []) {
+            roles.push({
+              roleId: opt.value,
+              label: opt.label || opt.value,
+              emoji: opt.emoji?.id ? `<:${opt.emoji.name}:${opt.emoji.id}>` : opt.emoji?.name || null,
+              buttonStyle: 'SECONDARY',
+              position: roles.length,
+            });
+          }
+        }
+      }
+    }
+
+    // ponytail: uses extracted panelId from button customId so existing Discord interactions link directly without re-posting.
+    const finalPanelId = extractedPanelId || message.id;
+
+    await this.prisma.guild.upsert({
+      where: { id: guildId },
+      update: { name: guild.name, icon: guild.icon },
+      create: { id: guildId, name: guild.name, icon: guild.icon },
+    });
+
+    await this.prisma.user.upsert({
+      where: { id: requestedById },
+      update: {},
+      create: { id: requestedById, username: 'Admin', globalName: 'Admin' },
+    });
+
+    const panel = await this.prisma.panel.upsert({
+      where: { id: finalPanelId },
+      update: {
+        guildId,
+        channelId,
+        messageId: message.id,
+        name: title,
+        title,
+        description,
+        color,
+        imageUrl,
+        thumbnailUrl,
+        mode: panelMode,
+        status: 'PUBLISHED',
+        lastPublishedAt: new Date(),
+      },
+      create: {
+        id: finalPanelId,
+        guildId,
+        createdById: requestedById,
+        channelId,
+        messageId: message.id,
+        name: title,
+        title,
+        description,
+        color,
+        imageUrl,
+        thumbnailUrl,
+        mode: panelMode,
+        type: 'SELF_ROLE',
+        style: 'PREMIUM',
+        status: 'PUBLISHED',
+        lastPublishedAt: new Date(),
+      },
+    });
+
+    await this.prisma.panelRole.deleteMany({ where: { panelId: panel.id } });
+    if (roles.length > 0) {
+      await this.prisma.panelRole.createMany({
+        data: roles.map((r) => ({
+          panelId: panel.id,
+          roleId: r.roleId,
+          label: r.label,
+          emoji: r.emoji,
+          buttonStyle: r.buttonStyle,
+          position: r.position,
+        })),
+      });
+    }
+
+    return {
+      recovered: true,
+      panelId: panel.id,
+      title: panel.title,
+      rolesRecovered: roles.length,
+      mode: panelMode,
+      roles: roles.map((r) => ({ roleId: r.roleId, label: r.label })),
+    };
   }
 }

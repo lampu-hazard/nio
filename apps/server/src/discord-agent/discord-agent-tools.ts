@@ -778,6 +778,18 @@ const RAW_AGENT_TOOLS = [
       required: ['query'],
     },
   },
+  {
+    name: 'recover_panel_from_message',
+    description: 'Recover and restore a deleted or lost self-role panel in the database directly from an existing Discord message containing panel embeds and buttons or select menus.',
+    parameters: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Discord message ID of the existing panel.' },
+        channelId: { type: 'string', description: 'Discord channel ID where the message is located. Defaults to current channel if omitted.' },
+      },
+      required: ['messageId'],
+    },
+  },
 ];
 const READ_TOOL_PREFIXES = [
   'get_',
@@ -790,6 +802,7 @@ const READ_TOOL_PREFIXES = [
   'analyze_',
   'lookup_',
   'web_',
+  'recover_',
 ];
 
 export const AGENT_TOOLS: AiToolDefinition[] = RAW_AGENT_TOOLS.map((tool) => {

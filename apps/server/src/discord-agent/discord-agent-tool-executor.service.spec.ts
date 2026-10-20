@@ -52,6 +52,23 @@ describe('DiscordAgentToolExecutorService', () => {
         },
       ]),
     },
+    guild: {
+      upsert: jest.fn(async () => ({ id: 'guild-1' })),
+    },
+    user: {
+      upsert: jest.fn(async () => ({ id: 'admin-1' })),
+    },
+    panel: {
+      upsert: jest.fn(async (params: any) => ({
+        id: params.where.id,
+        title: params.create.title,
+        status: 'PUBLISHED',
+      })),
+    },
+    panelRole: {
+      deleteMany: jest.fn(async (_params?: any) => ({ count: 0 })),
+      createMany: jest.fn(async (_params?: any) => ({ count: 1 })),
+    },
   };
 
   const mockProposals = {
@@ -767,6 +784,57 @@ describe('DiscordAgentToolExecutorService', () => {
     }));
     expect(mockSentinel.scanPhishing).toHaveBeenCalled();
     expect(mockSentinel.scanSecrets).toHaveBeenCalled();
+  });
+
+  it('recovers lost panel from discord message with original panel ID and roles', async () => {
+    const mockPanelMessage = {
+      id: 'panel-msg-1',
+      embeds: [{
+        title: 'Community Self Roles',
+        description: 'Click below to pick roles',
+        hexColor: '#5865F2',
+      }],
+      components: [
+        {
+          components: [
+            {
+              customId: 'sr:original-panel-cuid:role-123',
+              label: 'Announcements',
+              style: 1,
+              emoji: { name: 'bell' },
+            },
+          ],
+        },
+      ],
+    };
+
+    (mockChannelMessages.fetch as any).mockImplementationOnce(async (param: any) => {
+      if (param === 'panel-msg-1') return mockPanelMessage;
+      return null;
+    });
+
+    const res = await service.execute('recover_panel_from_message', {
+      messageId: 'panel-msg-1',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual({
+      recovered: true,
+      panelId: 'original-panel-cuid',
+      title: 'Community Self Roles',
+      rolesRecovered: 1,
+      mode: 'BUTTONS',
+      roles: [{ roleId: 'role-123', label: 'Announcements' }],
+    });
+    expect(mockPrisma.panel.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'original-panel-cuid' },
+    }));
+    expect(mockPrisma.panelRole.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({
+        panelId: 'original-panel-cuid',
+        roleId: 'role-123',
+        label: 'Announcements',
+      })],
+    });
   });
 
   describe('web_fetch and web_search tools', () => {

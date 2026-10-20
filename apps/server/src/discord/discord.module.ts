@@ -10,10 +10,9 @@ import { DiscordInteractionService } from './discord-interaction.service';
 import { DiscordPermissionService } from './discord-permission.service';
 import { DiscordSlowmodeService } from './discord-slowmode.service';
 import { SlowmodeEngineService } from './slowmode-engine.service';
-import { RustAnomalyClientService } from './rust-anomaly-client.service';
+import { AnomalyEngineService } from './anomaly-engine.service';
 import { DiscordAnomalyService } from './discord-anomaly.service';
 import { DiscordAgentModule } from '../discord-agent/discord-agent.module';
-import { RustAnalyticsClientService } from './rust-analytics-client.service';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 import { HallOfFameService } from './hall-of-fame.service';
 
@@ -25,9 +24,8 @@ import { HallOfFameService } from './hall-of-fame.service';
     DiscordPermissionService,
     DiscordSlowmodeService,
     SlowmodeEngineService,
-    RustAnomalyClientService,
+    AnomalyEngineService,
     DiscordAnomalyService,
-    RustAnalyticsClientService,
     DiscordVoiceConnectionService,
     HallOfFameService,
   ],
@@ -36,9 +34,8 @@ import { HallOfFameService } from './hall-of-fame.service';
     DiscordPermissionService,
     DiscordSlowmodeService,
     SlowmodeEngineService,
-    RustAnomalyClientService,
+    AnomalyEngineService,
     DiscordAnomalyService,
-    RustAnalyticsClientService,
     DiscordVoiceConnectionService,
     HallOfFameService,
   ],

@@ -18,7 +18,6 @@ import { AgentActionProposalService } from '../discord-agent/agent-action-propos
 import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
 import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
 import { AiAgentSettingsService } from '../discord-agent/ai-agent-settings.service';
-import { RustAnalyticsClientService } from './rust-analytics-client.service';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 import { HallOfFameService } from './hall-of-fame.service';
 
@@ -57,7 +56,6 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     private readonly actionProposals: AgentActionProposalService,
     private readonly agentToolExecutor: DiscordAgentToolExecutorService,
     private readonly conversationMemory: ConversationMemoryService,
-    private readonly rustAnalytics: RustAnalyticsClientService,
     private readonly voiceConnections: DiscordVoiceConnectionService,
     private readonly commandSync: GuildCommandSyncService,
     private readonly pluginEvents: PluginEventDispatcherService,
@@ -260,15 +258,6 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       embeds: message.embeds.map((embed) => embed.toJSON()),
       createdAt: message.createdAt,
     }).catch(() => null);
-
-    await this.rustAnalytics.ingestMessage({
-      messageId: message.id,
-      guildId: message.guild.id,
-      channelId: message.channel.id,
-      authorId: message.author.id,
-      content: message.content || '',
-      timestampMs: message.createdTimestamp,
-    });
 
     if (!this.client.user) return;
 
@@ -700,57 +689,30 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
 
     // Case 1: Join Voice
     if (!oldChannelId && newChannelId) {
-      const sent = await this.rustAnalytics.ingestVoiceState({
-        guildId,
-        userId,
-        channelId: newChannelId,
-        eventType: 1,
-        timestampMs: Date.now(),
-      });
-      if (!sent) {
-        await this.messageLogs.prisma.voiceSession.create({
-          data: {
-            guildId,
-            userId,
-            channelId: newChannelId,
-            joinedAt: new Date(),
-          },
-        }).catch(() => null);
-      }
+      await this.messageLogs.prisma.voiceSession.create({
+        data: {
+          guildId,
+          userId,
+          channelId: newChannelId,
+          joinedAt: new Date(),
+        },
+      }).catch(() => null);
     }
     // Case 2: Leave Voice
     else if (oldChannelId && !newChannelId) {
-      const sent = await this.rustAnalytics.ingestVoiceState({
-        guildId,
-        userId,
-        channelId: oldChannelId,
-        eventType: 2,
-        timestampMs: Date.now(),
-      });
-      if (!sent) {
-        await this.closeActiveVoiceSession(guildId, userId);
-      }
+      await this.closeActiveVoiceSession(guildId, userId);
     }
     // Case 3: Move Channels
     else if (oldChannelId && newChannelId && oldChannelId !== newChannelId) {
-      const sent = await this.rustAnalytics.ingestVoiceState({
-        guildId,
-        userId,
-        channelId: newChannelId,
-        eventType: 3,
-        timestampMs: Date.now(),
-      });
-      if (!sent) {
-        await this.closeActiveVoiceSession(guildId, userId);
-        await this.messageLogs.prisma.voiceSession.create({
-          data: {
-            guildId,
-            userId,
-            channelId: newChannelId,
-            joinedAt: new Date(),
-          },
-        }).catch(() => null);
-      }
+      await this.closeActiveVoiceSession(guildId, userId);
+      await this.messageLogs.prisma.voiceSession.create({
+        data: {
+          guildId,
+          userId,
+          channelId: newChannelId,
+          joinedAt: new Date(),
+        },
+      }).catch(() => null);
     }
   }
 

@@ -13,11 +13,6 @@ const makeService = (overrides: any = {}) => {
     logDelete: jest.fn<any>(async () => ({})),
   };
 
-  const rustAnalytics = overrides.rustAnalytics || {
-    ingestMessage: jest.fn(async () => true),
-    ingestVoiceState: jest.fn(async () => true),
-  };
-
   return {
     service: new DiscordBotService(
       { handle: jest.fn() } as any,
@@ -33,20 +28,18 @@ const makeService = (overrides: any = {}) => {
       { setClient: jest.fn() } as any,
       { setClient: jest.fn() } as any,
       { saveConversation: jest.fn() } as any,
-      rustAnalytics as any,
       { } as any,
       { sync: jest.fn() } as any,
       { dispatchMessage: jest.fn() } as any,
       { handleReaction: jest.fn(), handleMessageDelete: jest.fn() } as any,
     ),
     messageLogs,
-    rustAnalytics,
   };
 };
 
 describe('DiscordBotService deleted message logs', () => {
-  it('logs message creates to Prisma even when Rust analytics succeeds', async () => {
-    const { service, messageLogs, rustAnalytics } = makeService();
+  it('logs message creates to Prisma', async () => {
+    const { service, messageLogs } = makeService();
     const message = {
       id: 'msg-1',
       guild: { id: 'guild-1' },
@@ -67,7 +60,6 @@ describe('DiscordBotService deleted message logs', () => {
       content: 'hello',
       attachments: [],
     }));
-    expect(rustAnalytics.ingestMessage).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg-1' }));
   });
 
   it('clears the media cleanup interval on shutdown', () => {

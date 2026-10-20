@@ -1,6 +1,6 @@
-.PHONY: dev-client dev-server dev-anomaly \
-	test-client test-server test-anomaly test \
-	build-server build-anomaly \
+.PHONY: dev-client dev-server \
+	test-client test-server test \
+	build-server \
 	pull up up-build down restart logs ps
 
 dev-client:
@@ -9,25 +9,16 @@ dev-client:
 dev-server:
 	cd apps/server && bun run dev
 
-dev-anomaly:
-	cd services/anomaly-engine && make dev
-
 test-client:
 	cd apps/client && bun run typecheck
 
 test-server:
 	cd apps/server && bun run test
 
-test-anomaly:
-	cd services/anomaly-engine && make test
-
-test: test-client test-server test-anomaly
+test: test-client test-server
 
 build-server:
 	cd apps/server && bun run build
-
-build-anomaly:
-	cd services/anomaly-engine && make build
 
 pull:
 	docker compose pull

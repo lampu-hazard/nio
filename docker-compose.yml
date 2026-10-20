@@ -1,18 +1,4 @@
 services:
-  slowmode-engine:
-    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-slowmode-engine:${IMAGE_TAG:-latest}
-    build:
-      context: ./services/slowmode-engine
-      dockerfile: Dockerfile
-    container_name: nio-slowmode-engine
-    restart: unless-stopped
-    ports:
-      - "3003:3003"
-    environment:
-      - RUST_LOG=info
-    networks:
-      - private
-
   anomaly-engine:
     image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-anomaly-engine:${IMAGE_TAG:-latest}
     build:
@@ -112,8 +98,6 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      slowmode-engine:
-        condition: service_started
       anomaly-engine:
         condition: service_started
       analytics-engine:
@@ -123,7 +107,6 @@ services:
     environment:
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
-      - SLOWMODE_ENGINE_URL=http://slowmode-engine:3003
       - ANOMALY_ENGINE_URL=anomaly-engine:50051
       - ANALYTICS_ENGINE_URL=analytics-engine:50053
     networks:

@@ -3,13 +3,13 @@ import { Message, TextChannel } from 'discord.js';
 import { AppLogger } from '../logger/logger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordSlowmodeService } from './discord-slowmode.service';
-import { RustSlowmodeClientService } from './rust-slowmode-client.service';
+import { SlowmodeEngineService } from './slowmode-engine.service';
 
 describe('DiscordSlowmodeService', () => {
   let service: DiscordSlowmodeService;
   let prisma: any;
   let logger: any;
-  let rustClient: any;
+  let slowmodeEngine: any;
 
   const makeChannel = (rateLimitPerUser = 5) => ({
     id: 'channel-1',
@@ -53,13 +53,13 @@ describe('DiscordSlowmodeService', () => {
       log: jest.fn(),
       error: jest.fn(),
     };
-    rustClient = {
+    slowmodeEngine = {
       analyze: jest.fn(),
     };
     service = new DiscordSlowmodeService(
       prisma as unknown as PrismaService,
       logger as unknown as AppLogger,
-      rustClient as unknown as RustSlowmodeClientService,
+      slowmodeEngine as unknown as SlowmodeEngineService,
     );
   });
 
@@ -80,7 +80,7 @@ describe('DiscordSlowmodeService', () => {
       slowmodeIntervalBusy: 10,
     });
 
-    rustClient.analyze.mockResolvedValue({
+    slowmodeEngine.analyze.mockResolvedValue({
       level: 'BUSY',
       recommendedSeconds: 10,
       shouldApply: true,
@@ -94,7 +94,7 @@ describe('DiscordSlowmodeService', () => {
 
     await service.handleMessage(message);
 
-    expect(rustClient.analyze).toHaveBeenCalledWith(
+    expect(slowmodeEngine.analyze).toHaveBeenCalledWith(
       'guild-1',
       'channel-1',
       'user-1',
@@ -146,7 +146,7 @@ describe('DiscordSlowmodeService', () => {
       slowmodeIntervalBusy: 10,
     });
 
-    rustClient.analyze.mockResolvedValue({
+    slowmodeEngine.analyze.mockResolvedValue({
       level: 'QUIET',
       recommendedSeconds: 5,
       shouldApply: true,
@@ -166,7 +166,7 @@ describe('DiscordSlowmodeService', () => {
     }
 
     expect(client.channels.cache.get).toHaveBeenCalledWith('channel-1');
-    expect(rustClient.analyze).toHaveBeenCalledWith(
+    expect(slowmodeEngine.analyze).toHaveBeenCalledWith(
       'guild-1',
       'channel-1',
       'SYSTEM',
@@ -192,7 +192,7 @@ describe('DiscordSlowmodeService', () => {
       slowmodeIntervalBusy: 10,
     });
 
-    rustClient.analyze.mockImplementation(async (guildId: string, channelId: string, userId: string) => {
+    slowmodeEngine.analyze.mockImplementation(async (guildId: string, channelId: string, userId: string) => {
       if (userId === 'SYSTEM') {
         return {
           level: 'QUIET',

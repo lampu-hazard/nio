@@ -1,4 +1,4 @@
-FROM oven/bun:1.2-alpine AS builder
+FROM oven/bun:1.4-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY apps/server/nest-cli.json apps/server/tsconfig.json apps/server/tsconfig.bu
 COPY apps/server/src ./src
 RUN bun run build
 
-FROM oven/bun:1.2-alpine AS runner
+FROM oven/bun:1.4-alpine AS runner
 
 WORKDIR /app
 

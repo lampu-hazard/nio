@@ -414,6 +414,13 @@ export class DiscordAgentToolExecutorService {
           context.requestedById,
         );
 
+      case 'find_unlinked_panels':
+        return this.findUnlinkedPanels(
+          context.guildId,
+          args.channelId,
+          args.limit,
+        );
+
       case 'find_duplicate_messages':
         return this.findDuplicateMessages(context.guildId, args.limit, args.hours);
 
@@ -2657,6 +2664,103 @@ export class DiscordAgentToolExecutorService {
       rolesRecovered: roles.length,
       mode: panelMode,
       roles: roles.map((r) => ({ roleId: r.roleId, label: r.label })),
+    };
+  }
+
+  private async findUnlinkedPanels(
+    guildId: string,
+    channelId?: string,
+    limit?: number,
+  ) {
+    const guild = await this.getGuild(guildId);
+    const dbPanels = await this.prisma.panel.findMany({
+      where: { guildId },
+      include: { roles: true },
+    });
+    const knownPanelIds = new Set(dbPanels.map((p) => p.id));
+    const knownMessageIds = new Set(dbPanels.map((p) => p.messageId).filter(Boolean) as string[]);
+
+    const channelsToScan: any[] = [];
+    if (channelId) {
+      const ch = await guild.channels.fetch(channelId).catch(() => null);
+      if (ch && ch.isTextBased()) channelsToScan.push(ch);
+    } else {
+      const fetched = await guild.channels.fetch().catch(() => new Map());
+      for (const ch of fetched.values()) {
+        if (!ch || !ch.isTextBased() || !('messages' in ch)) continue;
+        const perms = ch.permissionsFor?.(guild.members.me || guild.members.cache.get(guild.client.user?.id || ''));
+        if (!perms || (perms.has(PermissionFlagsBits.ViewChannel) && perms.has(PermissionFlagsBits.ReadMessageHistory))) {
+          channelsToScan.push(ch);
+        }
+      }
+    }
+
+    const unlinkedPanels: any[] = [];
+    const healthyPanels: any[] = [];
+    const scanLimit = Math.max(5, Math.min(50, Number(limit) || 25));
+
+    for (const ch of channelsToScan.slice(0, 15)) {
+      try {
+        const messages = await ch.messages.fetch({ limit: scanLimit }).catch(() => new Map());
+        for (const msg of messages.values()) {
+          const components = (msg.components || []) as any[];
+          if (!components.length) continue;
+
+          let foundPanelId: string | null = null;
+          let roleButtonsCount = 0;
+
+          for (const row of components) {
+            for (const comp of row.components || []) {
+              if (comp.customId?.startsWith('sr:')) {
+                const parts = comp.customId.split(':');
+                if (parts.length >= 3) {
+                  if (!foundPanelId) foundPanelId = parts[1];
+                  roleButtonsCount++;
+                }
+              } else if (comp.customId?.startsWith('sr-menu:')) {
+                const parts = comp.customId.split(':');
+                if (parts.length >= 2) {
+                  if (!foundPanelId) foundPanelId = parts[1];
+                  roleButtonsCount += comp.options?.length || 0;
+                }
+              }
+            }
+          }
+
+          if (foundPanelId) {
+            const isKnown = knownPanelIds.has(foundPanelId) || knownMessageIds.has(msg.id);
+            const panelItem = {
+              messageId: msg.id,
+              channelId: ch.id,
+              channelName: ch.name,
+              panelIdInButton: foundPanelId,
+              title: msg.embeds?.[0]?.title || 'Self-Role Panel',
+              rolesCount: roleButtonsCount,
+            };
+
+            if (isKnown) {
+              healthyPanels.push(panelItem);
+            } else {
+              unlinkedPanels.push({
+                ...panelItem,
+                missingInDatabase: true,
+                recoveryInstruction: `Panggil recover_panel_from_message dengan messageId: "${msg.id}"`,
+              });
+            }
+          }
+        }
+      } catch {
+        // Skip unreadable channels
+      }
+    }
+
+    return {
+      guildId,
+      dbPanelsCount: dbPanels.length,
+      channelsScanned: channelsToScan.length,
+      unlinkedPanelsFound: unlinkedPanels.length,
+      unlinkedPanels,
+      healthyPanelsCount: healthyPanels.length,
     };
   }
 }

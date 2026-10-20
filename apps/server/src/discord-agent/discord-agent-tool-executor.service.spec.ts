@@ -59,6 +59,7 @@ describe('DiscordAgentToolExecutorService', () => {
       upsert: jest.fn(async () => ({ id: 'admin-1' })),
     },
     panel: {
+      findMany: jest.fn(async (_params?: any) => []),
       upsert: jest.fn(async (params: any) => ({
         id: params.where.id,
         title: params.create.title,
@@ -835,6 +836,71 @@ describe('DiscordAgentToolExecutorService', () => {
         label: 'Announcements',
       })],
     });
+  });
+
+  it('scans channels and identifies unlinked panels missing from database', async () => {
+    (mockPrisma.panel.findMany as any).mockResolvedValueOnce([
+      { id: 'known-panel-id', messageId: 'known-msg-id', roles: [] },
+    ]);
+
+    const mockMessagesMap = new Map([
+      [
+        'unlinked-msg-1',
+        {
+          id: 'unlinked-msg-1',
+          embeds: [{ title: 'Unlinked Self Role Panel' }],
+          components: [
+            {
+              components: [
+                {
+                  customId: 'sr:lost-panel-id:role-1',
+                  label: 'Lost Role',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      [
+        'known-msg-id',
+        {
+          id: 'known-msg-id',
+          embeds: [{ title: 'Known Self Role Panel' }],
+          components: [
+            {
+              components: [
+                {
+                  customId: 'sr:known-panel-id:role-2',
+                  label: 'Known Role',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    ]);
+
+    (mockChannelMessages.fetch as any).mockImplementationOnce(async () => mockMessagesMap);
+
+    const res = await service.execute('find_unlinked_panels', {
+      channelId: 'channel-1',
+    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+
+    expect(res).toEqual(expect.objectContaining({
+      guildId: 'guild-1',
+      dbPanelsCount: 1,
+      channelsScanned: 1,
+      unlinkedPanelsFound: 1,
+      healthyPanelsCount: 1,
+      unlinkedPanels: [
+        expect.objectContaining({
+          messageId: 'unlinked-msg-1',
+          panelIdInButton: 'lost-panel-id',
+          missingInDatabase: true,
+          title: 'Unlinked Self Role Panel',
+        }),
+      ],
+    }));
   });
 
   describe('web_fetch and web_search tools', () => {

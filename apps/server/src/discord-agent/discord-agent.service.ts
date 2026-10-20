@@ -24,7 +24,7 @@ import { McpToolService } from './mcp-tool.service';
 import { AgentRunService } from './agent-run.service';
 import { AiAgentSettingsService } from './ai-agent-settings.service';
 
-const MAX_AGENT_TURNS = 5;
+const MAX_AGENT_TURNS = 8;
 const MAX_TOOL_CALLS_PER_TURN = 8;
 const MAX_TOTAL_TOOL_CALLS = 20;
 const MAX_WALL_CLOCK_MS = 60_000;
@@ -548,6 +548,32 @@ ${prompt || '(analisis pesan di atas)'}`;
     }
 
     this.logger.log(`✅ [Agent] Completed in ${Date.now() - startTime}ms (${turns} turns, ${totalTokens} tokens)`);
+
+    if (!finalContent && messages.some((m) => m.role === 'user' && m.parts?.some((p) => p.type === 'tool_result'))) {
+      try {
+        await reportStage('SYNTHESIZING', '🧾 *Menyusun laporan akhir...*');
+        const synthesisRes = await provider.generate({
+          systemPrompt: effectiveSystemPrompt,
+          messages: [
+            ...messages,
+            {
+              role: 'user',
+              parts: [{ type: 'text', text: 'Semua pemanggilan tool telah selesai. Sekarang, berikan jawaban akhir yang jelas, lengkap, dan informatif kepada pengguna berdasarkan data dan temuan tool di atas.' }],
+            },
+          ],
+          tools: [],
+        });
+        const synthText = synthesisRes?.message?.parts
+          ?.filter((p): p is AiTextPart => p.type === 'text')
+          ?.map((p) => p.text)
+          ?.join('\n');
+        if (synthText) {
+          finalContent = cleanModelText(synthText);
+        }
+      } catch (synthErr) {
+        this.logger.warn(`Failed to synthesize final response after turn exhaustion: ${synthErr}`);
+      }
+    }
 
     if (!finalContent) {
       finalContent = '⚠️ Maaf, tidak ada respon dari model AI.';

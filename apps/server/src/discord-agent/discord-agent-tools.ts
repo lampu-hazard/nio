@@ -790,6 +790,17 @@ const RAW_AGENT_TOOLS = [
       required: ['messageId'],
     },
   },
+  {
+    name: 'find_unlinked_panels',
+    description: 'Scan Discord channels for self-role panels (messages with role buttons or select menus) and check whether their configuration exists in the database. Detects panels that exist in Discord chat but are missing or deleted in the database.',
+    parameters: {
+      type: 'object',
+      properties: {
+        channelId: { type: 'string', description: 'Optional Discord channel ID to scan. If omitted, scans text channels across the guild.' },
+        limit: { type: 'integer', description: 'Maximum messages to inspect per channel (1-50, defaults to 25).' },
+      },
+    },
+  },
 ];
 const READ_TOOL_PREFIXES = [
   'get_',

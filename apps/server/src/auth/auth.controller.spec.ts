@@ -24,7 +24,7 @@ describe('AuthController OAuth callback', () => {
   it('saves the OAuth state before redirecting to Discord', async () => {
     const authService = { getDiscordLoginUrl: () => 'https://discord.test/oauth' };
     const controller = new AuthController(authService as unknown as AuthService);
-    const req = { session: { save: jest.fn((done: () => void) => done()) } };
+    const req = { session: { save: jest.fn((done: () => void) => done()) } as any };
     const res = { redirect: jest.fn() };
 
     await controller.login(req as any, res as any);
@@ -64,7 +64,7 @@ describe('AuthController OAuth callback', () => {
       avatarUrl: () => 'avatar-url',
     };
     const controller = new AuthController(authService as unknown as AuthService);
-    const req = { session: { oauthState: 'expected-state', save: jest.fn((done: () => void) => done()) } };
+    const req = { session: { oauthState: 'expected-state', save: jest.fn((done: () => void) => done()) } as any };
     const res = { redirect: jest.fn() };
 
     await controller.callback(req as any, res as any, 'code', 'expected-state');

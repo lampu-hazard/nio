@@ -34,3 +34,6 @@ image.png
 # superpowers local scratch
 .superpowers/
 .agents
+hive/
+roster.json
+roster-backups/

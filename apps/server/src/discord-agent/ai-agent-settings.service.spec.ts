@@ -54,4 +54,32 @@ describe('AiAgentSettingsService', () => {
     expect(result.users[0]).not.toHaveProperty('prompt');
     expect(prisma.agentInteractionLog.groupBy).toHaveBeenCalledTimes(2);
   });
+
+  it('enriches user usage with discord member details when client is available', async () => {
+    const mockMember = {
+      displayName: 'Wign',
+      user: { username: 'wign_dc', displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/user-1/avatar.png' },
+      displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/user-1/avatar.png',
+    };
+    const mockGuild = {
+      members: {
+        cache: new Map([['user-1', mockMember]]),
+        fetch: jest.fn<any>(async () => mockMember),
+      },
+    };
+    const mockClient = {
+      guilds: {
+        cache: new Map([['guild-1', mockGuild]]),
+        fetch: jest.fn<any>(async () => mockGuild),
+      },
+    };
+    service.setClient(mockClient as any);
+    const result = await service.getUsage('guild-1', 30);
+    expect(result.users[0]).toMatchObject({
+      userId: 'user-1',
+      displayName: 'Wign',
+      username: 'wign_dc',
+      avatarUrl: 'https://cdn.discordapp.com/avatars/user-1/avatar.png',
+    });
+  });
 });

@@ -320,9 +320,7 @@ ${prompt || '(analisis pesan di atas)'}`;
             streamedText += delta;
             if (!onProgress) return;
             const safeText = sanitizeSensitiveInfo(neutralizeMentions(cleanModelText(streamedText)));
-            const stableEnd = Math.max(0, safeText.length - 128);
-            const stableText = safeText.slice(Math.max(0, stableEnd - 1500), stableEnd);
-            if (stableText) await onProgress(`✍️ ${stableText}`);
+            if (safeText) await onProgress(`[draft] ${safeText.slice(-1000)}`);
           },
         });
       } catch (err: any) {

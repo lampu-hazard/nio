@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { Client, Events, GatewayIntentBits, GuildMember, Message, Partials, EmbedBuilder } from 'discord.js';
@@ -17,6 +17,7 @@ import { DiscordMessageLogService } from '../discord-agent/discord-message-log.s
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
 import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
+import { AiAgentSettingsService } from '../discord-agent/ai-agent-settings.service';
 import { RustAnalyticsClientService } from './rust-analytics-client.service';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 import { HallOfFameService } from './hall-of-fame.service';
@@ -61,6 +62,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     private readonly commandSync: GuildCommandSyncService,
     private readonly pluginEvents: PluginEventDispatcherService,
     private readonly hallOfFame: HallOfFameService,
+    @Optional() private readonly aiAgentSettings?: AiAgentSettingsService,
   ) {}
 
   async onModuleInit() {
@@ -79,6 +81,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     this.actionProposals.setVoiceConnectionService(this.voiceConnections);
     this.agentToolExecutor.setClient(this.client);
     this.hallOfFame.setClient(this.client);
+    this.aiAgentSettings?.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -312,16 +315,41 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     }
 
     const loadingMessage = await message.reply({
-      content: '💭 *Thinking...*',
+      content: '*Thinking...*',
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     }).catch(() => null);
 
     let lastProgressEdit = 0;
     let pendingProgress: string | null = null;
     let progressTimer: ReturnType<typeof setTimeout> | undefined;
+    const progressSteps: string[] = [];
+    let currentDraft = '';
+
+    const stripEmojis = (str: string) =>
+      str.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim();
+
+    const formatProgressContent = () => {
+      const cleanSteps = progressSteps.map((s) => `- ${s}`).join('\n');
+      const cleanDraft = currentDraft ? `\n\n\`\`\`\n${currentDraft.slice(-600)}\n\`\`\`` : '';
+      const text = `${cleanSteps}${cleanDraft}`.trim();
+      return text.slice(0, 1900) || '*Thinking...*';
+    };
+
     const onProgress = async (status: string) => {
       if (!loadingMessage) return;
-      pendingProgress = status;
+      const clean = stripEmojis(status);
+
+      if (status.startsWith('✍️') || status.startsWith('[draft]')) {
+        currentDraft = clean.replace(/^\[draft\]\s*/i, '');
+      } else {
+        currentDraft = '';
+        const step = clean.replace(/^\*+|\*+$/g, '').trim();
+        if (step && !progressSteps.includes(step)) {
+          progressSteps.push(step);
+        }
+      }
+
+      pendingProgress = formatProgressContent();
       const editProgress = async () => {
         progressTimer = undefined;
         const progress = pendingProgress;
@@ -333,7 +361,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
           allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
         }).catch(() => null);
       };
-      const wait = Math.max(0, 1000 - (Date.now() - lastProgressEdit));
+      const wait = Math.max(0, 1200 - (Date.now() - lastProgressEdit));
       if (!progressTimer) {
         if (wait) progressTimer = setTimeout(() => { void editProgress(); }, wait);
         else await editProgress();
@@ -357,12 +385,12 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Discord agent invocation failed code=${code} guild=${message.guild.id}`, undefined, 'DiscordBot');
       if (loadingMessage) {
         await loadingMessage.edit({
-          content: '⚠️ AI Agent gagal memproses permintaan. Periksa konfigurasi provider atau log server.',
+          content: 'AI Agent gagal memproses permintaan. Periksa konfigurasi provider atau log server.',
           allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
         }).catch(() => null);
       } else {
         await message.reply({
-          content: '⚠️ AI Agent gagal memproses permintaan. Periksa konfigurasi provider atau log server.',
+          content: 'AI Agent gagal memproses permintaan. Periksa konfigurasi provider atau log server.',
           allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
         }).catch(() => null);
       }

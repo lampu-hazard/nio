@@ -92,6 +92,7 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:$PATH"
+            export IMAGE_TAG="${{ github.sha }}"
             cd ${{ secrets.VPS_PROJECT_PATH || './nio-server' }}
             git fetch origin main
             git reset --hard origin/main

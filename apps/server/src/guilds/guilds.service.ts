@@ -64,9 +64,12 @@ export class GuildsService {
 
     const request = (async () => {
       const guild = await this.getGuild(guildId);
+      // ponytail: small guilds (<5 cached) fetch up to 100 on demand; upgrade to pagination if guilds exceed 100
       const members = query
         ? await guild.members.search({ query, limit: 25, cache: false })
-        : guild.members.cache;
+        : (guild.members.cache.size > 5 || typeof guild.members.fetch !== 'function'
+            ? guild.members.cache
+            : await guild.members.fetch({ limit: 100 }).catch(() => guild.members.cache));
       const result = members
         .filter((member) => !member.user.bot)
         .map((member) => ({ id: member.id, displayName: member.displayName, username: member.user.username, avatarUrl: member.displayAvatarURL({ size: 64 }) }))

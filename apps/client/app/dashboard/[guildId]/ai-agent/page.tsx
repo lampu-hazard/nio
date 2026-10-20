@@ -15,7 +15,17 @@ type Settings = {
   excludedChannelIds: string[];
   hasCredential: boolean;
 };
-type Usage = { userId: string; requests: number; failures: number; promptTokens: number; completionTokens: number; totalTokens: number };
+type Usage = {
+  userId: string;
+  displayName?: string;
+  username?: string;
+  avatarUrl?: string | null;
+  requests: number;
+  failures: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
 type PageProps = { params: Promise<{ guildId: string }> };
 
 const defaults: Settings = {
@@ -67,10 +77,25 @@ export default function AiAgentPage({ params }: PageProps) {
         api<{ members: Member[] }>(`/guilds/${guildId}/members`),
         api<{ usage: { users: Usage[] } }>(`/guilds/${guildId}/ai-agent/usage?days=${days}`),
       ]);
+      const usageUsers = usageRes.usage?.users || [];
       setSettings({ ...defaults, ...settingsRes.settings });
       setChannels(channelsRes.channels || []);
-      setMembers(membersRes.members || []);
-      setUsage(usageRes.usage?.users || []);
+      setUsage(usageUsers);
+      setMembers((prev) => {
+        const map = new Map(prev.map((m) => [m.id, m]));
+        for (const m of membersRes.members || []) map.set(m.id, m);
+        for (const u of usageUsers) {
+          if (u.displayName && !map.has(u.userId)) {
+            map.set(u.userId, {
+              id: u.userId,
+              displayName: u.displayName,
+              username: u.username || u.userId,
+              avatarUrl: u.avatarUrl || '',
+            });
+          }
+        }
+        return [...map.values()];
+      });
       setError('');
     } catch (err: any) {
       setError(err?.message || 'Gagal memuat pengaturan AI Agent.');
@@ -424,23 +449,45 @@ export default function AiAgentPage({ params }: PageProps) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border)]">
-                      {usage.map((row) => (
-                        <tr key={row.userId} className="text-[var(--text)]">
-                          <td className="py-2 pr-3">
-                            <span className="font-semibold block truncate max-w-[180px]">
-                              {members.find((member) => member.id === row.userId)?.displayName || 'Anggota'}
-                            </span>
-                            <span className="text-[10px] text-[var(--muted)] block truncate">
-                              @{members.find((member) => member.id === row.userId)?.username || row.userId}
-                            </span>
-                          </td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{row.requests.toLocaleString()}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{row.failures.toLocaleString()}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td>
-                          <td className="py-2 text-right font-bold tabular-nums">{row.totalTokens.toLocaleString()}</td>
-                        </tr>
-                      ))}
+                      {usage.map((row) => {
+                        const member = members.find((m) => m.id === row.userId);
+                        const displayName = row.displayName || member?.displayName || 'Anggota';
+                        const username = row.username || member?.username || row.userId;
+                        const avatarUrl = row.avatarUrl || member?.avatarUrl;
+
+                        return (
+                          <tr key={row.userId} className="text-[var(--text)]">
+                            <td className="py-2 pr-3">
+                              <div className="flex items-center gap-2.5">
+                                {avatarUrl ? (
+                                  <img
+                                    src={avatarUrl}
+                                    alt=""
+                                    className="h-7 w-7 shrink-0 rounded-full border border-[var(--border)] object-cover bg-[var(--surface)]"
+                                  />
+                                ) : (
+                                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[10px] font-bold text-[var(--muted)]">
+                                    {displayName.slice(0, 2).toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <span className="font-semibold block truncate max-w-[180px]">
+                                    {displayName}
+                                  </span>
+                                  <span className="text-[10px] text-[var(--muted)] block truncate">
+                                    @{username}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2 pr-3 text-right tabular-nums">{row.requests.toLocaleString()}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums">{row.failures.toLocaleString()}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td>
+                            <td className="py-2 text-right font-bold tabular-nums">{row.totalTokens.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   {!usage.length && <p className="py-6 text-center text-xs text-[var(--muted)]">Belum ada pemakaian AI pada periode ini.</p>}

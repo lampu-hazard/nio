@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Client } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { CredentialEncryptionService } from '../plugins/credential-encryption.service';
 import { UpdateAiAgentSettingsDto } from './dto/update-ai-agent-settings.dto';
@@ -15,7 +16,13 @@ const DEFAULTS = {
 
 @Injectable()
 export class AiAgentSettingsService {
+  private client?: Client;
+
   constructor(private readonly prisma: PrismaService, private readonly encryption: CredentialEncryptionService) {}
+
+  setClient(client: Client) {
+    this.client = client;
+  }
 
   async getSettings(guildId: string) {
     const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
@@ -62,16 +69,87 @@ export class AiAgentSettingsService {
       _count: { _all: true },
     });
     const failedByUser = new Map(failures.map((row) => [row.userId, row._count._all]));
+
+    let guild: any = null;
+    if (this.client) {
+      try {
+        guild = this.client.guilds.cache.get(guildId) || await this.client.guilds.fetch(guildId).catch(() => null);
+      } catch {
+        guild = null;
+      }
+    }
+
+    if (guild && typeof guild.members?.fetch === 'function') {
+      const missingIds = rows
+        .map((r) => r.userId)
+        .filter((id) => !guild.members.cache?.has?.(id) && !guild.members.cache?.get?.(id));
+      if (missingIds.length > 0) {
+        // ponytail: batch member fetch replaces N single fetch calls; upgrade to chunked batches if user count > 100
+        await guild.members.fetch({ user: missingIds }).catch(() => null);
+      }
+    }
+
+    const users = await Promise.all(
+      rows.map(async (row) => {
+        let displayName = 'Anggota';
+        let username = row.userId;
+        let avatarUrl: string | null = null;
+
+        if (guild) {
+          try {
+            let member = guild.members?.cache?.get(row.userId);
+            if (!member && typeof guild.members?.fetch === 'function') {
+              member = await guild.members.fetch(row.userId).catch(() => null);
+            }
+            if (member) {
+              displayName = member.displayName || member.user?.globalName || member.user?.username || 'Anggota';
+              username = member.user?.username || row.userId;
+              avatarUrl = typeof member.displayAvatarURL === 'function'
+                ? member.displayAvatarURL({ size: 64 })
+                : typeof member.user?.displayAvatarURL === 'function'
+                  ? member.user.displayAvatarURL({ size: 64 })
+                  : null;
+            } else if (this.client?.users) {
+              const user = this.client.users.cache.get(row.userId) || await this.client.users.fetch(row.userId).catch(() => null);
+              if (user) {
+                displayName = user.globalName || user.username || 'Anggota';
+                username = user.username;
+                avatarUrl = typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL({ size: 64 }) : null;
+              }
+            }
+          } catch {
+            // Keep fallback values
+          }
+        } else if (this.client?.users) {
+          try {
+            const user = this.client.users.cache.get(row.userId) || await this.client.users.fetch(row.userId).catch(() => null);
+            if (user) {
+              displayName = user.globalName || user.username || 'Anggota';
+              username = user.username;
+              avatarUrl = typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL({ size: 64 }) : null;
+            }
+          } catch {
+            // Keep fallback values
+          }
+        }
+
+        return {
+          userId: row.userId,
+          displayName,
+          username,
+          avatarUrl,
+          requests: row._count._all,
+          failures: failedByUser.get(row.userId) || 0,
+          promptTokens: row._sum.promptTokens || 0,
+          completionTokens: row._sum.completionTokens || 0,
+          totalTokens: row._sum.totalTokens || 0,
+        };
+      }),
+    );
+
     return {
       days: boundedDays,
-      users: rows.map((row) => ({
-        userId: row.userId,
-        requests: row._count._all,
-        failures: failedByUser.get(row.userId) || 0,
-        promptTokens: row._sum.promptTokens || 0,
-        completionTokens: row._sum.completionTokens || 0,
-        totalTokens: row._sum.totalTokens || 0,
-      })),
+      users,
     };
   }
 

@@ -24,10 +24,11 @@ import { McpToolService } from './mcp-tool.service';
 import { AgentRunService } from './agent-run.service';
 import { AiAgentSettingsService } from './ai-agent-settings.service';
 
-const MAX_AGENT_TURNS = 8;
+// ponytail: no wall-clock limit (Hermes-style); the turn cap and repeated-call guard are what stop runaway loops.
+const MAX_AGENT_TURNS = 200;
 const MAX_TOOL_CALLS_PER_TURN = 8;
-const MAX_TOTAL_TOOL_CALLS = 20;
-const MAX_WALL_CLOCK_MS = 60_000;
+const MAX_TOTAL_TOOL_CALLS = 400;
+const MAX_PROVIDER_RETRIES = 5;
 const MAX_RESULT_BYTES = 32_000;
 const MAX_DISCORD_RESPONSE_LENGTH = 2000;
 const MAX_PROPOSALS = 5;
@@ -340,19 +341,14 @@ ${prompt || '(analisis pesan di atas)'}`;
       turns++;
       this.logger.log(`💭 [Turn ${turns}/${MAX_AGENT_TURNS}] Thinking...`);
 
-      if (Date.now() - startTime >= MAX_WALL_CLOCK_MS) {
-        if (!finalContent) {
-          finalContent = '⚠️ Waktu eksekusi investigasi AI melebihi batas (timeout 60 detik).';
-        }
-        break;
-      }
-
       await reportStage(turns === 1 ? 'PLANNING' : 'SYNTHESIZING', turns === 1 ? '🧭 *Menyiapkan pemeriksaan...*' : '🧩 *Menyatukan temuan...*');
 
       let response: AiGenerateResult;
       let streamedText = '';
       try {
-        response = await provider.generate({
+        response = await this.generateWithRetry(providerName, () => {
+          streamedText = '';
+          return provider.generate({
           systemPrompt: effectiveSystemPrompt,
           messages: compactHistoryMessages([...messages]),
           tools: availableTools,
@@ -362,6 +358,7 @@ ${prompt || '(analisis pesan di atas)'}`;
             const safeText = sanitizeSensitiveInfo(neutralizeMentions(cleanModelText(streamedText)));
             if (safeText) await onProgress(`[draft] ${safeText.slice(-1000)}`);
           },
+          });
         });
       } catch (err: any) {
         const rawMessage = String(err?.message || err || 'Unknown provider error');
@@ -421,7 +418,7 @@ ${prompt || '(analisis pesan di atas)'}`;
           hasPartialResults = true;
           plannedCalls.push({
             call,
-            preError: { code: 'CALL_LIMIT_EXCEEDED', message: 'Total tool call limit reached (max 20).' },
+            preError: { code: 'CALL_LIMIT_EXCEEDED', message: `Total tool call limit reached (max ${MAX_TOTAL_TOOL_CALLS}).` },
           });
           continue;
         }
@@ -610,7 +607,7 @@ ${prompt || '(analisis pesan di atas)'}`;
     if (!finalContent && messages.some((m) => m.role === 'user' && m.parts?.some((p) => p.type === 'tool_result'))) {
       try {
         await reportStage('SYNTHESIZING', '🧾 *Menyusun laporan akhir...*');
-        const synthesisRes = await provider.generate({
+        const synthesisRes = await this.generateWithRetry(providerName, () => provider.generate({
           systemPrompt: effectiveSystemPrompt,
           messages: [
             ...compactHistoryMessages(messages),
@@ -620,7 +617,7 @@ ${prompt || '(analisis pesan di atas)'}`;
             },
           ],
           tools: [],
-        });
+        }));
         const synthText = synthesisRes?.message?.parts
           ?.filter((p): p is AiTextPart => p.type === 'text')
           ?.map((p) => p.text)
@@ -709,6 +706,22 @@ ${prompt || '(analisis pesan di atas)'}`;
       ...(components ? { components } : {}),
       ...(conversationTurns ? { conversationTurns } : {}),
     };
+  }
+
+  // Transient provider errors (5xx, 429, network, truncated stream) are retried with backoff; 4xx config errors fail fast.
+  private async generateWithRetry(providerName: string, call: () => Promise<AiGenerateResult>): Promise<AiGenerateResult> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await call();
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        const transient = !/_HTTP_4(?!29)\d\d\b|not configured|Unsupported AI provider|requires at least one message/.test(msg);
+        if (!transient || attempt > MAX_PROVIDER_RETRIES) throw err;
+        const delay = Math.min(30_000, 1000 * 2 ** (attempt - 1));
+        this.logger.warn(`AI provider retry ${attempt}/${MAX_PROVIDER_RETRIES} provider=${providerName} in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
 
   private getProvider(provider: string, model: string, configuredApiKey?: string, configuredBaseUrl?: string | null): AiProvider {

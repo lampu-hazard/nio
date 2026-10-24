@@ -152,7 +152,7 @@ export class GeminiProvider implements AiProvider {
     }
 
     if (!parts.length) {
-      throw new Error('GEMINI_INVALID_RESPONSE: Stream contained no assistant content or tool calls.');
+      return { message: { role: 'assistant', parts }, ...(finishReason ? { finishReason } : {}) };
     }
 
     return {

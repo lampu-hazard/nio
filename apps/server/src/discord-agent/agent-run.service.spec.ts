@@ -38,6 +38,15 @@ describe('AgentRunService', () => {
     expect(mockPrisma.agentRunEvent.create).not.toHaveBeenCalled();
   });
 
+  it('assigns unique sequences to concurrent evidence events', async () => {
+    mockPrisma.agentRunEvent.count.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return events.length;
+    });
+    await Promise.all([1, 2, 3].map((i) => service.evidence('run-1', `t${i}`, 'SUCCESS', 'ok')));
+    expect(events.map((e) => e.sequence)).toEqual([1, 2, 3]);
+  });
+
   it('keeps awaiting-approval runs open and expires old runs within retention', async () => {
     await service.finish('run-1', 'AWAITING_APPROVAL', 'waiting');
     expect(mockPrisma.agentRun.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'AWAITING_APPROVAL', completedAt: null } }));

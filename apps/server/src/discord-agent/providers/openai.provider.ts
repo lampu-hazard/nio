@@ -216,10 +216,6 @@ export class OpenAiProvider implements AiProvider {
       reader.releaseLock();
     }
 
-    if (!content && !toolCalls.size) {
-      throw new Error('OPENAI_INVALID_RESPONSE: Stream contained no assistant content or tool calls.');
-    }
-
     const parts: AiPart[] = [];
     if (content) parts.push({ type: 'text', text: content });
     for (const [index, call] of [...toolCalls.entries()].sort(([a], [b]) => a - b)) {

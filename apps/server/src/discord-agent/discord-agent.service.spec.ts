@@ -247,7 +247,7 @@ describe('DiscordAgentService loop', () => {
   it('does not return conversationTurns on error response', async () => {
     const providerMock = {
       generate: jest.fn<any>(async () => {
-        throw new Error('API down');
+        throw new Error('OPENAI_HTTP_401: Provider request failed.');
       }),
     };
     jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
@@ -256,6 +256,21 @@ describe('DiscordAgentService loop', () => {
 
     expect(result.content).toContain('⚠️');
     expect(result.conversationTurns).toBeUndefined();
+    expect(providerMock.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries transient provider errors instead of failing', async () => {
+    const providerMock = {
+      generate: jest.fn<any>()
+        .mockRejectedValueOnce(new Error('OPENAI_HTTP_503: Provider request failed.'))
+        .mockResolvedValueOnce({ message: { role: 'assistant', parts: [{ type: 'text', text: 'ok after retry' }] } }),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> hello');
+
+    expect(providerMock.generate).toHaveBeenCalledTimes(2);
+    expect(result.content).toContain('ok after retry');
   });
 
   it('loads previous turns when referencedBotMessageId is provided', async () => {

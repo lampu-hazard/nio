@@ -68,7 +68,21 @@ export class AgentRunService {
     await this.addEvent(runId, status === 'AWAITING_APPROVAL' ? 'STAGE' : 'FINISH', status, summary);
   }
 
-  private async addEvent(runId: string, type: string, stage: string, summary: string, metadata?: Record<string, unknown>) {
+  // ponytail: in-process serialization; if the server is scaled to multiple instances, switch to a DB-side sequence/retry.
+  private readonly eventQueues = new Map<string, Promise<unknown>>();
+
+  private addEvent(runId: string, type: string, stage: string, summary: string, metadata?: Record<string, unknown>) {
+    const next = (this.eventQueues.get(runId) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => this.writeEvent(runId, type, stage, summary, metadata));
+    this.eventQueues.set(runId, next);
+    next.finally(() => {
+      if (this.eventQueues.get(runId) === next) this.eventQueues.delete(runId);
+    }).catch(() => undefined);
+    return next;
+  }
+
+  private async writeEvent(runId: string, type: string, stage: string, summary: string, metadata?: Record<string, unknown>) {
     const count = await this.prisma.agentRunEvent.count({ where: { runId } });
     const safeSummary = neutralizeEventMentions(sanitizeEventText(summary)).slice(0, MAX_EVENT_SUMMARY_LENGTH);
     let safeMetadata = metadata;

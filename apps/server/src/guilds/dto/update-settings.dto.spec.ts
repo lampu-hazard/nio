@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { describe, expect, it } from '@jest/globals';
 import { validate } from 'class-validator';
 import { UpdateSettingsDto } from './update-settings.dto';

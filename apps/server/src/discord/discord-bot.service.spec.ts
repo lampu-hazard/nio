@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { Events } from 'discord.js';
 import { DiscordBotService } from './discord-bot.service';
 
 const makeService = (overrides: any = {}) => {
@@ -25,19 +26,40 @@ const makeService = (overrides: any = {}) => {
       { canHandle: jest.fn(async () => ({ allowed: false })) } as any,
       { setClient: jest.fn() } as any,
       messageLogs as any,
-      { setClient: jest.fn() } as any,
+      { setClient: jest.fn(), setSlowmodeService: jest.fn(), setAnomalyService: jest.fn(), setVoiceConnectionService: jest.fn() } as any,
       { setClient: jest.fn() } as any,
       { saveConversation: jest.fn() } as any,
       { } as any,
-      { sync: jest.fn() } as any,
+      { sync: jest.fn(), reconcileUnavailablePlugins: jest.fn(async () => {}) } as any,
       { dispatchMessage: jest.fn() } as any,
-      { handleReaction: jest.fn(), handleMessageDelete: jest.fn() } as any,
+      { setClient: jest.fn(), handleReaction: jest.fn(), handleMessageDelete: jest.fn() } as any,
+      undefined,
+      overrides.voiceActivity,
     ),
     messageLogs,
   };
 };
 
 describe('DiscordBotService deleted message logs', () => {
+  it('stops voice accounting on transient shard reconnect', async () => {
+    const voiceActivity = { setClient: jest.fn(), disconnect: jest.fn(async (_id: number) => {}), start: jest.fn(async () => {}) };
+    const { service } = makeService({ voiceActivity });
+    const oldToken = process.env.DISCORD_BOT_TOKEN; const oldId = process.env.DISCORD_CLIENT_ID;
+    process.env.DISCORD_BOT_TOKEN = 'test'; process.env.DISCORD_CLIENT_ID = 'test';
+    jest.spyOn(service.client, 'login').mockResolvedValue('test');
+    jest.spyOn(service as any, 'cleanupDeletedMedia').mockResolvedValue(undefined);
+    try {
+      await service.onModuleInit();
+      service.client.emit(Events.ShardReconnecting, 0);
+      await Promise.resolve();
+      expect(voiceActivity.disconnect).toHaveBeenCalledWith(0);
+    } finally {
+      service.onModuleDestroy();
+      if (oldToken === undefined) delete process.env.DISCORD_BOT_TOKEN; else process.env.DISCORD_BOT_TOKEN = oldToken;
+      if (oldId === undefined) delete process.env.DISCORD_CLIENT_ID; else process.env.DISCORD_CLIENT_ID = oldId;
+    }
+  });
+
   it('logs message creates to Prisma', async () => {
     const { service, messageLogs } = makeService();
     const message = {

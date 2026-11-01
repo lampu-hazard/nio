@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useRef, useState, use } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { api } from '@/lib/api';
 
 type DiscordProfile = {
@@ -34,6 +35,10 @@ type PageProps = {
 
 export default function ModerationPage({ params }: PageProps) {
   const { guildId } = use(params);
+  return <ModerationSettingsForm key={guildId} guildId={guildId} />;
+}
+
+function ModerationSettingsForm({ guildId }: { guildId: string }) {
   const [activeTab, setActiveTab] = useState<'config' | 'logs'>('config');
   const [settings, setSettings] = useState<ModerationSettings>({
     warnLimitEnabled: false,
@@ -44,6 +49,7 @@ export default function ModerationPage({ params }: PageProps) {
 
   const [warnings, setWarnings] = useState<WarningLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedGuild, setLoadedGuild] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -53,46 +59,69 @@ export default function ModerationPage({ params }: PageProps) {
   const [status, setStatus] = useState<'all' | 'active' | 'expired'>('all');
   const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
 
+  const [baseline, setBaseline] = useState<ModerationSettings | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [warningsError, setWarningsError] = useState('');
+  const [warningsLoading, setWarningsLoading] = useState(true);
+  const lifetime = useRef<AbortController | null>(null);
+  const pending = useRef(false);
+  const dirty = !!baseline && JSON.stringify(settings) !== JSON.stringify(baseline);
+  useUnsavedChanges(dirty);
+
   useEffect(() => {
-    fetchData();
-  }, [guildId, search, status, sort]);
+    const controller = new AbortController();
+    lifetime.current = controller;
+    void fetchData(controller.signal);
+    return () => controller.abort();
+  }, [guildId, retry]);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    const controller = new AbortController();
+    setWarningsLoading(true); setWarningsError('');
+    const query = new URLSearchParams({ search, status, sort });
+    void api<{ ok: boolean; warnings: WarningLog[] }>(`/guilds/${guildId}/moderation/warnings?${query}`, { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setWarnings(result.warnings); })
+      .catch(reason => { if (!controller.signal.aborted) setWarningsError(reason instanceof Error ? reason.message : 'Warnings unavailable.'); })
+      .finally(() => { if (!controller.signal.aborted) setWarningsLoading(false); });
+    return () => controller.abort();
+  }, [guildId, search, status, sort, retry]);
+
+  const fetchData = async (signal: AbortSignal) => {
     try {
-      setLoading(true);
-      const settingsRes = await api<{ ok: boolean; settings: ModerationSettings }>(`/guilds/${guildId}/moderation/settings`);
-      setSettings(settingsRes.settings);
-
-      const queryParams = new URLSearchParams({
-        search,
-        status,
-        sort,
-      });
-      const warningsRes = await api<{ ok: boolean; warnings: WarningLog[] }>(`/guilds/[guildId]/moderation/warnings?${queryParams.toString()}`.replace('[guildId]', guildId));
-      setWarnings(warningsRes.warnings || []);
+      setLoading(true); setLoadedGuild('');
+      const result = await api<{ ok: boolean; settings: ModerationSettings }>(`/guilds/${guildId}/moderation/settings`, { signal });
+      if (signal.aborted) return;
+      if (!result.ok || !result.settings) throw new Error('Moderation settings unavailable.');
+      setSettings(result.settings); setBaseline(result.settings); setLoadedGuild(guildId); setError('');
     } catch (err: any) {
-      setError(err?.message || 'Failed to load moderation data');
+      if (!signal.aborted) setError(err?.message || 'Failed to load moderation data');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || pending.current || loadedGuild !== guildId || !dirty) return;
+    pending.current = true;
     try {
       setSaving(true);
       setError('');
       setSuccess('');
       const res = await api<{ ok: boolean; settings: ModerationSettings }>(`/guilds/${guildId}/moderation/settings`, {
         method: 'PATCH',
-        body: JSON.stringify(settings),
+        body: JSON.stringify(settings), signal: lifetime.current?.signal,
       });
+      if (lifetime.current?.signal.aborted) return;
+      if (!res.ok || !res.settings) throw new Error('Settings could not be saved.');
       setSettings(res.settings);
+      setBaseline(res.settings);
       setSuccess('Settings updated successfully.');
     } catch (err: any) {
-      setError(err?.message || 'Failed to save settings');
+      if (!lifetime.current?.signal.aborted) setError(err?.message || 'Failed to save settings');
     } finally {
-      setSaving(false);
+      pending.current = false;
+      if (!lifetime.current?.signal.aborted) setSaving(false);
     }
   };
 
@@ -140,12 +169,12 @@ export default function ModerationPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
+    <main className="dashboard-page dashboard-page--wide dashboard-legacy">
       <div className="mx-auto max-w-[1440px] space-y-4">
         {/* Compact Action & Tab Switcher Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Moderation System</h2>
+            <h1>Moderation</h1>
             <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
               <button
                 type="button"
@@ -179,7 +208,7 @@ export default function ModerationPage({ params }: PageProps) {
               <button
                 type="button"
                 onClick={(e) => void handleSaveSettings(e as any)}
-                disabled={saving}
+                disabled={saving || loading || loadedGuild !== guildId || !dirty}
                 className="btn btn-primary text-xs font-bold py-1.5 px-4"
               >
                 {saving ? 'Saving...' : 'Save Settings'}
@@ -190,9 +219,9 @@ export default function ModerationPage({ params }: PageProps) {
 
         {loading && warnings.length === 0 ? (
           <div className="card p-8 text-center text-xs text-[var(--muted)]">Loading moderation tools...</div>
-        ) : activeTab === 'config' ? (
+        ) : loadedGuild !== guildId ? <div className="dashboard-notice" role="alert">Moderation data is unavailable. <button type="button" className="btn" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : activeTab === 'config' ? (
           <form onSubmit={handleSaveSettings} className="space-y-4 max-w-3xl">
-            <section className="card p-4 space-y-4">
+            <fieldset disabled={saving} className="min-w-0"><section className="card p-4 space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Auto Timeout Threshold</h3>
@@ -251,20 +280,20 @@ export default function ModerationPage({ params }: PageProps) {
                   </select>
                 </label>
               </div>
-            </section>
+            </section></fieldset><p role="status">{success || (dirty ? 'Unsaved changes' : 'No unsaved changes')}</p>
           </form>
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-xs">
-              <input
-                type="text"
+              <label htmlFor="warning-search">Member</label><input
+                id="warning-search" type="text"
                 placeholder="Search user ID or name..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="input py-1 text-xs flex-1 min-w-[180px]"
               />
 
-              <select
+              <label htmlFor="warning-status">Status</label><select id="warning-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as any)}
                 className="input py-1 text-xs w-32"
@@ -274,7 +303,7 @@ export default function ModerationPage({ params }: PageProps) {
                 <option value="expired">Expired</option>
               </select>
 
-              <select
+              <label htmlFor="warning-sort">Sort</label><select id="warning-sort"
                 value={sort}
                 onChange={(e) => setSort(e.target.value as any)}
                 className="input py-1 text-xs w-32"
@@ -285,7 +314,7 @@ export default function ModerationPage({ params }: PageProps) {
             </div>
 
             <div className="card overflow-hidden">
-              {warnings.length === 0 ? (
+              {warningsLoading ? <p role="status" className="p-8">Loading warnings…</p> : warningsError ? <div className="dashboard-notice" role="alert">{warningsError} <button type="button" className="btn" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : warnings.length === 0 ? (
                 <div className="p-8 text-center text-xs text-[var(--muted)]">No warnings found matching the criteria.</div>
               ) : (
                 <div className="overflow-x-auto max-h-[500px]">

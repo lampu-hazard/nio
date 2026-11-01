@@ -3,6 +3,8 @@
 import React, { useEffect, useState, use } from 'react';
 import { api } from '@/lib/api';
 import type { Sticker } from '@/lib/types';
+import { FeatureSettingsForm } from '@/components/dashboard/FeatureSettingsForm';
+import { Toggle } from '@/components/dashboard/FeatureControls';
 
 type PageProps = {
   params: Promise<{ guildId: string }>;
@@ -118,8 +120,9 @@ export default function StickersPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-4">
+    <main>
+      <FeatureSettingsForm guildId={guildId} feature="stickers" title="Stickers" description="Send sticker images when people type matching keywords.">{({ settings, setSettings }) => <section className="dashboard-section"><h2>Keyword replies</h2><Toggle label="Enable sticker keywords" checked={settings.stickerEnabled} onChange={checked => setSettings(previous => ({ ...previous, stickerEnabled: checked }))} /></section>}</FeatureSettingsForm>
+      <div className="dashboard-page dashboard-page--wide space-y-4">
         {/* Compact Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div>

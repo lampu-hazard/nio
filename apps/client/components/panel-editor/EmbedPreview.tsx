@@ -28,7 +28,7 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
         </div>
 
         <div className="bg-[var(--panel)] p-6">
-          <div className="rounded-2xl border border-[#2b2d31] bg-[#313338] p-4 shadow-sm">
+          <div className="dashboard-discord-preview rounded-2xl border border-[#2b2d31] bg-[#313338] p-4 shadow-sm">
             <div className="flex gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-black text-zinc-950">n</div>
               <div className="min-w-0 flex-1">

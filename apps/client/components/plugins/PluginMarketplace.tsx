@@ -144,13 +144,13 @@ export function PluginMarketplace({ guildId }: { guildId: string }) {
           ))}
         </div>
         <span className="text-[11px] text-[var(--muted)] pr-2">
-          {visiblePlugins.length} {visiblePlugins.length === 1 ? 'plugin' : 'plugins'}
+          {error ? 'Unavailable' : `${visiblePlugins.length} ${visiblePlugins.length === 1 ? 'plugin' : 'plugins'}`}
         </span>
       </div>
 
       {loading ? (
         <div className="card flex min-h-36 items-center justify-center p-8 text-xs text-[var(--muted)]">Loading plugin marketplace...</div>
-      ) : visiblePlugins.length === 0 ? (
+      ) : error ? <div className="dashboard-notice">Plugin data unavailable. <button type="button" className="btn" onClick={() => void load()}>Retry</button></div> : visiblePlugins.length === 0 ? (
         <div className="card p-8 text-center text-xs text-[var(--muted)]">No plugins match this filter.</div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

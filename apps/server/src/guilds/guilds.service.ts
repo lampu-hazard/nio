@@ -167,6 +167,7 @@ export class GuildsService {
       voiceXpEnabled: settings?.voiceXpEnabled ?? false,
       voiceXpPerMinute: settings?.voiceXpPerMinute ?? 10,
       voiceNotificationChannelId: settings?.voiceNotificationChannelId ?? null,
+      voiceLevelUpChannelId: settings?.voiceLevelUpChannelId ?? null,
       voiceXpRewards: rewards.map(({ level, roleId }) => ({ level, roleId })),
       logChannelId: settings?.logChannelId || null,
       messageDeleteLogChannelId: settings?.messageDeleteLogChannelId || null,
@@ -209,8 +210,8 @@ export class GuildsService {
       }
       await this.voiceActivity.validateRewardRoles(guildId, [...roles]);
     }
-    if (dto.voiceNotificationChannelId) {
-      await this.voiceActivity.validateNotificationChannel(guildId, dto.voiceNotificationChannelId);
+    for (const channelId of [dto.voiceNotificationChannelId, dto.voiceLevelUpChannelId]) {
+      if (channelId) await this.voiceActivity.validateNotificationChannel(guildId, channelId);
     }
 
     const updated = await this.voiceActivity.withGuildSettingsUpdate(guildId, () => this.prisma.$transaction(async (tx) => {
@@ -220,6 +221,7 @@ export class GuildsService {
         voiceXpEnabled: dto.voiceXpEnabled,
         voiceXpPerMinute: dto.voiceXpPerMinute,
         voiceNotificationChannelId: dto.voiceNotificationChannelId,
+        voiceLevelUpChannelId: dto.voiceLevelUpChannelId,
         logChannelId: dto.logChannelId !== undefined ? dto.logChannelId : undefined,
         messageDeleteLogChannelId: dto.messageDeleteLogChannelId !== undefined ? dto.messageDeleteLogChannelId : undefined,
         stickerEnabled: dto.stickerEnabled !== undefined ? dto.stickerEnabled : undefined,
@@ -243,6 +245,7 @@ export class GuildsService {
         voiceXpEnabled: dto.voiceXpEnabled ?? false,
         voiceXpPerMinute: dto.voiceXpPerMinute ?? 10,
         voiceNotificationChannelId: dto.voiceNotificationChannelId ?? null,
+        voiceLevelUpChannelId: dto.voiceLevelUpChannelId ?? null,
         logChannelId: dto.logChannelId || null,
         messageDeleteLogChannelId: dto.messageDeleteLogChannelId || null,
         stickerEnabled: dto.stickerEnabled || false,

@@ -100,6 +100,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
   const [roles, setRoles] = useState<RoleOption[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [loadedGuild, setLoadedGuild] = useState('');
   const [saving, setSaving] = useState(false);
   const [creatingRole, setCreatingRole] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -119,6 +120,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setLoadedGuild('');
       setError('');
       const [settingsRes, channelsRes, rolesRes, donationsRes] = await Promise.all([
         api<{ ok: boolean; settings: TakoSettings }>(`/guilds/${guildId}/tako/settings`),
@@ -128,6 +130,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
       ]);
 
       setSettings(settingsRes.settings);
+      setLoadedGuild(guildId);
       setChannels(channelsRes.channels || []);
       setRoles(rolesRes.roles || []);
       setDonations(donationsRes.donations || []);
@@ -143,6 +146,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || saving || loadedGuild !== guildId) return;
     try {
       setSaving(true);
       setError('');
@@ -265,12 +269,12 @@ export default function TakoDashboardPage({ params }: PageProps) {
   const webhookUrl = `${backendUrl}/guilds/${guildId}/tako/webhook`;
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
+    <main className="dashboard-page dashboard-page--wide dashboard-legacy">
       <div className="mx-auto max-w-[1440px] space-y-4">
         {/* Compact Action & Tab Switcher Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Tako Donation Gateway</h2>
+            <h1>Tako Rewards</h1>
             <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
               <button
                 type="button"
@@ -301,13 +305,13 @@ export default function TakoDashboardPage({ params }: PageProps) {
             {error && <span className="text-xs font-semibold text-[var(--danger)]">{error}</span>}
             {success && <span className="text-xs font-semibold text-[var(--ok)]">{success}</span>}
             <a href={`/dashboard/${guildId}/embed-templates`} className="btn text-xs font-semibold py-1.5 px-3">
-              Embeds →
+              Embed Studio
             </a>
             {activeTab === 'config' && (
               <button
                 type="button"
                 onClick={(e) => void handleSaveSettings(e as any)}
-                disabled={saving}
+                disabled={saving || loading || loadedGuild !== guildId}
                 className="btn btn-primary text-xs font-bold py-1.5 px-4"
               >
                 {saving ? 'Saving...' : 'Save Settings'}
@@ -318,7 +322,7 @@ export default function TakoDashboardPage({ params }: PageProps) {
 
         {loading ? (
           <div className="card p-8 text-center text-xs text-[var(--muted)]">Loading Tako integration...</div>
-        ) : activeTab === 'config' ? (
+        ) : loadedGuild !== guildId ? <div className="dashboard-notice" role="alert">Tako settings unavailable. <button type="button" className="btn" onClick={() => void fetchData()}>Retry</button></div> : activeTab === 'config' ? (
           <form onSubmit={handleSaveSettings} className="space-y-4 max-w-4xl">
             {/* Core Integration Settings */}
             <section className="card p-4 space-y-3">

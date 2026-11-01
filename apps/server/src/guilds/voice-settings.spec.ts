@@ -16,6 +16,7 @@ describe('voice settings validation', () => {
     { voiceXpEnabled: null }, { voiceXpRewards: null }, { voiceXpRewards: [{ level: 0, roleId }] },
     { voiceXpRewards: [{ level: 10001, roleId }] }, { voiceXpRewards: [{ level: 1.5, roleId }] },
     { voiceXpRewards: [{ level: 1, roleId: 'invalid' }] }, { voiceNotificationChannelId: 'invalid' },
+    { voiceLevelUpChannelId: 'invalid' }, { voiceLevelUpChannelId: 123 },
     { voiceXpRewards: Array.from({ length: 51 }, (_, i) => ({ level: i + 1, roleId })) },
   ])('rejects invalid input %j', async (input) => {
     expect((await validate(plainToInstance(UpdateSettingsDto, input))).length).toBeGreaterThan(0);
@@ -59,6 +60,25 @@ describe('voice settings persistence', () => {
   it('returns defaults for a guild without settings', async () => {
     const f = fixture(); f.prisma.guildSettings.findUnique.mockResolvedValue(null);
     expect(await f.service.getSettings('guild')).toMatchObject({ voiceXpEnabled: false, voiceXpPerMinute: 10, voiceNotificationChannelId: null, voiceXpRewards: [{ level: 5, roleId }] });
+  });
+  it('returns a disabled level-up destination by default', async () => {
+    const f = fixture(); f.prisma.guildSettings.findUnique.mockResolvedValue(null);
+    expect(await f.service.getSettings('guild')).toMatchObject({ voiceLevelUpChannelId: null });
+  });
+  it('saves and disables the level-up destination independently', async () => {
+    const f = fixture();
+    expect(await f.service.updateSettings('guild', plainToInstance(UpdateSettingsDto, { voiceLevelUpChannelId: roleId })))
+      .toMatchObject({ voiceLevelUpChannelId: roleId, voiceNotificationChannelId: null });
+    expect(await f.service.updateSettings('guild', plainToInstance(UpdateSettingsDto, { voiceXpPerMinute: 30 })))
+      .toMatchObject({ voiceLevelUpChannelId: roleId });
+    expect(await f.service.updateSettings('guild', plainToInstance(UpdateSettingsDto, { voiceLevelUpChannelId: null })))
+      .toMatchObject({ voiceLevelUpChannelId: null });
+    expect(await validate(plainToInstance(UpdateSettingsDto, { voiceLevelUpChannelId: null }))).toHaveLength(0);
+  });
+  it('rejects an inaccessible level-up destination before saving', async () => {
+    const f = fixture(); f.voice.validateNotificationChannel.mockRejectedValueOnce(new Error('channel forbidden'));
+    await expect(f.service.updateSettings('guild', plainToInstance(UpdateSettingsDto, { voiceLevelUpChannelId: roleId }))).rejects.toThrow('channel forbidden');
+    expect(f.getSaved().voiceLevelUpChannelId).toBeUndefined();
   });
   it('preserves omitted properties on reward-only PATCH', async () => {
     const f = fixture();

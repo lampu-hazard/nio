@@ -36,19 +36,16 @@ export default async function AnalyticsPage({
   searchParams: Promise<{ days?: string }>;
 }) {
   const { guildId } = await params;
-  const { days = '7' } = await searchParams;
+  const query = await searchParams;
+  const days = query.days === '30' || query.days === 'all' ? query.days : '7';
 
   // Load basic stats (passing selected days window) + chart data in parallel
   const [statsData, chartData] = await Promise.all([
-    api<AnalyticsData>(`/guilds/${guildId}/analytics?days=${days}`).catch(() => ({
-      analytics: { adds: 0, removes: 0, total: 0, recent: [], topRoles: [] },
-    })),
-    api<ChartDataResponse>(`/guilds/${guildId}/analytics/chart-data`).catch(() => ({
-      history: [],
-      pieData: [],
-    })),
+    api<AnalyticsData>(`/guilds/${guildId}/analytics?days=${days}`).catch(() => null),
+    api<ChartDataResponse>(`/guilds/${guildId}/analytics/chart-data`).catch(() => null),
   ]);
 
+  if (!statsData || !chartData) return <main className="dashboard-page"><h1>Analytics</h1><div className="dashboard-notice" role="alert">Analytics unavailable. <a className="underline" href={`?days=${days}`}>Retry</a></div></main>;
   const { analytics } = statsData;
 
   // Format data for TradingView Lightweight charts
@@ -63,12 +60,12 @@ export default async function AnalyticsPage({
   }));
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
+    <main className="dashboard-page dashboard-page--wide dashboard-legacy">
       <div className="mx-auto max-w-[1440px] space-y-4">
         {/* Compact Header & Timeframe Filter */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div>
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Server Analytics</h2>
+            <h1>Analytics</h1>
             <p className="text-xs text-[var(--muted)]">Activity charts, voice session duration, and role logs.</p>
           </div>
 
@@ -83,7 +80,7 @@ export default async function AnalyticsPage({
                 href={`?days=${d.id}`}
                 className={`btn px-2.5 py-1 text-xs rounded-md font-semibold transition-all ${
                   days === d.id
-                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-500/10'
+                    ? 'border-[var(--brand)] text-[var(--text-inverse)] bg-[var(--brand)]'
                     : 'text-[var(--muted)] hover:bg-[var(--panel-strong)] border-transparent'
                 }`}
               >
@@ -97,11 +94,11 @@ export default async function AnalyticsPage({
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="card p-3.5">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Role Added Log</div>
-            <div className="mt-1 text-2xl font-black text-[var(--ok)]">+{analytics.adds}</div>
+            <div className="mt-1 text-2xl font-semibold text-[var(--text)]">+{analytics.adds}</div>
           </div>
           <div className="card p-3.5">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Role Removed Log</div>
-            <div className="mt-1 text-2xl font-black text-[var(--danger)]">-{analytics.removes}</div>
+            <div className="mt-1 text-2xl font-semibold text-[var(--text)]">-{analytics.removes}</div>
           </div>
           <div className="card p-3.5">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Total Role Operations</div>
@@ -109,17 +106,16 @@ export default async function AnalyticsPage({
           </div>
         </div>
 
+        <p className="text-[var(--muted)]">The period filter applies to role activity totals and recent logs. Chat and voice charts show the last 7 days; role distribution is all time.</p>
         {/* Interactive Charts Section */}
         <div className="grid gap-3 lg:grid-cols-2">
           <TradingViewChart
             data={messageData}
             title="Chat Messages / Day"
-            color="#6366f1"
           />
           <TradingViewChart
             data={voiceData}
             title="Voice Minutes / Day"
-            color="#a855f7"
           />
         </div>
 
@@ -164,7 +160,7 @@ export default async function AnalyticsPage({
 
           <CustomPieChart
             data={chartData.pieData}
-            title="Distribusi Penambahan Role Terbanyak (Top 5)"
+            title="Most added roles (top 5)"
           />
         </div>
       </div>

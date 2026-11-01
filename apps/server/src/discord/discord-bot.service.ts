@@ -20,6 +20,7 @@ import { ConversationMemoryService } from '../discord-agent/conversation-memory.
 import { AiAgentSettingsService } from '../discord-agent/ai-agent-settings.service';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 import { HallOfFameService } from './hall-of-fame.service';
+import { VoiceActivityService } from './voice-activity.service';
 
 const MAX_DELETE_LOG_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const DELETE_LOG_MEDIA_DIR = path.resolve(process.cwd(), '.tmp/delete-log-media');
@@ -61,6 +62,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     private readonly pluginEvents: PluginEventDispatcherService,
     private readonly hallOfFame: HallOfFameService,
     @Optional() private readonly aiAgentSettings?: AiAgentSettingsService,
+    @Optional() private readonly voiceActivity?: VoiceActivityService,
   ) {}
 
   async onModuleInit() {
@@ -79,6 +81,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     this.actionProposals.setVoiceConnectionService(this.voiceConnections);
     this.agentToolExecutor.setClient(this.client);
     this.hallOfFame.setClient(this.client);
+    this.voiceActivity?.setClient(this.client);
     this.aiAgentSettings?.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
@@ -88,7 +91,22 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.client.once(Events.ClientReady, () => this.logger.log(`Discord bot online as ${this.client.user?.tag}`, 'DiscordBot'));
+    this.client.once(Events.ClientReady, () => {
+      this.logger.log(`Discord bot online as ${this.client.user?.tag}`, 'DiscordBot');
+      this.voiceActivity?.start().catch((err) => this.logger.error(`Voice activity startup: ${err?.message ?? err}`, err?.stack, 'DiscordBot'));
+    });
+    this.client.on(Events.ShardDisconnect, (_event, shardId) => {
+      this.voiceActivity?.disconnect(shardId).catch((err) => this.logger.error(`Voice activity disconnect: ${err?.message ?? err}`, err?.stack, 'DiscordBot'));
+    });
+    this.client.on(Events.ShardReconnecting, (shardId) => {
+      this.voiceActivity?.disconnect(shardId).catch((err) => this.logger.error(`Voice activity reconnect: ${err?.message ?? err}`, err?.stack, 'DiscordBot'));
+    });
+    const resumeVoiceActivity = (shardId: number) => {
+      if (!this.client.isReady()) return;
+      this.voiceActivity?.start(shardId).catch((err) => this.logger.error(`Voice activity resume: ${err?.message ?? err}`, err?.stack, 'DiscordBot'));
+    };
+    this.client.on(Events.ShardReady, resumeVoiceActivity);
+    this.client.on(Events.ShardResume, resumeVoiceActivity);
     this.client.on(Events.GuildCreate, (guild) => {
       this.ensureGuild(guild).then(() => this.commandSync.sync(guild.id)).catch((err) =>
         this.logger.error(`Guild initialization error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
@@ -115,6 +133,9 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+      this.voiceActivity?.handleVoiceStateUpdate(oldState, newState).catch(
+        (err) => this.logger.error(`Voice activity error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
+      );
       this.handleVoiceStateUpdate(oldState, newState).catch(
         (err) => this.logger.error(`Voice state update error: ${err?.message ?? err}`, err?.stack, 'DiscordBot'),
       );

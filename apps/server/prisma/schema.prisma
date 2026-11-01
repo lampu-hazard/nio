@@ -39,6 +39,8 @@ model Guild {
   pluginCredentials GuildPluginCredential[]
   commandSync       GuildCommandSync?
   hallOfFameEntries HallOfFameEntry[]
+  voiceXpRewards    VoiceXpReward[]
+  voiceXpBalances   VoiceXpBalance[]
 }
 
 model GuildSettings {
@@ -63,6 +65,9 @@ model GuildSettings {
   hallOfFameEnabled           Boolean  @default(false)
   hallOfFameChannelId         String?
   hallOfFameThreshold         Int      @default(3)
+  voiceXpEnabled              Boolean  @default(false)
+  voiceXpPerMinute            Int      @default(10)
+  voiceNotificationChannelId  String?
 
   // New Moderation Settings
   warnLimitEnabled       Boolean  @default(false)
@@ -71,6 +76,27 @@ model GuildSettings {
   warnExpiryDays         Int      @default(30) // 0 = Never Expire
 
   guild                  Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model VoiceXpReward {
+  id      String @id @default(cuid())
+  guildId String
+  level   Int
+  roleId  String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, level])
+  @@unique([guildId, roleId])
+}
+
+model VoiceXpBalance {
+  guildId   String
+  userId    String
+  xp        BigInt @default(0)
+  remainder Int    @default(0)
+  guild     Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, userId])
 }
 
 model HallOfFameEntry {

@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
 import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
 import { HallOfFameService } from '../discord/hall-of-fame.service';
+import { VoiceActivityService } from '../discord/voice-activity.service';
 import { StickersService } from '../stickers/stickers.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
@@ -39,6 +40,9 @@ describe('GuildsService', () => {
       },
     };
 
+    prisma.voiceXpReward = { findMany: jest.fn(async () => []) };
+    prisma.$transaction = jest.fn(async (fn: any) => fn(prisma));
+
     stickers = {
       setEnabled: jest.fn(),
     };
@@ -62,6 +66,7 @@ describe('GuildsService', () => {
       slowmode as unknown as DiscordSlowmodeService,
       anomaly as unknown as DiscordAnomalyService,
       hallOfFame as unknown as HallOfFameService,
+      { withGuildSettingsUpdate: async (_guildId: string, update: () => Promise<unknown>) => update() } as VoiceActivityService,
     );
   });
 
@@ -120,6 +125,10 @@ describe('GuildsService', () => {
         where: { guildId: 'guild-1' },
       });
       expect(result).toEqual({
+        voiceXpEnabled: false,
+        voiceXpPerMinute: 10,
+        voiceNotificationChannelId: null,
+        voiceXpRewards: [],
         logChannelId: null,
         messageDeleteLogChannelId: null,
         stickerEnabled: false,
@@ -169,6 +178,10 @@ describe('GuildsService', () => {
         where: { guildId: 'guild-1' },
       });
       expect(result).toEqual({
+        voiceXpEnabled: false,
+        voiceXpPerMinute: 10,
+        voiceNotificationChannelId: null,
+        voiceXpRewards: [],
         logChannelId: 'channel-1',
         messageDeleteLogChannelId: 'channel-del-1',
         stickerEnabled: true,
@@ -239,13 +252,19 @@ describe('GuildsService', () => {
         anomalyEnforcementMode: 'AUDIT_ONLY',
       };
 
-      prisma.guildSettings.upsert.mockResolvedValue(mockUpdated);
+      prisma.guildSettings.upsert.mockImplementation(async () => {
+        prisma.guildSettings.findUnique.mockResolvedValue(mockUpdated);
+        return mockUpdated;
+      });
 
       const result = await service.updateSettings('guild-1', dto);
 
       expect(prisma.guildSettings.upsert).toHaveBeenCalledWith({
         where: { guildId: 'guild-1' },
         update: {
+          voiceXpEnabled: undefined,
+          voiceXpPerMinute: undefined,
+          voiceNotificationChannelId: undefined,
           logChannelId: undefined,
           messageDeleteLogChannelId: undefined,
           stickerEnabled: undefined,
@@ -266,6 +285,9 @@ describe('GuildsService', () => {
         },
         create: {
           guildId: 'guild-1',
+          voiceXpEnabled: false,
+          voiceXpPerMinute: 10,
+          voiceNotificationChannelId: null,
           logChannelId: null,
           messageDeleteLogChannelId: null,
           stickerEnabled: false,
@@ -285,7 +307,7 @@ describe('GuildsService', () => {
           anomalyEnforcementMode: 'AUDIT_ONLY',
         },
       });
-      expect(result).toEqual(mockUpdated);
+      expect(result).toMatchObject(Object.fromEntries(Object.entries(mockUpdated).filter(([key]) => key !== 'guildId')));
       expect(stickers.setEnabled).not.toHaveBeenCalled();
       expect(slowmode.updateGuildCache).toHaveBeenCalledWith('guild-1', {
         slowmodeEnabled: true,
@@ -327,13 +349,19 @@ describe('GuildsService', () => {
         anomalyEnforcementMode: 'AUDIT_ONLY',
       };
 
-      prisma.guildSettings.upsert.mockResolvedValue(mockUpdated);
+      prisma.guildSettings.upsert.mockImplementation(async () => {
+        prisma.guildSettings.findUnique.mockResolvedValue(mockUpdated);
+        return mockUpdated;
+      });
 
       const result = await service.updateSettings('guild-1', dto);
 
       expect(prisma.guildSettings.upsert).toHaveBeenCalledWith({
         where: { guildId: 'guild-1' },
         update: {
+          voiceXpEnabled: undefined,
+          voiceXpPerMinute: undefined,
+          voiceNotificationChannelId: undefined,
           logChannelId: undefined,
           messageDeleteLogChannelId: undefined,
           stickerEnabled: true,
@@ -354,6 +382,9 @@ describe('GuildsService', () => {
         },
         create: {
           guildId: 'guild-1',
+          voiceXpEnabled: false,
+          voiceXpPerMinute: 10,
+          voiceNotificationChannelId: null,
           logChannelId: null,
           messageDeleteLogChannelId: null,
           stickerEnabled: true,
@@ -373,7 +404,7 @@ describe('GuildsService', () => {
           anomalyEnforcementMode: 'AUDIT_ONLY',
         },
       });
-      expect(result).toEqual(mockUpdated);
+      expect(result).toMatchObject(Object.fromEntries(Object.entries(mockUpdated).filter(([key]) => key !== 'guildId')));
       expect(stickers.setEnabled).toHaveBeenCalledWith('guild-1', true);
       expect(slowmode.updateGuildCache).toHaveBeenCalledWith('guild-1', {
         slowmodeEnabled: false,
@@ -422,7 +453,10 @@ describe('GuildsService', () => {
         guildBaselineEnabled: true,
         anomalyEnforcementMode: 'AUDIT_ONLY',
       };
-      prisma.guildSettings.upsert.mockResolvedValue(mockUpdated);
+      prisma.guildSettings.upsert.mockImplementation(async () => {
+        prisma.guildSettings.findUnique.mockResolvedValue(mockUpdated);
+        return mockUpdated;
+      });
 
       const result = await service.updateSettings('guild-1', {
         hallOfFameEnabled: true,
@@ -440,7 +474,7 @@ describe('GuildsService', () => {
           }),
         }),
       );
-      expect(result).toEqual(mockUpdated);
+      expect(result).toMatchObject(Object.fromEntries(Object.entries(mockUpdated).filter(([key]) => key !== 'guildId')));
     });
   });
 

@@ -46,13 +46,11 @@ export class CoreCommandService {
         const duration = (value: number) => `${Math.floor(value / 3600)} jam ${Math.floor(value % 3600 / 60)} menit`;
         const xp = balance?.xp ?? 0n;
         const level = voiceLevel(xp);
-        const nextXp = 100n * (BigInt(level) + 1n) ** 2n;
         const embed = new EmbedBuilder().setColor(0x2b2d31).setTitle(`Voice Stats — ${user.username}`).addFields(
           { name: 'Total waktu tercatat', value: duration((history._sum.duration ?? 0) + seconds), inline: true },
           { name: 'Sesi berjalan (channel ini)', value: !channelId ? 'Tidak sedang di voice' : active ? duration(seconds) : 'Belum tercatat', inline: true },
           { name: 'Level', value: String(level), inline: true },
-          { name: 'XP total / level berikutnya', value: `${xp.toLocaleString('id-ID')} / ${nextXp.toLocaleString('id-ID')}`, inline: true },
-        ).setFooter({ text: 'Hanya aktivitas yang tercatat bot. Pindah channel memulai sesi baru. Durasi voice bukan durasi eligible XP; XP mengikuti penyimpanan terakhir.' });
+        );
         await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
       } catch {
         await interaction.editReply({ content: 'Statistik voice belum bisa diambil. Coba lagi nanti.' });

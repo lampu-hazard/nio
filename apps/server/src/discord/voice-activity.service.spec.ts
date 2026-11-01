@@ -200,7 +200,7 @@ describe('voice activity', () => {
     f.guild.voiceStates.cache.set('a', f.state('a', 'general')); await f.service.start();
     await f.change(f.state('b', null), f.state('b', 'general'));
     jest.setSystemTime(60000); await f.service.flush();
-    expect(f.send.mock.calls.map(([p]) => p.embeds[0].title)).toEqual(['Voice Join']);
+    expect(f.send.mock.calls.map(([p]) => p.embeds[0].title)).toEqual(['Member joined voice channel']);
     expect(levelSend.mock.calls.map(([p]) => p.embeds)).toEqual([
       [{ title: 'Level Up', description: 'Othinus reached level 3' }],
       [{ title: 'Level Up', description: 'b reached level 3' }],
@@ -275,15 +275,21 @@ describe('voice activity', () => {
   });
 
   it.each([
-    [null, 'general', 'Voice Join', 'Othinus joined voice General'],
-    ['general', null, 'Voice Leave', 'Othinus left voice General'],
-    ['general', 'lounge', 'Voice Move', 'Othinus moved from General to Lounge'],
-  ])('sends one plain embed for %s → %s', async (from, to, title, description) => {
+    [null, 'general', 'Member joined voice channel', '**Othinus** joined <#general>', 0x57f287],
+    ['general', null, 'Member left voice channel', '**Othinus** left <#general>', 0xed4245],
+    ['general', 'lounge', 'Member changed voice channel', '**Before:** <#general>\n**After:** <#lounge>', 0x3b82f6],
+  ])('sends a member activity embed for %s → %s', async (from, to, title, description, color) => {
     const f = fixture(); f.settings.voiceXpEnabled = false; f.settings.voiceNotificationChannelId = 'logs';
-    await f.change(f.state('a', from), f.state('a', to));
+    const next = f.state('a', to);
+    next.member.displayAvatarURL = () => 'https://cdn.discordapp.com/avatars/123/avatar.png';
+    await f.change(f.state('a', from), next);
     expect(f.send).toHaveBeenCalledTimes(1);
     const payload = f.send.mock.calls[0][0];
-    expect(payload.embeds).toEqual([{ title, description }]);
+    expect(payload.embeds).toEqual([{
+      title, description, color,
+      author: { name: 'Othinus', icon_url: 'https://cdn.discordapp.com/avatars/123/avatar.png' },
+      footer: { text: 'ID: a' }, timestamp: '1970-01-01T00:00:00.000Z',
+    }]);
     expect(payload.allowedMentions.parse).toEqual([]);
     await f.service.onModuleDestroy();
   });

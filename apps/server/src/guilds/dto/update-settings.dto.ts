@@ -28,6 +28,11 @@ export class UpdateSettingsDto {
   @Matches(/^\d{17,20}$/)
   voiceNotificationChannelId?: string | null;
 
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{17,20}$/)
+  voiceLevelUpChannelId?: string | null;
+
   @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(50)

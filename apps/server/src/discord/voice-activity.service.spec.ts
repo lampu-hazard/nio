@@ -170,6 +170,73 @@ describe('voice activity', () => {
     await f.service.onModuleDestroy();
   });
 
+  it.each(['flush', 'leave', 'disconnect'])('announces a committed level increase during %s without a reward mapping', async (kind) => {
+    const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs';
+    f.balances.set('a', { xp: 95n, remainder: 0 });
+    const a = f.state('a', 'general');
+    f.guild.voiceStates.cache.set('a', a); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    await f.service.start(); jest.setSystemTime(30000);
+    if (kind === 'leave') await f.change(a, f.state('a', null));
+    else if (kind === 'disconnect') await f.service.disconnect();
+    else await f.service.flush();
+    await f.service.flush();
+    expect(f.send.mock.calls.map(([payload]) => payload)).toEqual([{
+      embeds: [{ title: 'Level Up', description: 'Othinus reached level 1' }],
+      allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+    }]);
+    expect(f.balances.get('a').xp).toBe(100n);
+    await f.service.onModuleDestroy();
+  });
+
+  it('uses a separate channel and announces only the latest crossed level', async () => {
+    const f = fixture(); f.settings.voiceNotificationChannelId = 'logs'; f.settings.voiceLevelUpChannelId = 'levels';
+    const levelSend = jest.fn(async (_payload: any) => ({}));
+    f.guild.channels.cache.set('levels', { ...f.guild.channels.cache.get('logs'), id: 'levels', send: levelSend });
+    f.settings.voiceXpPerMinute = 1000;
+    f.guild.voiceStates.cache.set('a', f.state('a', 'general')); await f.service.start();
+    await f.change(f.state('b', null), f.state('b', 'general'));
+    jest.setSystemTime(60000); await f.service.flush();
+    expect(f.send.mock.calls.map(([p]) => p.embeds[0].title)).toEqual(['Voice Join']);
+    expect(levelSend.mock.calls.map(([p]) => p.embeds)).toEqual([
+      [{ title: 'Level Up', description: 'Othinus reached level 3' }],
+      [{ title: 'Level Up', description: 'b reached level 3' }],
+    ]);
+    await f.service.onModuleDestroy();
+  });
+
+  it('does not announce until the XP transaction commits', async () => {
+    const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs';
+    f.balances.set('a', { xp: 95n, remainder: 0 });
+    f.guild.voiceStates.cache.set('a', f.state('a', 'general')); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    await f.service.start(); jest.setSystemTime(30000);
+    f.prisma.$transaction.mockRejectedValueOnce(new Error('database unavailable'));
+    await f.service.flush(); expect(f.send).not.toHaveBeenCalled();
+    await f.service.flush(); expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.balances.get('a').xp).toBe(100n);
+    await f.service.onModuleDestroy();
+  });
+
+  it('keeps committed XP and role rewards when level-up delivery fails', async () => {
+    const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs'; f.addRole('one', 1);
+    const a = f.state('a', 'general'); f.balances.set('a', { xp: 95n, remainder: 0 });
+    f.guild.voiceStates.cache.set('a', a); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    f.send.mockRejectedValue(new Error('Discord unavailable'));
+    await f.service.start(); jest.setSystemTime(30000); await f.service.flush(); await f.service.flush();
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.balances.get('a').xp).toBe(100n);
+    expect(a.member.roles.cache.has('one')).toBe(true);
+    await f.service.onModuleDestroy();
+  });
+
+  it.each([null, 'logs'])('does not announce an existing level or disabled destination %s', async (channelId) => {
+    const f = fixture(); f.settings.voiceLevelUpChannelId = channelId;
+    f.balances.set('a', { xp: channelId ? 100n : 95n, remainder: 0 });
+    f.guild.voiceStates.cache.set('a', f.state('a', 'general')); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    await f.service.start(); jest.setSystemTime(30000); await f.service.flush();
+    expect(f.send).not.toHaveBeenCalled();
+    await f.service.onModuleDestroy();
+  });
+
   it.each([
     [null, 'general', 'Voice Join', 'Othinus joined voice General'],
     ['general', null, 'Voice Leave', 'Othinus left voice General'],

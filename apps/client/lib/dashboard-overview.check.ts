@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { featureStatuses, type GuildSettings } from './feature-settings';
+assert.ok(featureStatuses(null).every(feature => feature.status === 'unavailable'));
+const settings = { voiceXpEnabled: false, voiceNotificationChannelId: null, voiceLevelUpChannelId: '123456789012345678', logChannelId: null, messageDeleteLogChannelId: '123456789012345678', hallOfFameEnabled: false, slowmodeEnabled: false, anomalyEnabled: false, stickerEnabled: true } as GuildSettings;
+const statuses = Object.fromEntries(featureStatuses(settings).map(feature => [feature.key, feature.status]));
+assert.equal(statuses['voice-xp'], 'disabled');
+assert.equal(statuses['voice-notifications'], 'enabled');
+assert.equal(statuses.logging, 'enabled');
+assert.equal(statuses.stickers, 'enabled');
+assert.equal(featureStatuses(null).length, 7);
+console.log('dashboard overview checks passed');

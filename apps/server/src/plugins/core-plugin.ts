@@ -13,6 +13,9 @@ export const CORE_PLUGIN: NioPlugin = {
   type: 'FREE',
   commands: [
     new SlashCommandBuilder().setName('dashboard').setDescription('Open the nio dashboard').toJSON(),
+    new SlashCommandBuilder().setName('voice').setDescription('Check recorded voice time, level and XP')
+      .addUserOption((option) => option.setName('user').setDescription('The member to check').setRequired(false))
+      .setDMPermission(false).toJSON(),
     new SlashCommandBuilder().setName('booster-role').setDescription('Create or edit your custom booster role').setDMPermission(false).toJSON(),
     new SlashCommandBuilder().setName('donate-role').setDescription('Get private checkout link to donate and receive your reward role').setDMPermission(false).toJSON(),
     new SlashCommandBuilder().setName('warn').setDescription('Issue a warning to a member')

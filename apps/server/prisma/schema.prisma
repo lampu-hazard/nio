@@ -68,6 +68,7 @@ model GuildSettings {
   voiceXpEnabled              Boolean  @default(false)
   voiceXpPerMinute            Int      @default(10)
   voiceNotificationChannelId  String?
+  voiceLevelUpChannelId       String?
 
   // New Moderation Settings
   warnLimitEnabled       Boolean  @default(false)

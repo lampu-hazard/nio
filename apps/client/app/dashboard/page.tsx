@@ -3,39 +3,12 @@ import type { GuildSummary } from '@/lib/types';
 import { GuildCard } from '@/components/dashboard/GuildCard';
 
 export default async function DashboardPage() {
-  const data = await api<{ ok: true; guilds: GuildSummary[] }>('/guilds').catch(() => ({ ok: true as const, guilds: [] }));
-  return (
-    <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1440px]">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border)] pb-5">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-xl font-bold tracking-tight text-[var(--text)] sm:text-2xl">Server Control Center</h1>
-              <span className="rounded-full border border-[var(--border)] bg-[var(--panel-strong)] px-2.5 py-0.5 text-xs font-semibold text-[var(--muted)]">
-                {data.guilds.length} {data.guilds.length === 1 ? 'server' : 'servers'}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-[var(--muted)]">Select a server to manage panels, plugins, moderation, and insights.</p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-            <span className="inline-block h-2 w-2 rounded-full bg-[var(--ok)]" />
-            <span>Permissions verified via Discord</span>
-          </div>
-        </div>
-
-        <section>
-          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-            {data.guilds.map((guild) => <GuildCard key={guild.id} guild={guild} />)}
-            {!data.guilds.length && (
-              <div className="card col-span-full p-8 text-center sm:p-10">
-                <div className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-[var(--surface-muted)] text-lg text-[var(--brand)]">◎</div>
-                <h3 className="mt-3 text-base font-bold text-[var(--text)]">No manageable servers found</h3>
-                <p className="mt-1 text-xs text-[var(--muted)]">Ensure your Discord account has administrator or server management permissions.</p>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
-    </main>
-  );
+  let guilds: GuildSummary[] | null = null;
+  try {
+    const response = await api<{ ok: boolean; guilds: GuildSummary[] }>('/guilds');
+    if (response.ok && Array.isArray(response.guilds)) guilds = response.guilds;
+  } catch { /* A failed request is not an empty server list. */ }
+  return <main className="dashboard-page dashboard-page--wide"><header className="mb-8 border-b border-[var(--border)] pb-6"><a className="dashboard-wordmark !px-0" href="/">nio</a><h1>Servers</h1><p className="dashboard-description">Select a server to manage.</p>{guilds && <p className="text-[var(--muted)]">{guilds.length} manageable {guilds.length === 1 ? 'server' : 'servers'}</p>}</header>
+    {guilds === null ? <div role="alert" className="dashboard-notice">Could not load your servers. <a href="/dashboard" className="underline">Retry</a></div> : guilds.length ? <section aria-label="Manageable servers" className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{guilds.map(guild => <GuildCard key={guild.id} guild={guild} />)}</section> : <section className="dashboard-section"><h2>No manageable servers</h2><p className="text-[var(--muted)]">Your Discord account needs administrator or server management permissions.</p></section>}
+  </main>;
 }

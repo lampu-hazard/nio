@@ -96,17 +96,34 @@ export class VoiceActivityService implements OnModuleDestroy {
     const candidates = new Map<string, { guild: Guild; member: GuildMember; rewards: Config['rewards'] }>();
     // ponytail: one gateway owner accrues each guild; add distributed ownership before running duplicate bot replicas.
     for (const [key, pending] of this.pending) {
+      let levelUp: number | null;
       try {
-        await this.prisma.$transaction(async (tx) => {
+        levelUp = await this.prisma.$transaction(async (tx) => {
           const where = { guildId_userId: { guildId: pending.guild.id, userId: pending.member.id } };
           const balance = await tx.voiceXpBalance.findUnique({ where });
           const units = BigInt(balance?.remainder ?? 0) + pending.units;
           const data = { xp: (balance?.xp ?? 0n) + units / 60000n, remainder: Number(units % 60000n) };
           await tx.voiceXpBalance.upsert({ where, create: { guildId: pending.guild.id, userId: pending.member.id, ...data }, update: data });
+          const level = voiceLevel(data.xp);
+          return level > voiceLevel(balance?.xp ?? 0n) ? level : null;
         });
         this.pending.delete(key);
         candidates.set(key, pending);
-      } catch (err) { this.log('Voice XP persistence', err); }
+      } catch (err) { this.log('Voice XP persistence', err); continue; }
+      if (levelUp === null) continue;
+      // ponytail: best-effort after commit; add an outbox if durable delivery is needed.
+      try {
+        const settings = await this.prisma.guildSettings.findUnique({ where: { guildId: pending.guild.id } });
+        const channelId = settings?.voiceLevelUpChannelId;
+        if (!channelId) continue;
+        await this.validateNotificationChannel(pending.guild.id, channelId);
+        const channel = await pending.guild.channels.fetch(channelId);
+        if (channel?.type !== ChannelType.GuildText && channel?.type !== ChannelType.GuildAnnouncement) continue;
+        await channel.send({
+          embeds: [{ title: 'Level Up', description: `${this.plain(pending.member.displayName)} reached level ${levelUp}` }],
+          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+        });
+      } catch (err) { this.log('Voice level-up notification', err); }
     }
     for (const tracking of this.tracking.values()) {
       if (!tracking.config.enabled) continue;

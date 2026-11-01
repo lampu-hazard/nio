@@ -84,23 +84,23 @@ export default async function AuditLogsPage({
   ).catch(() => ({ ok: false, auditLogs: [] }));
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
+    <main className="dashboard-page dashboard-page--wide dashboard-legacy">
       <div className="mx-auto max-w-[1440px] space-y-4">
         {/* Compact Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div>
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Audit Logs</h2>
+            <h1>Audit Logs</h1>
             <p className="text-xs text-[var(--muted)]">Chronological history of dashboard updates and panel actions.</p>
           </div>
           <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
-            {data.auditLogs?.length || 0} events
+            {data.ok ? `${data.auditLogs.length} events` : 'Unavailable'}
           </span>
         </div>
 
         {/* Compact Filters Bar */}
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5">
           <form method="GET" className="flex flex-wrap items-center gap-2 text-xs">
-            <input
+            <label htmlFor="userId">User ID</label><input
               type="text"
               id="userId"
               name="userId"
@@ -109,7 +109,7 @@ export default async function AuditLogsPage({
               className="input py-1 text-xs flex-1 min-w-[180px]"
             />
 
-            <select
+            <label htmlFor="action">Action</label><select
               id="action"
               name="action"
               defaultValue={action}
@@ -156,7 +156,7 @@ export default async function AuditLogsPage({
 
         {/* Audit Log Entries List */}
         <div className="card overflow-hidden">
-          {!data.auditLogs || data.auditLogs.length === 0 ? (
+          {!data.ok ? <div className="dashboard-notice" role="alert">Could not load audit logs. <a href={`?${queryParams.toString()}`} className="underline">Retry</a></div> : !data.auditLogs || data.auditLogs.length === 0 ? (
             <div className="p-8 text-center text-xs text-[var(--muted)]">
               No activity matches your filters.
             </div>

@@ -1,502 +1,136 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 type Channel = { id: string; name: string };
 type Member = { id: string; displayName: string; username: string; avatarUrl: string };
 type Settings = {
-  enabled: boolean;
-  provider: 'gemini' | 'openai-compatible';
-  model: string;
-  baseUrl: string | null;
-  allowedUserIds: string[];
-  allowedChannelIds: string[];
-  excludedChannelIds: string[];
-  hasCredential: boolean;
+  enabled: boolean; provider: 'gemini' | 'openai-compatible'; model: string; baseUrl: string | null;
+  allowedUserIds: string[]; allowedChannelIds: string[]; excludedChannelIds: string[]; hasCredential: boolean;
 };
-type Usage = {
-  userId: string;
-  displayName?: string;
-  username?: string;
-  avatarUrl?: string | null;
-  requests: number;
-  failures: number;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-};
-type PageProps = { params: Promise<{ guildId: string }> };
+type Usage = { userId: string; displayName?: string; username?: string; avatarUrl?: string | null; requests: number; failures: number; promptTokens: number; completionTokens: number; totalTokens: number };
 
-const defaults: Settings = {
-  enabled: false, provider: 'gemini', model: 'gemini-2.5-flash', baseUrl: null,
-  allowedUserIds: [], allowedChannelIds: [], excludedChannelIds: [], hasCredential: false,
-};
-
-export default function AiAgentPage({ params }: PageProps) {
+export default function AiAgentPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = use(params);
+  return <AgentSettings key={guildId} guildId={guildId} />;
+}
+
+function AgentSettings({ guildId }: { guildId: string }) {
   const [tab, setTab] = useState<'config' | 'access' | 'usage'>('config');
-  const [settings, setSettings] = useState<Settings>(defaults);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [baseline, setBaseline] = useState<Settings | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [memberQuery, setMemberQuery] = useState('');
-  const [usage, setUsage] = useState<Usage[]>([]);
+  const [query, setQuery] = useState('');
+  const [usage, setUsage] = useState<Usage[] | null>(null);
+  const [usageError, setUsageError] = useState('');
   const [days, setDays] = useState(30);
   const [apiKey, setApiKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [notice, setNotice] = useState('');
+  const pending = useRef(false);
+  const generation = useRef(0);
+  const lifetime = useRef<AbortController | null>(null);
+  const dirty = !!settings && (JSON.stringify(settings) !== JSON.stringify(baseline) || !!apiKey || clearKey);
+  useUnsavedChanges(dirty);
 
   useEffect(() => {
-    void load();
-  }, [guildId, days]);
+    const controller = new AbortController();
+    lifetime.current = controller;
+    const request = ++generation.current;
+    setLoading(true); setError('');
+    void Promise.all([
+      api<{ settings: Settings }>(`/guilds/${guildId}/ai-agent/settings`, { signal: controller.signal }),
+      api<{ channels: Channel[] }>(`/guilds/${guildId}/channels`, { signal: controller.signal }),
+      api<{ members: Member[] }>(`/guilds/${guildId}/members`, { signal: controller.signal }),
+    ]).then(([config, channelData, memberData]) => {
+      if (controller.signal.aborted || request !== generation.current) return;
+      if (!config.settings || !Array.isArray(channelData.channels) || !Array.isArray(memberData.members)) throw new Error('AI Agent data unavailable.');
+      setSettings(config.settings); setBaseline(config.settings); setChannels(channelData.channels); setMembers(memberData.members);
+    }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Failed to load AI Agent settings.'); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => { ++generation.current; controller.abort(); };
+  }, [guildId, retry]);
 
   useEffect(() => {
-    if (!memberQuery.trim()) return;
+    const controller = new AbortController();
+    setUsage(null); setUsageError('');
+    void api<{ usage: { users: Usage[] } }>(`/guilds/${guildId}/ai-agent/usage?days=${days}`, { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setUsage(result.usage.users); })
+      .catch(reason => { if (!controller.signal.aborted) setUsageError(reason instanceof Error ? reason.message : 'Usage unavailable.'); });
+    return () => controller.abort();
+  }, [guildId, days, retry]);
+
+  useEffect(() => {
+    if (!query.trim()) return;
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      const query = memberQuery.trim();
-      api<{ members: Member[] }>(`/guilds/${guildId}/members?query=${encodeURIComponent(query)}`)
-        .then((result) => setMembers((current) => {
-        const merged = new Map(current.map((member) => [member.id, member]));
-        for (const member of result.members || []) merged.set(member.id, member);
-        return [...merged.values()];
-      }))
-      .catch((err: any) => setError(err?.message || 'Gagal mencari anggota.'));
+      void api<{ members: Member[] }>(`/guilds/${guildId}/members?query=${encodeURIComponent(query.trim())}`, { signal: controller.signal })
+        .then(result => { if (!controller.signal.aborted) setMembers(current => [...new Map([...current, ...result.members].map(member => [member.id, member])).values()]); })
+        .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Member search unavailable.'); });
     }, 300);
-    return () => clearTimeout(timer);
-  }, [guildId, memberQuery]);
-
-  async function load() {
-    try {
-      setLoading(true);
-      const [settingsRes, channelsRes, membersRes, usageRes] = await Promise.all([
-        api<{ settings: Settings }>(`/guilds/${guildId}/ai-agent/settings`),
-        api<{ channels: Channel[] }>(`/guilds/${guildId}/channels`),
-        api<{ members: Member[] }>(`/guilds/${guildId}/members`),
-        api<{ usage: { users: Usage[] } }>(`/guilds/${guildId}/ai-agent/usage?days=${days}`),
-      ]);
-      const usageUsers = usageRes.usage?.users || [];
-      setSettings({ ...defaults, ...settingsRes.settings });
-      setChannels(channelsRes.channels || []);
-      setUsage(usageUsers);
-      setMembers((prev) => {
-        const map = new Map(prev.map((m) => [m.id, m]));
-        for (const m of membersRes.members || []) map.set(m.id, m);
-        for (const u of usageUsers) {
-          if (u.displayName && !map.has(u.userId)) {
-            map.set(u.userId, {
-              id: u.userId,
-              displayName: u.displayName,
-              username: u.username || u.userId,
-              avatarUrl: u.avatarUrl || '',
-            });
-          }
-        }
-        return [...map.values()];
-      });
-      setError('');
-    } catch (err: any) {
-      setError(err?.message || 'Gagal memuat pengaturan AI Agent.');
-    } finally {
-      setLoading(false);
-    }
-  }
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [guildId, query]);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    setSaving(true);
-    setError('');
-    setSuccess('');
+    if (!settings || loading || pending.current || !dirty) return;
+    if (!settings.model.trim()) { setError('Enter a model name.'); return; }
+    pending.current = true; setSaving(true); setError(''); setNotice('');
+    const request = ++generation.current;
     try {
-      const payload: Record<string, unknown> = {
+      const payload = {
         enabled: settings.enabled, provider: settings.provider, model: settings.model.trim(),
         baseUrl: settings.provider === 'openai-compatible' ? settings.baseUrl : null,
-        allowedUserIds: settings.allowedUserIds,
-        excludedChannelIds: settings.excludedChannelIds,
+        allowedUserIds: settings.allowedUserIds, excludedChannelIds: settings.excludedChannelIds,
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}), ...(clearKey ? { clearApiKey: true } : {}),
       };
-      if (apiKey.trim()) payload.apiKey = apiKey.trim();
-      if (clearKey) payload.clearApiKey = true;
-      const result = await api<{ settings: Settings }>(`/guilds/${guildId}/ai-agent/settings`, {
-        method: 'PATCH', body: JSON.stringify(payload),
-      });
-      setSettings({ ...defaults, ...result.settings });
-      setApiKey('');
-      setClearKey(false);
-      setSuccess('Pengaturan AI Agent tersimpan.');
-    } catch (err: any) {
-      setError(err?.message || 'Gagal menyimpan pengaturan.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function toggleChannel(field: 'excludedChannelIds', id: string) {
-    setSettings((current) => {
-      const exclusions = current[field];
-      if (exclusions.includes('*')) {
-        return { ...current, [field]: channels.map((channel) => channel.id).filter((channelId) => channelId !== id) };
-      }
-      return {
-        ...current,
-        [field]: exclusions.includes(id) ? exclusions.filter((value) => value !== id) : [...exclusions, id],
-      };
-    });
-  }
-
-  function setAllChannels(field: 'excludedChannelIds', checked: boolean) {
-    setSettings((current) => ({ ...current, [field]: checked ? ['*'] : [] }));
-  }
-
-  function setAllMembers(checked: boolean) {
-    setSettings((current) => ({ ...current, allowedUserIds: checked ? ['*'] : [] }));
+      const result = await api<{ settings: Settings }>(`/guilds/${guildId}/ai-agent/settings`, { method: 'PATCH', body: JSON.stringify(payload), signal: lifetime.current?.signal });
+      if (request !== generation.current || lifetime.current?.signal.aborted) return;
+      if (!result.settings) throw new Error('AI Agent settings could not be saved.');
+      setSettings(result.settings); setBaseline(result.settings); setApiKey(''); setClearKey(false); setNotice('Changes saved.');
+    } catch (reason) {
+      if (request === generation.current && !lifetime.current?.signal.aborted) setError(reason instanceof Error ? reason.message : 'Failed to save settings.');
+    } finally { if (request === generation.current && !lifetime.current?.signal.aborted) { pending.current = false; setSaving(false); } }
   }
 
   function toggleMember(id: string) {
-    setSettings((current) => ({
-      ...current,
-      allowedUserIds: current.allowedUserIds.includes(id)
-        ? current.allowedUserIds.filter((value) => value !== id && value !== '*')
-        : [...current.allowedUserIds.filter((value) => value !== '*'), id],
-    }));
+    setSettings(current => current && ({ ...current, allowedUserIds: current.allowedUserIds.includes(id) ? current.allowedUserIds.filter(value => value !== id && value !== '*') : [...current.allowedUserIds.filter(value => value !== '*'), id] }));
+  }
+  function toggleChannel(id: string) {
+    setSettings(current => current && ({ ...current, excludedChannelIds: current.excludedChannelIds.includes('*') ? channels.map(channel => channel.id).filter(value => value !== id) : current.excludedChannelIds.includes(id) ? current.excludedChannelIds.filter(value => value !== id) : [...current.excludedChannelIds, id] }));
   }
 
-  const filteredMembers = members.filter((member) =>
-    `${member.displayName} ${member.username} ${member.id}`.toLowerCase().includes(memberQuery.toLowerCase()),
-  );
-
-  function displayUsageMember(id: string) {
-    const member = members.find((candidate) => candidate.id === id);
-    return member ? `${member.displayName} (@${member.username})` : `Anggota tidak ditemukan (${id})`;
-  }
-
-
-  return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-4">
-        {/* Compact Action & Tab Switcher Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">AI Agent Control</h2>
-            <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setTab('config')}
-                className={`rounded-md px-3 py-1 font-semibold transition-all ${
-                  tab === 'config'
-                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
-                    : 'text-[var(--muted)] hover:text-[var(--text)]'
-                }`}
-              >
-                Model &amp; Key
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('access')}
-                className={`rounded-md px-3 py-1 font-semibold transition-all ${
-                  tab === 'access'
-                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
-                    : 'text-[var(--muted)] hover:text-[var(--text)]'
-                }`}
-              >
-                Akses &amp; Saluran
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('usage')}
-                className={`rounded-md px-3 py-1 font-semibold transition-all ${
-                  tab === 'usage'
-                    ? 'bg-[var(--panel-strong)] text-[var(--text)] shadow-sm'
-                    : 'text-[var(--muted)] hover:text-[var(--text)]'
-                }`}
-              >
-                Pemakaian Token
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {error && <span className="text-xs font-semibold text-[var(--danger)]">{error}</span>}
-            {success && <span className="text-xs font-semibold text-[var(--ok)]">{success}</span>}
-            {tab !== 'usage' && (
-              <button
-                type="button"
-                onClick={(e) => void save(e as any)}
-                disabled={saving}
-                className="btn btn-primary text-xs font-bold py-1.5 px-4"
-              >
-                {saving ? 'Menyimpan…' : 'Simpan'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="card p-8 text-center text-xs text-[var(--muted)]">Memuat konfigurasi AI Agent…</div>
-        ) : (
-          <div>
-            {tab === 'config' && (
-              <div className="grid gap-4 max-w-3xl">
-                <section className="card space-y-4 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Provider &amp; Model</h3>
-                      <p className="text-[11px] text-[var(--muted)]">Credential dienkripsi dan tidak pernah ditampilkan kembali.</p>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
-                      <input
-                        type="checkbox"
-                        checked={settings.enabled}
-                        onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })}
-                        className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
-                      />
-                      Aktifkan AI Agent
-                    </label>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label>
-                      <span className="field-label">Provider</span>
-                      <select
-                        className="input py-1.5 text-xs"
-                        value={settings.provider}
-                        onChange={(e) => setSettings({ ...settings, provider: e.target.value as Settings['provider'] })}
-                      >
-                        <option value="gemini">Google Gemini</option>
-                        <option value="openai-compatible">OpenAI-compatible</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span className="field-label">Model</span>
-                      <input
-                        className="input py-1.5 text-xs"
-                        value={settings.model}
-                        maxLength={120}
-                        onChange={(e) => setSettings({ ...settings, model: e.target.value })}
-                        placeholder="gemini-2.5-flash"
-                      />
-                    </label>
-                  </div>
-
-                  {settings.provider === 'openai-compatible' && (
-                    <label className="block">
-                      <span className="field-label">API base URL</span>
-                      <input
-                        className="input py-1.5 text-xs"
-                        type="url"
-                        value={settings.baseUrl || ''}
-                        maxLength={500}
-                        onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value || null })}
-                        placeholder="http://localhost:11434/v1"
-                      />
-                    </label>
-                  )}
-
-                  <div className="space-y-2">
-                    <label className="block">
-                      <span className="field-label">
-                        API Key {settings.hasCredential ? '· tersimpan' : '· belum disetel'}
-                      </span>
-                      <input
-                        className="input py-1.5 text-xs"
-                        type="password"
-                        autoComplete="new-password"
-                        value={apiKey}
-                        onChange={(e) => {
-                          setApiKey(e.target.value);
-                          if (e.target.value) setClearKey(false);
-                        }}
-                        placeholder={settings.hasCredential ? 'Ketik untuk mengganti API key baru' : 'Masukkan API key'}
-                      />
-                    </label>
-                    {settings.hasCredential && (
-                      <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                        <input
-                          type="checkbox"
-                          checked={clearKey}
-                          onChange={(e) => {
-                            setClearKey(e.target.checked);
-                            if (e.target.checked) setApiKey('');
-                          }}
-                        />
-                        Hapus API key yang tersimpan
-                      </label>
-                    )}
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {tab === 'access' && (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <section className="card space-y-3 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Akses Anggota</h3>
-                      <p className="text-[11px] text-[var(--muted)]">Allowlist izin berbicara dengan AI.</p>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
-                      <input
-                        type="checkbox"
-                        checked={settings.allowedUserIds.includes('*')}
-                        onChange={(e) => setAllMembers(e.target.checked)}
-                        className="h-3.5 w-3.5"
-                      />
-                      Semua anggota
-                    </label>
-                  </div>
-                  <input
-                    className="input py-1.5 text-xs"
-                    type="search"
-                    value={memberQuery}
-                    onChange={(e) => setMemberQuery(e.target.value)}
-                    placeholder="Cari nama atau username..."
-                  />
-                  <div className="grid max-h-72 gap-1.5 overflow-y-auto sm:grid-cols-2">
-                    {filteredMembers.map((member) => (
-                      <label
-                        key={member.id}
-                        className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-xs text-[var(--text)] cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={settings.allowedUserIds.includes(member.id)}
-                          onChange={() => toggleMember(member.id)}
-                          className="h-3.5 w-3.5 shrink-0"
-                        />
-                        <img src={member.avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full" />
-                        <span className="min-w-0">
-                          <span className="block truncate font-semibold">{member.displayName}</span>
-                          <span className="block truncate text-[10px] text-[var(--muted)]">@{member.username}</span>
-                        </span>
-                      </label>
-                    ))}
-                    {!filteredMembers.length && <p className="text-xs text-[var(--muted)] py-4 text-center col-span-full">Tidak ada anggota cocok.</p>}
-                  </div>
-                  <p className="text-[11px] text-[var(--muted)]">Dipilih: {settings.allowedUserIds.length} anggota</p>
-                </section>
-
-                <section className="card space-y-3 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Saluran yang Dikecualikan</h3>
-                      <p className="text-[11px] text-[var(--muted)]">Centang saluran yang dilarang merespons.</p>
-                    </div>
-                    {channels.length > 0 && (
-                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
-                        <input
-                          type="checkbox"
-                          checked={settings.excludedChannelIds.includes('*')}
-                          onChange={(e) => setAllChannels('excludedChannelIds', e.target.checked)}
-                          className="h-3.5 w-3.5"
-                        />
-                        Semua
-                      </label>
-                    )}
-                  </div>
-                  {channels.length ? (
-                    <div className="grid max-h-72 gap-1.5 overflow-y-auto sm:grid-cols-2">
-                      {channels.map((channel) => (
-                        <label
-                          key={`excluded-${channel.id}`}
-                          className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text)] cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={settings.excludedChannelIds.includes(channel.id) || settings.excludedChannelIds.includes('*')}
-                            onChange={() => toggleChannel('excludedChannelIds', channel.id)}
-                            className="h-3.5 w-3.5 shrink-0"
-                          />
-                          <span className="min-w-0 truncate">#{channel.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-[var(--muted)]">Daftar channel tidak tersedia.</p>
-                  )}
-                </section>
-              </div>
-            )}
-
-            {tab === 'usage' && (
-              <section className="card p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Agregat Pemakaian Token</h3>
-                    <p className="text-[11px] text-[var(--muted)]">Pemakaian token per anggota.</p>
-                  </div>
-                  <select
-                    className="input py-1 text-xs w-28"
-                    value={days}
-                    onChange={(e) => setDays(Number(e.target.value))}
-                  >
-                    <option value={7}>7 hari</option>
-                    <option value={30}>30 hari</option>
-                    <option value={90}>90 hari</option>
-                  </select>
-                </div>
-                <div className="overflow-x-auto max-h-96">
-                  <table className="w-full text-left text-xs">
-                    <thead className="border-b border-[var(--border)] uppercase tracking-wider text-[10px] text-[var(--muted)] sticky top-0 bg-[var(--panel)]">
-                      <tr>
-                        <th className="py-2 pr-3">Anggota</th>
-                        <th className="py-2 pr-3 text-right">Permintaan</th>
-                        <th className="py-2 pr-3 text-right">Gagal</th>
-                        <th className="py-2 pr-3 text-right">Prompt</th>
-                        <th className="py-2 pr-3 text-right">Completion</th>
-                        <th className="py-2 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border)]">
-                      {usage.map((row) => {
-                        const member = members.find((m) => m.id === row.userId);
-                        const displayName = row.displayName || member?.displayName || 'Anggota';
-                        const username = row.username || member?.username || row.userId;
-                        const avatarUrl = row.avatarUrl || member?.avatarUrl;
-
-                        return (
-                          <tr key={row.userId} className="text-[var(--text)]">
-                            <td className="py-2 pr-3">
-                              <div className="flex items-center gap-2.5">
-                                {avatarUrl ? (
-                                  <img
-                                    src={avatarUrl}
-                                    alt=""
-                                    className="h-7 w-7 shrink-0 rounded-full border border-[var(--border)] object-cover bg-[var(--surface)]"
-                                  />
-                                ) : (
-                                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[10px] font-bold text-[var(--muted)]">
-                                    {displayName.slice(0, 2).toUpperCase()}
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <span className="font-semibold block truncate max-w-[180px]">
-                                    {displayName}
-                                  </span>
-                                  <span className="text-[10px] text-[var(--muted)] block truncate">
-                                    @{username}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2 pr-3 text-right tabular-nums">{row.requests.toLocaleString()}</td>
-                            <td className="py-2 pr-3 text-right tabular-nums">{row.failures.toLocaleString()}</td>
-                            <td className="py-2 pr-3 text-right tabular-nums">{row.promptTokens.toLocaleString()}</td>
-                            <td className="py-2 pr-3 text-right tabular-nums">{row.completionTokens.toLocaleString()}</td>
-                            <td className="py-2 text-right font-bold tabular-nums">{row.totalTokens.toLocaleString()}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {!usage.length && <p className="py-6 text-center text-xs text-[var(--muted)]">Belum ada pemakaian AI pada periode ini.</p>}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
-      </div>
-    </main>
-  );
+  return <main className="dashboard-page dashboard-page--wide">
+    <h1>AI Agent</h1><p className="dashboard-description">Configure the model, credentials and member access.</p>
+    <div className="mb-6 flex flex-wrap gap-2" aria-label="AI Agent sections">{([['config', 'Model & Key'], ['access', 'Access & Channels'], ['usage', 'Token usage']] as const).map(([key, label]) => <button key={key} type="button" className={`btn ${tab === key ? 'btn-primary' : ''}`} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
+    {error && <div className="dashboard-notice" role="alert">{error}</div>}
+    {loading ? <p role="status">Loading AI Agent settings…</p> : !settings ? <div className="dashboard-notice">AI Agent settings unavailable. <button type="button" className="btn" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : tab === 'usage' ? <section className="dashboard-section">
+      <h2>Token usage by member</h2><label className="dashboard-field"><span>Period</span><select className="input" value={days} onChange={event => setDays(Number(event.target.value))}>{[7, 30, 90].map(value => <option key={value} value={value}>{value} days</option>)}</select></label>
+      {usageError ? <div role="alert">{usageError} <button className="btn" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : !usage ? <p role="status">Loading usage…</p> : !usage.length ? <p>No AI usage recorded in this period.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[600px] text-left"><thead><tr>{['Member', 'Requests', 'Failures', 'Prompt', 'Completion', 'Total'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{usage.map(row => <tr key={row.userId}><th className="p-3 font-normal">{row.displayName || members.find(member => member.id === row.userId)?.displayName || row.userId}</th>{[row.requests, row.failures, row.promptTokens, row.completionTokens, row.totalTokens].map((value, index) => <td key={index} className="p-3 tabular-nums">{value.toLocaleString()}</td>)}</tr>)}</tbody></table></div>}
+    </section> : <form onSubmit={save}><fieldset disabled={saving} className="min-w-0">
+      {tab === 'config' ? <section className="dashboard-section max-w-3xl"><h2>Provider and model</h2>
+        <label className="dashboard-toggle"><span>Enable AI Agent</span><input type="checkbox" checked={settings.enabled} onChange={event => setSettings({ ...settings, enabled: event.target.checked })} /></label>
+        <div className="dashboard-grid mt-5"><label className="dashboard-field"><span>Provider</span><select className="input" value={settings.provider} onChange={event => setSettings({ ...settings, provider: event.target.value as Settings['provider'] })}><option value="gemini">Google Gemini</option><option value="openai-compatible">OpenAI-compatible</option></select></label>
+        <label className="dashboard-field"><span>Model</span><input className="input" required maxLength={120} value={settings.model} placeholder="gemini-2.5-flash" onChange={event => setSettings({ ...settings, model: event.target.value })} /></label></div>
+        {settings.provider === 'openai-compatible' && <label className="dashboard-field"><span>API base URL</span><input className="input" type="url" maxLength={500} value={settings.baseUrl || ''} onChange={event => setSettings({ ...settings, baseUrl: event.target.value || null })} /></label>}
+        <label className="dashboard-field"><span>API key ({settings.hasCredential ? 'saved' : 'not configured'})</span><input className="input" type="password" autoComplete="new-password" value={apiKey} onChange={event => { setApiKey(event.target.value); if (event.target.value) setClearKey(false); }} /><small>Credentials are encrypted and never displayed again.</small></label>
+        {settings.hasCredential && <label className="dashboard-toggle"><span>Remove saved API key</span><input type="checkbox" checked={clearKey} onChange={event => { setClearKey(event.target.checked); if (event.target.checked) setApiKey(''); }} /></label>}
+      </section> : <div className="dashboard-grid"><section className="dashboard-section"><h2>Member access</h2>
+        <label className="dashboard-toggle"><span>Allow all members</span><input type="checkbox" checked={settings.allowedUserIds.includes('*')} onChange={event => setSettings({ ...settings, allowedUserIds: event.target.checked ? ['*'] : [] })} /></label>
+        <label className="dashboard-field mt-4"><span>Search members</span><input className="input" type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <div className="max-h-72 overflow-y-auto">{members.filter(member => `${member.displayName} ${member.username} ${member.id}`.toLowerCase().includes(query.toLowerCase())).map(member => <label key={member.id} className="dashboard-toggle"><span>{member.displayName} (@{member.username})</span><input type="checkbox" checked={settings.allowedUserIds.includes('*') || settings.allowedUserIds.includes(member.id)} onChange={() => toggleMember(member.id)} /></label>)}</div>
+        {settings.allowedUserIds.filter(id => id !== '*' && !members.some(member => member.id === id)).map(id => <label key={id} className="dashboard-toggle"><span className="break-all">Unavailable member ({id})</span><input type="checkbox" checked onChange={() => toggleMember(id)} /></label>)}
+      </section><section className="dashboard-section"><h2>Excluded channels</h2><p className="mb-4 text-[var(--muted)]">The agent will not respond in selected channels.</p>
+        <label className="dashboard-toggle"><span>Exclude all channels</span><input type="checkbox" checked={settings.excludedChannelIds.includes('*')} onChange={event => setSettings({ ...settings, excludedChannelIds: event.target.checked ? ['*'] : [] })} /></label>
+        {[...channels, ...settings.excludedChannelIds.filter(id => id !== '*' && !channels.some(channel => channel.id === id)).map(id => ({ id, name: `Unavailable channel (${id})` }))].map(channel => <label key={channel.id} className="dashboard-toggle"><span className="break-all">{channel.name}</span><input type="checkbox" checked={settings.excludedChannelIds.includes('*') || settings.excludedChannelIds.includes(channel.id)} onChange={() => toggleChannel(channel.id)} /></label>)}
+      </section></div>}
+    </fieldset><div className="dashboard-actions"><button type="submit" className="btn btn-primary" disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save changes'}</button><span role="status">{notice || (dirty ? 'Unsaved changes' : 'No unsaved changes')}</span></div></form>}
+  </main>;
 }

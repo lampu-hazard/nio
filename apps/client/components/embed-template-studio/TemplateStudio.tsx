@@ -21,20 +21,27 @@ export function TemplateStudio({ guildId }: { guildId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => { load(); }, [guildId]);
 
   async function load() {
     setLoading(true);
-    const res = await api<TemplateListResponse>(`/guilds/${guildId}/embed-templates`);
-    setCategories(res.categories);
-    setTemplates(res.templates);
-    const first = res.templates[selected] ? selected : res.categories[0]?.category;
-    if (first) {
-      setSelected(first);
-      setDraft(JSON.parse(JSON.stringify(res.templates[first].template)));
+    setError('');
+    try {
+      const res = await api<TemplateListResponse>(`/guilds/${guildId}/embed-templates`);
+      setCategories(res.categories);
+      setTemplates(res.templates);
+      const first = res.templates[selected] ? selected : res.categories[0]?.category;
+      if (first) {
+        setSelected(first);
+        setDraft(structuredClone(res.templates[first].template));
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load templates.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   function selectCategory(category: string) {
@@ -62,32 +69,37 @@ export function TemplateStudio({ guildId }: { guildId: string }) {
   }
 
   async function save() {
-    setSaving(true);
-    setMessage('');
-    await api(`/guilds/${guildId}/embed-templates/${selected}`, {
-      method: 'PUT',
-      body: JSON.stringify({ template: draft }),
-    });
-    setMessage('Template saved.');
-    await load();
-    setSaving(false);
+    if (saving) return;
+    setSaving(true); setMessage('');
+    try {
+      await api(`/guilds/${guildId}/embed-templates/${selected}`, { method: 'PUT', body: JSON.stringify({ template: draft }) });
+      setTemplates(current => ({ ...current, [selected]: { ...current[selected], template: structuredClone(draft) } }));
+      setMessage('Template saved.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? `Save failed: ${reason.message}` : 'Save failed. Your draft is unchanged.');
+    } finally { setSaving(false); }
   }
 
   async function reset() {
+    if (saving || !window.confirm('Reset this template to its default? Unsaved edits will be discarded.')) return;
     setSaving(true);
-    await api(`/guilds/${guildId}/embed-templates/${selected}`, { method: 'DELETE' });
-    setMessage('Template reset to default.');
-    await load();
-    setSaving(false);
+    try {
+      await api(`/guilds/${guildId}/embed-templates/${selected}`, { method: 'DELETE' });
+      await load();
+      setMessage('Template reset to default.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? `Reset failed: ${reason.message}` : 'Reset failed.');
+    } finally { setSaving(false); }
   }
 
   if (loading) return <div className="card p-6 text-sm text-[var(--muted)]">Loading Embed Studio...</div>;
+  if (error) return <div className="dashboard-notice" role="alert">{error} <button type="button" className="btn" onClick={() => void load()}>Retry</button></div>;
   const meta = categories.find((category) => category.category === selected) || categories[0];
   const groups = Array.from(new Set(categories.map((category) => category.group)));
 
   return (
-    <div className="space-y-6">
-      {message && <div className="notice notice-success">{message}</div>}
+    <fieldset disabled={saving} className="min-w-0 space-y-6">
+      {message && <div className="dashboard-notice" role="status">{message}</div>}
       <div className="grid gap-6 xl:grid-cols-[260px_1fr_420px]">
         <aside className="card p-4">
           <h2 className="text-sm font-bold text-[var(--text)]">Categories</h2>
@@ -135,6 +147,6 @@ export function TemplateStudio({ guildId }: { guildId: string }) {
           <EmbedPreview template={draft} />
         </section>
       </div>
-    </div>
+    </fieldset>
   );
 }

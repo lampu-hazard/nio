@@ -212,12 +212,10 @@ export class VoiceActivityService implements OnModuleDestroy {
     const name = this.plain(member?.displayName ?? 'Unknown');
     const from = oldState.channelId;
     const to = newState.channelId;
-    const fromName = this.plain(oldState.channel?.name ?? 'Unknown');
-    const toName = this.plain(newState.channel?.name ?? 'Unknown');
     const notification = from === to ? null : !from
-      ? { title: 'Voice Join', description: `${name} joined voice ${toName}` }
-      : !to ? { title: 'Voice Leave', description: `${name} left voice ${fromName}` }
-        : { title: 'Voice Move', description: `${name} moved from ${fromName} to ${toName}` };
+      ? { title: 'Member joined voice channel', description: `**${name}** joined <#${to}>`, color: 0x57f287 }
+      : !to ? { title: 'Member left voice channel', description: `**${name}** left <#${from}>`, color: 0xed4245 }
+        : { title: 'Member changed voice channel', description: `**Before:** <#${from}>\n**After:** <#${to}>`, color: 0x3b82f6 };
     await this.serialize(async () => {
       let tracking = this.tracking.get(guild.id);
       if (tracking) {
@@ -236,7 +234,14 @@ export class VoiceActivityService implements OnModuleDestroy {
       await this.validateNotificationChannel(guild.id, config.channelId);
       const channel = await guild.channels.fetch(config.channelId);
       if (channel?.type !== ChannelType.GuildText && channel?.type !== ChannelType.GuildAnnouncement) return;
-      await channel.send({ embeds: [notification], allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } });
+      await channel.send({
+        embeds: [{
+          ...notification,
+          author: { name: member.displayName, icon_url: member.displayAvatarURL?.({ extension: 'png', size: 128 }) },
+          footer: { text: `ID: ${member.id}` }, timestamp: new Date(now).toISOString(),
+        }],
+        allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+      });
     } catch (err) { this.log('Voice notification', err); }
   }
 

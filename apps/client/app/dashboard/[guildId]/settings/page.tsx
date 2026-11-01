@@ -1,11 +1,17 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useRef, useState, use } from 'react';
 import { api } from '@/lib/api';
 
 type ChannelOption = { id: string; name: string };
 
+type RoleOption = { id: string; name: string; manageable: boolean };
+
 type Settings = {
+  voiceXpEnabled: boolean;
+  voiceXpPerMinute: number;
+  voiceNotificationChannelId: string | null;
+  voiceXpRewards: { level: number; roleId: string }[];
   logChannelId: string | null;
   messageDeleteLogChannelId: string | null;
   stickerEnabled: boolean;
@@ -68,7 +74,14 @@ function CheckboxRow({ title, description, checked, onChange }: { title: string;
 export default function SettingsPage({ params }: PageProps) {
   const { guildId } = use(params);
 
+  const activeGuild = useRef(guildId);
+  activeGuild.current = guildId;
+  const [loadedGuild, setLoadedGuild] = useState('');
   const [settings, setSettings] = useState<Settings>({
+    voiceXpEnabled: false,
+    voiceXpPerMinute: 10,
+    voiceNotificationChannelId: null,
+    voiceXpRewards: [],
     logChannelId: null,
     messageDeleteLogChannelId: null,
     stickerEnabled: false,
@@ -88,31 +101,38 @@ export default function SettingsPage({ params }: PageProps) {
     anomalyEnforcementMode: 'AUDIT_ONLY',
   });
   const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    fetchData();
-  }, [guildId]);
-
-  const fetchData = async () => {
+    let cancelled = false;
+    const fetchData = async () => {
     try {
       setLoading(true);
-      const [settingsRes, channelsRes] = await Promise.all([
+      const [settingsRes, channelsRes, rolesRes] = await Promise.all([
         api<{ ok: boolean; settings: Settings }>(`/guilds/${guildId}/settings`),
         api<{ ok: boolean; channels: ChannelOption[] }>(`/guilds/${guildId}/channels`),
+        api<{ ok: boolean; roles: RoleOption[] }>(`/guilds/${guildId}/roles`),
       ]);
+      if (cancelled) return;
       setSettings(settingsRes.settings);
       setChannels(channelsRes.channels || []);
+      setRoles(rolesRes.roles || []);
+      setLoadedGuild(guildId);
+      setSuccess('');
       setError('');
     } catch (err: any) {
-      setError(err?.message || 'Failed to load settings data');
+      if (!cancelled) setError(err?.message || 'Failed to load settings data');
     } finally {
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     }
-  };
+    };
+    void fetchData();
+    return () => { cancelled = true; };
+  }, [guildId]);
 
   const toggleSlowmodeChannel = (channelId: string) => {
     setSettings((prev) => {
@@ -138,6 +158,15 @@ export default function SettingsPage({ params }: PageProps) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || saving || loadedGuild !== guildId) return;
+    const levels = settings.voiceXpRewards.map((reward) => reward.level);
+    const roleIds = settings.voiceXpRewards.map((reward) => reward.roleId);
+    if (!Number.isInteger(settings.voiceXpPerMinute) || settings.voiceXpPerMinute < 1 || settings.voiceXpPerMinute > 1000
+      || levels.some((level) => !Number.isInteger(level) || level < 1 || level > 10000)
+      || roleIds.some((id) => !id) || new Set(levels).size !== levels.length || new Set(roleIds).size !== roleIds.length) {
+      setError('Use 1–1,000 XP per minute and unique levels (1–10,000) with a role for each reward.');
+      return;
+    }
     try {
       setSaving(true);
       setError('');
@@ -148,10 +177,11 @@ export default function SettingsPage({ params }: PageProps) {
         body: JSON.stringify(settings),
       });
 
+      if (activeGuild.current !== guildId) return;
       setSettings(res.settings);
       setSuccess('Settings updated successfully.');
     } catch (err: any) {
-      setError(err?.message || 'Failed to save settings');
+      if (activeGuild.current === guildId) setError(err?.message || 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -173,7 +203,7 @@ export default function SettingsPage({ params }: PageProps) {
               <div className="flex items-center gap-3">
                 {error && <span className="text-xs font-semibold text-[var(--danger)]">{error}</span>}
                 {success && <span className="text-xs font-semibold text-[var(--ok)]">{success}</span>}
-                <button type="submit" disabled={saving} className="btn btn-primary text-xs font-bold py-1.5 px-4">
+                <button type="submit" disabled={saving || loading || loadedGuild !== guildId} className="btn btn-primary text-xs font-bold py-1.5 px-4">
                   {saving ? 'Saving...' : 'Save Settings'}
                 </button>
               </div>
@@ -244,6 +274,54 @@ export default function SettingsPage({ params }: PageProps) {
                       </label>
                     </div>
                   )}
+                </section>
+
+                <section className="card p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <h3 className="text-sm font-semibold text-[var(--text)]">Voice XP</h3>
+                    <Switch checked={settings.voiceXpEnabled} label="Enable voice XP" onClick={() => setSettings((prev) => ({ ...prev, voiceXpEnabled: !prev.voiceXpEnabled }))} />
+                  </div>
+                  <p className="text-xs text-[var(--muted)]">Earn XP with at least two unmuted, undeafened members in voice. Bots, AFK and stage channels do not count.</p>
+                  <label className="block">
+                    <span className="field-label">XP per minute</span>
+                    <input type="number" min={1} max={1000} step={1} required value={Number.isNaN(settings.voiceXpPerMinute) ? '' : settings.voiceXpPerMinute}
+                      onChange={(event) => setSettings((prev) => ({ ...prev, voiceXpPerMinute: event.target.valueAsNumber }))} className="input py-1.5 text-xs" />
+                  </label>
+                  <p className="text-xs text-[var(--muted)]">Level 1 needs 100 XP, level 2 needs 400 XP. Each level needs 100 × level² total XP. Earlier reward roles are kept.</p>
+                  <div className="space-y-3">
+                    {settings.voiceXpRewards.map((reward, index) => (
+                      <div key={index} className="flex flex-wrap items-end gap-2">
+                        <label className="block w-24">
+                          <span className="field-label">Level {index + 1}</span>
+                          <input type="number" min={1} max={10000} step={1} required value={Number.isNaN(reward.level) ? '' : reward.level}
+                            onChange={(event) => setSettings((prev) => ({ ...prev, voiceXpRewards: prev.voiceXpRewards.map((row, i) => i === index ? { ...row, level: event.target.valueAsNumber } : row) }))} className="input py-1.5 text-xs" />
+                        </label>
+                        <label className="block min-w-36 flex-1">
+                          <span className="field-label">Reward role {index + 1}</span>
+                          <select required value={reward.roleId} onChange={(event) => setSettings((prev) => ({ ...prev, voiceXpRewards: prev.voiceXpRewards.map((row, i) => i === index ? { ...row, roleId: event.target.value } : row) }))} className="input py-1.5 text-xs">
+                            <option value="">Select role...</option>
+                            {reward.roleId && !roles.some((role) => role.id === reward.roleId) && <option value={reward.roleId} disabled>Unavailable role ({reward.roleId})</option>}
+                            {roles.map((role) => <option key={role.id} value={role.id} disabled={!role.manageable || settings.voiceXpRewards.some((row, i) => i !== index && row.roleId === role.id)}>{role.name}{!role.manageable ? ' (not assignable)' : ''}</option>)}
+                          </select>
+                        </label>
+                        <button type="button" aria-label={`Remove reward ${index + 1}`} onClick={() => setSettings((prev) => ({ ...prev, voiceXpRewards: prev.voiceXpRewards.filter((_, i) => i !== index) }))} className="btn text-xs">Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" disabled={settings.voiceXpRewards.length >= 50} onClick={() => setSettings((prev) => ({ ...prev, voiceXpRewards: [...prev.voiceXpRewards, { level: Math.min(10000, Math.max(0, ...prev.voiceXpRewards.map((reward) => Number.isFinite(reward.level) ? reward.level : 0)) + 1), roleId: '' }] }))} className="btn text-xs">Add level reward</button>
+                  <p className="text-xs text-[var(--muted)]">Reward roles must be below the bot’s highest role. Changes apply when members next participate in voice; existing roles are not removed.</p>
+                </section>
+
+                <section className="card p-4 space-y-3">
+                  <h3 className="text-sm font-semibold text-[var(--text)]">Voice notifications</h3>
+                  <label className="block">
+                    <span className="field-label">Notification channel</span>
+                    <select value={settings.voiceNotificationChannelId || ''} onChange={(event) => setSettings((prev) => ({ ...prev, voiceNotificationChannelId: event.target.value || null }))} className="input py-1.5 text-xs">
+                      <option value="">Disabled</option>
+                      {channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}
+                    </select>
+                  </label>
+                  <p className="text-xs text-[var(--muted)]">Plain embeds for joining, leaving and moving channels. Example: Othinus joined voice General. Works independently of voice XP.</p>
                 </section>
 
                 {/* Channel Logging */}

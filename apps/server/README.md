@@ -44,6 +44,14 @@ Dashboard Frontend                   Backend API                     Cloudflare 
 3. The message content is normalized and matched against an in-memory keyword cache to prevent DB queries on every message.
 4. If a match is found, the bot responds by sending a rich embed referencing the public R2 media URL.
 
+### Voice XP and Notifications
+
+Apply the additive migration with `bun run prisma:deploy` before starting the updated server. In guild **Settings**, enable Voice XP, choose XP per minute (default 10), and add level/role rewards. A level needs `100 × level²` total XP; rewards are cumulative and existing roles are never removed.
+
+XP requires at least two non-bot, unmuted and undeafened members in a regular voice channel. AFK/stage channels and bot downtime do not earn XP. Balances are saved while members remain connected; old voice-session history is not converted. Run only one gateway owner per guild; independent duplicate bot replicas require distributed ownership before enabling XP.
+
+The independent **Voice notifications** channel setting sends plain join, leave and move embeds. The bot needs View Channel, Send Messages and Embed Links there, and Manage Roles with reward roles below its highest role for level rewards. Selecting Disabled stops notifications without disabling XP.
+
 ## Technology Stack
 
 - **Runtime**: Bun

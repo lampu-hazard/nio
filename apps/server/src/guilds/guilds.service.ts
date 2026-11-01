@@ -4,6 +4,7 @@ import { DiscordBotService } from '../discord/discord-bot.service';
 import { DiscordSlowmodeService } from '../discord/discord-slowmode.service';
 import { DiscordAnomalyService } from '../discord/discord-anomaly.service';
 import { HallOfFameService } from '../discord/hall-of-fame.service';
+import { VoiceActivityService } from '../discord/voice-activity.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StickersService } from '../stickers/stickers.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
@@ -25,6 +26,7 @@ export class GuildsService {
     private readonly slowmode: DiscordSlowmodeService,
     private readonly anomaly: DiscordAnomalyService,
     private readonly hallOfFame: HallOfFameService,
+    private readonly voiceActivity: VoiceActivityService,
   ) {}
 
   canManage(userGuild: any): boolean {
@@ -160,7 +162,12 @@ export class GuildsService {
     const settings = await this.prisma.guildSettings.findUnique({
       where: { guildId },
     });
+    const rewards = await this.prisma.voiceXpReward.findMany({ where: { guildId }, orderBy: { level: 'asc' }, select: { level: true, roleId: true } });
     return {
+      voiceXpEnabled: settings?.voiceXpEnabled ?? false,
+      voiceXpPerMinute: settings?.voiceXpPerMinute ?? 10,
+      voiceNotificationChannelId: settings?.voiceNotificationChannelId ?? null,
+      voiceXpRewards: rewards.map(({ level, roleId }) => ({ level, roleId })),
       logChannelId: settings?.logChannelId || null,
       messageDeleteLogChannelId: settings?.messageDeleteLogChannelId || null,
       stickerEnabled: settings?.stickerEnabled || false,
@@ -194,9 +201,25 @@ export class GuildsService {
       await this.hallOfFame.validateChannel(guildId, hallChannelId);
     }
 
-    const updated = await this.prisma.guildSettings.upsert({
+    if (dto.voiceXpRewards !== undefined) {
+      const levels = new Set(dto.voiceXpRewards.map((reward) => reward.level));
+      const roles = new Set(dto.voiceXpRewards.map((reward) => reward.roleId));
+      if (levels.size !== dto.voiceXpRewards.length || roles.size !== dto.voiceXpRewards.length) {
+        throw new BadRequestException('Voice rewards must have unique levels and roles.');
+      }
+      await this.voiceActivity.validateRewardRoles(guildId, [...roles]);
+    }
+    if (dto.voiceNotificationChannelId) {
+      await this.voiceActivity.validateNotificationChannel(guildId, dto.voiceNotificationChannelId);
+    }
+
+    const updated = await this.voiceActivity.withGuildSettingsUpdate(guildId, () => this.prisma.$transaction(async (tx) => {
+      const saved = await tx.guildSettings.upsert({
       where: { guildId },
       update: {
+        voiceXpEnabled: dto.voiceXpEnabled,
+        voiceXpPerMinute: dto.voiceXpPerMinute,
+        voiceNotificationChannelId: dto.voiceNotificationChannelId,
         logChannelId: dto.logChannelId !== undefined ? dto.logChannelId : undefined,
         messageDeleteLogChannelId: dto.messageDeleteLogChannelId !== undefined ? dto.messageDeleteLogChannelId : undefined,
         stickerEnabled: dto.stickerEnabled !== undefined ? dto.stickerEnabled : undefined,
@@ -217,6 +240,9 @@ export class GuildsService {
       },
       create: {
         guildId,
+        voiceXpEnabled: dto.voiceXpEnabled ?? false,
+        voiceXpPerMinute: dto.voiceXpPerMinute ?? 10,
+        voiceNotificationChannelId: dto.voiceNotificationChannelId ?? null,
         logChannelId: dto.logChannelId || null,
         messageDeleteLogChannelId: dto.messageDeleteLogChannelId || null,
         stickerEnabled: dto.stickerEnabled || false,
@@ -235,7 +261,15 @@ export class GuildsService {
         guildBaselineEnabled: dto.guildBaselineEnabled ?? true,
         anomalyEnforcementMode: dto.anomalyEnforcementMode || 'AUDIT_ONLY',
       },
-    });
+      });
+      if (dto.voiceXpRewards !== undefined) {
+        await tx.voiceXpReward.deleteMany({ where: { guildId } });
+        if (dto.voiceXpRewards.length) {
+          await tx.voiceXpReward.createMany({ data: dto.voiceXpRewards.map(({ level, roleId }) => ({ guildId, level, roleId })) });
+        }
+      }
+      return saved;
+    }));
 
     if (dto.stickerEnabled !== undefined) {
       await this.stickers.setEnabled(guildId, dto.stickerEnabled);
@@ -258,6 +292,6 @@ export class GuildsService {
       enforcementMode: updated.anomalyEnforcementMode as any || 'AUDIT_ONLY',
     });
 
-    return updated;
+    return this.getSettings(guildId);
   }
 }

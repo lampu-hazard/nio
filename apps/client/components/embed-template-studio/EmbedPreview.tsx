@@ -21,7 +21,7 @@ function fill(value = '') {
 
 export function EmbedPreview({ template }: { template: EmbedTemplatePayload }) {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[#313338] p-4 text-white">
+    <div className="dashboard-discord-preview rounded-2xl border border-[var(--border)] bg-[#313338] p-4 text-white">
       {template.content && <p className="mb-3 whitespace-pre-wrap text-sm">{fill(template.content)}</p>}
       <div className="space-y-3">
         {template.embeds.map((embed, idx) => (

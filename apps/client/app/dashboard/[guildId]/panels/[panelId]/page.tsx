@@ -5,25 +5,26 @@ import { PanelEditorWorkspace } from '@/components/panel-editor/PanelEditorWorks
 export default async function EditPanelPage({ params }: { params: Promise<{ guildId: string; panelId: string }> }) {
   const { guildId, panelId } = await params;
   const [data, channelsData, rolesData] = await Promise.all([
-    api<{ ok: true; panel: Panel }>(`/guilds/${guildId}/panels/${panelId}`),
-    api<{ ok: true; channels: { id: string; name: string }[] }>(`/guilds/${guildId}/channels`).catch(() => ({ ok: true as const, channels: [] })),
-    api<{ ok: true; roles: { id: string; name: string; color?: string; position: number; manageable: boolean }[] }>(`/guilds/${guildId}/roles`).catch(() => ({ ok: true as const, roles: [] }))
+    api<{ ok: true; panel: Panel }>(`/guilds/${guildId}/panels/${panelId}`).catch(() => null),
+    api<{ ok: true; channels: { id: string; name: string }[] }>(`/guilds/${guildId}/channels`).catch(() => null),
+    api<{ ok: true; roles: { id: string; name: string; color?: string; position: number; manageable: boolean }[] }>(`/guilds/${guildId}/roles`).catch(() => null)
   ]);
+  if (!data || !channelsData || !rolesData) return <main className="dashboard-page"><h1>Edit panel</h1><div className="dashboard-notice" role="alert">Panel data unavailable. <a className="underline" href={`/dashboard/${guildId}/panels/${panelId}`}>Retry</a></div></main>;
   const panel = data.panel;
   const channel = channelsData.channels.find((item) => item.id === panel.channelId);
   const typeLabel = panel.type === 'RULES' ? 'Rules' : panel.type === 'ANNOUNCEMENT' ? 'Announcement' : 'Self Role';
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
+    <main className="dashboard-page dashboard-page--wide dashboard-legacy">
       <div className="mx-auto max-w-[1520px] space-y-4">
         {/* Compact Header Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div className="flex items-center gap-3">
             <a href={`/dashboard/${guildId}`} className="text-xs font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]">
-              ← Panels
+              Panels
             </a>
             <span className="text-[var(--border)]">/</span>
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">{panel.name}</h2>
+            <h1>{panel.name}</h1>
             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
               panel.status === 'PUBLISHED'
                 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'

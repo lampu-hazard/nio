@@ -72,16 +72,16 @@ export default function BoosterRolesPage({ params }: PageProps) {
   };
 
   return (
-    <main className="px-4 py-4 sm:px-6 lg:px-8">
+    <main className="dashboard-page dashboard-page--wide dashboard-legacy">
       <div className="mx-auto max-w-[1440px] space-y-4">
         {/* Compact Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5">
           <div>
-            <h2 className="text-sm font-bold tracking-tight text-[var(--text)]">Custom Booster Roles</h2>
+            <h1>Booster Roles</h1>
             <p className="text-xs text-[var(--muted)]">Review, audit, and manage personalized roles granted to Nitro server boosters.</p>
           </div>
           <span className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--muted)]">
-            {roles.length} roles
+            {error ? 'Unavailable' : `${roles.length} roles`}
           </span>
         </div>
 
@@ -91,7 +91,7 @@ export default function BoosterRolesPage({ params }: PageProps) {
         <section className="card overflow-hidden">
           {loading ? (
             <div className="p-8 text-center text-xs text-[var(--muted)]">Loading booster roles...</div>
-          ) : roles.length === 0 ? (
+          ) : error ? <div className="p-8">Booster roles unavailable. <button type="button" className="btn" onClick={() => void loadRoles()}>Retry</button></div> : roles.length === 0 ? (
             <div className="p-8 text-center text-xs text-[var(--muted)]">No booster custom roles have been created yet.</div>
           ) : (
             <div className="overflow-x-auto max-h-[600px]">

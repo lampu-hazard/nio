@@ -2,7 +2,7 @@ FROM oven/bun:1.4-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl gcompat
+RUN apk add --no-cache openssl gcompat font-dejavu
 
 COPY apps/server/package.json apps/server/bun.lock ./
 RUN bun install --frozen-lockfile
@@ -18,7 +18,7 @@ FROM oven/bun:1.4-alpine AS runner
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl gcompat
+RUN apk add --no-cache openssl gcompat font-dejavu
 
 COPY apps/server/package.json apps/server/bun.lock ./
 RUN bun install --frozen-lockfile --production

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, OnModuleDestroy } from '@nestjs/common
 import { ChannelType, Client, escapeMarkdown, Guild, GuildMember, VoiceState } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../logger/logger.service';
+import { renderVoiceLevelCard } from './voice-level-card';
 
 export function voiceLevel(xp: bigint): number {
   let level = BigInt(Math.floor(Math.sqrt(Number(xp / 100n))));
@@ -96,7 +97,7 @@ export class VoiceActivityService implements OnModuleDestroy {
     const candidates = new Map<string, { guild: Guild; member: GuildMember; rewards: Config['rewards'] }>();
     // ponytail: one gateway owner accrues each guild; add distributed ownership before running duplicate bot replicas.
     for (const [key, pending] of this.pending) {
-      let levelUp: number | null;
+      let levelUp: { previousLevel: number; level: number; xp: bigint } | null;
       try {
         levelUp = await this.prisma.$transaction(async (tx) => {
           const where = { guildId_userId: { guildId: pending.guild.id, userId: pending.member.id } };
@@ -105,7 +106,8 @@ export class VoiceActivityService implements OnModuleDestroy {
           const data = { xp: (balance?.xp ?? 0n) + units / 60000n, remainder: Number(units % 60000n) };
           await tx.voiceXpBalance.upsert({ where, create: { guildId: pending.guild.id, userId: pending.member.id, ...data }, update: data });
           const level = voiceLevel(data.xp);
-          return level > voiceLevel(balance?.xp ?? 0n) ? level : null;
+          const previousLevel = voiceLevel(balance?.xp ?? 0n);
+          return level > previousLevel ? { previousLevel, level, xp: data.xp } : null;
         });
         this.pending.delete(key);
         candidates.set(key, pending);
@@ -119,10 +121,22 @@ export class VoiceActivityService implements OnModuleDestroy {
         await this.validateNotificationChannel(pending.guild.id, channelId);
         const channel = await pending.guild.channels.fetch(channelId);
         if (channel?.type !== ChannelType.GuildText && channel?.type !== ChannelType.GuildAnnouncement) continue;
-        await channel.send({
-          embeds: [{ title: 'Level Up', description: `${this.plain(pending.member.displayName)} reached level ${levelUp}` }],
-          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
-        });
+        const embed = { title: 'Level Up', description: `${this.plain(pending.member.displayName)} reached level ${levelUp.level}` };
+        const allowedMentions = { parse: [] as [], users: [], roles: [], repliedUser: false };
+        try {
+          const image = await renderVoiceLevelCard({
+            name: pending.member.displayName, ...levelUp,
+            avatarUrl: pending.member.displayAvatarURL?.({ extension: 'png', size: 128 }) ?? null,
+          });
+          const nextXp = 100n * (BigInt(levelUp.level) + 1n) ** 2n;
+          await channel.send({
+            embeds: [{ ...embed, image: { url: 'attachment://voice-level-up.png' } }], allowedMentions,
+            files: [{ attachment: image, name: 'voice-level-up.png', description: `${pending.member.displayName.slice(0, 100)}: level ${levelUp.previousLevel} → ${levelUp.level}. Total XP ${levelUp.xp}. Next level ${levelUp.level + 1}: ${nextXp} XP.` }],
+          });
+        } catch (err) {
+          this.log('Voice level-up card', err);
+          await channel.send({ embeds: [embed], allowedMentions });
+        }
       } catch (err) { this.log('Voice level-up notification', err); }
     }
     for (const tracking of this.tracking.values()) {

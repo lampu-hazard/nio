@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, jest } from '@jest/globals';
 import { ChannelType, Collection, PermissionsBitField } from 'discord.js';
 import { VoiceActivityService, accrueVoiceXp, voiceLevel } from './voice-activity.service';
+import * as levelCard from './voice-level-card';
 
 function fixture() {
   const balances = new Map<string, any>();
@@ -66,8 +67,11 @@ describe('voice XP arithmetic', () => {
 });
 
 describe('voice activity', () => {
-  beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(0); });
-  afterEach(() => { jest.useRealTimers(); });
+  beforeEach(() => {
+    jest.useFakeTimers(); jest.setSystemTime(0);
+    jest.spyOn(levelCard, 'renderVoiceLevelCard').mockRejectedValue(new Error('Renderer unavailable'));
+  });
+  afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
 
   it('awards two eligible humans while still connected', async () => {
     const f = fixture();
@@ -201,6 +205,39 @@ describe('voice activity', () => {
       [{ title: 'Level Up', description: 'Othinus reached level 3' }],
       [{ title: 'Level Up', description: 'b reached level 3' }],
     ]);
+    await f.service.onModuleDestroy();
+  });
+
+  it('attaches the level card using the committed previous level and balance', async () => {
+    const png = Buffer.from('test-png');
+    jest.mocked(levelCard.renderVoiceLevelCard).mockResolvedValue(png);
+    const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs';
+    f.balances.set('a', { xp: 395n, remainder: 0 });
+    const a = f.state('a', 'general');
+    a.member.displayAvatarURL = () => 'https://cdn.discordapp.com/avatars/123/hash.png?size=128';
+    f.guild.voiceStates.cache.set('a', a); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    await f.service.start(); jest.setSystemTime(30000); await f.service.flush(); await f.service.flush();
+    expect(levelCard.renderVoiceLevelCard).toHaveBeenCalledWith({ name: 'Othinus', previousLevel: 1, level: 2, xp: 400n, avatarUrl: 'https://cdn.discordapp.com/avatars/123/hash.png?size=128' });
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.send.mock.calls[0][0]).toMatchObject({
+      embeds: [{ description: 'Othinus reached level 2', image: { url: 'attachment://voice-level-up.png' } }],
+      files: [{ attachment: png, name: 'voice-level-up.png', description: 'Othinus: level 1 → 2. Total XP 400. Next level 3: 900 XP.' }],
+    });
+    expect(f.balances.get('a').xp).toBe(400n);
+    await f.service.onModuleDestroy();
+  });
+
+  it('falls back to the plain embed if the card attachment cannot be delivered', async () => {
+    jest.mocked(levelCard.renderVoiceLevelCard).mockResolvedValue(Buffer.from('test-png'));
+    const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs'; f.addRole('one', 1);
+    f.balances.set('a', { xp: 95n, remainder: 0 }); const a = f.state('a', 'general');
+    f.guild.voiceStates.cache.set('a', a); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    f.send.mockRejectedValueOnce(new Error('Missing Attach Files permission'));
+    await f.service.start(); jest.setSystemTime(30000); await f.service.flush(); await f.service.flush();
+    expect(f.send).toHaveBeenCalledTimes(2);
+    expect(f.send.mock.calls[1][0]).toEqual({ embeds: [{ title: 'Level Up', description: 'Othinus reached level 1' }], allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } });
+    expect(f.balances.get('a').xp).toBe(100n);
+    expect(a.member.roles.cache.has('one')).toBe(true);
     await f.service.onModuleDestroy();
   });
 

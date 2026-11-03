@@ -1,0 +1,23 @@
+export function normalizePanelMediaUrl(value: string | null | undefined, trustedOrigin: string): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  const input = value.trim();
+  if (!input) return null;
+  if (/[\u0000- \u007f\\]/.test(input)) throw new Error('Image URL must be a valid HTTPS URL.');
+  let absolute = input;
+  if (input.startsWith('//')) absolute = `https:${input}`;
+  else if (input.startsWith('/')) {
+    const base = new URL(trustedOrigin);
+    if (base.protocol !== 'https:' || base.username || base.password) throw new Error('Trusted image origin must use HTTPS.');
+    absolute = new URL(input, base.origin).href;
+  } else if (!/^[a-z][a-z\d+.-]*:/i.test(input)) {
+    if (!/^(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(input)) {
+      throw new Error('Image URL must include a valid domain.');
+    }
+    absolute = `https://${input}`;
+  }
+  const url = new URL(absolute);
+  if (url.protocol !== 'https:' || url.username || url.password || !url.hostname) {
+    throw new Error('Image URL must be a public HTTPS URL without credentials.');
+  }
+  return url.href;
+}

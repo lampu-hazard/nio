@@ -132,6 +132,8 @@ model Panel {
   color           String      @default("#5865F2")
   imageUrl        String?
   thumbnailUrl    String?
+  visualDocument  Json?
+  revision        Int         @default(0)
   maxRoles        Int         @default(0)
   requireRoleId   String?
   status          PanelStatus @default(DRAFT)

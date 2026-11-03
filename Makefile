@@ -15,7 +15,10 @@ test-client:
 test-server:
 	cd apps/server && bun run test
 
-test: test-client test-server
+test-panel-visual-contract:
+	bun scripts/sync-panel-visual.ts --check
+
+test: test-panel-visual-contract test-client test-server
 
 build-server:
 	cd apps/server && bun run build

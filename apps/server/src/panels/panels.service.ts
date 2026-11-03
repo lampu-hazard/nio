@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { PanelStatus, PanelRole } from '@prisma/client';
+import { PanelStatus, PanelRole, Prisma } from '@prisma/client';
+import { PanelPublishLockService } from './visual/panel-publish-lock.service';
+import { validatePanelVisualDocument } from './visual/panel-visual.validation';
+import type { PanelVisualDocument } from './visual/panel-visual.document';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { AppError } from '../common/errors/app-error';
@@ -14,7 +17,35 @@ export class PanelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bot: DiscordBotService,
+    private readonly locks: PanelPublishLockService,
   ) {}
+
+  private visualData(value: unknown, guildId: string, type: string, roleIds: string[]) {
+    if (value === undefined) return undefined;
+    if (value === null) return Prisma.DbNull;
+    let document: PanelVisualDocument;
+    try { document = validatePanelVisualDocument(value); }
+    catch (error) { throw new AppError('PANEL_VISUAL_INVALID', (error as Error).message, 400); }
+    if (type === 'LEADERBOARD' && document.editorMode === 'CANVAS') throw new AppError('PANEL_VISUAL_INVALID', 'Leaderboard panels do not support Canvas mode.', 400);
+    const keys = [document.simpleCrop?.assetKey, ...(document.canvas?.elements.flatMap(e => e.type === 'image' ? [e.assetKey] : []) ?? [])].filter(Boolean) as string[];
+    if (keys.some(key => !key.startsWith(`panels/${guildId}/`))) throw new AppError('PANEL_VISUAL_INVALID', 'Images must belong to this server.', 400);
+    for (const control of document.native?.controls ?? []) {
+      if (control.kind === 'role' && (type !== 'SELF_ROLE' || !roleIds.includes(control.panelRoleId))) throw new AppError('PANEL_VISUAL_INVALID', 'Role control must reference a role in this self-role panel.', 400);
+    }
+    return document as unknown as Prisma.InputJsonValue;
+  }
+
+  private async mutate<T>(guildId: string, panelId: string, expectedRevision: number | undefined, work: (tx: Prisma.TransactionClient, panel: Awaited<ReturnType<PanelsService['get']>>) => Promise<T>): Promise<T> {
+    return this.locks.run(guildId, panelId, async () => {
+      const panel = await this.get(guildId, panelId);
+      if (expectedRevision !== undefined && panel.revision !== expectedRevision) throw new AppError('PANEL_REVISION_CONFLICT', 'Panel changed. Reload before saving.', 409);
+      return this.prisma.$transaction(async tx => {
+        const claimed = await tx.panel.updateMany({ where: { id: panelId, guildId, revision: panel.revision }, data: { revision: { increment: 1 } } });
+        if (claimed.count !== 1) throw new AppError('PANEL_REVISION_CONFLICT', 'Panel changed. Reload before saving.', 409);
+        return work(tx, panel);
+      });
+    });
+  }
 
   list(guildId: string) {
     return this.prisma.panel.findMany({

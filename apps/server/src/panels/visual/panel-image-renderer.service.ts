@@ -23,6 +23,7 @@ export class PanelImageRendererService implements OnModuleDestroy {
   private readonly queue: Job[] = [];
   private readonly running = new Set<Job>();
   private closed = false;
+  private readonly terminations = new Set<Promise<void>>();
 
   constructor(private readonly assets: PanelAssetService) {}
 
@@ -89,8 +90,11 @@ export class PanelImageRendererService implements OnModuleDestroy {
     const index = this.queue.indexOf(job);
     if (index >= 0) this.queue.splice(index, 1);
     const release = () => { this.running.delete(job); this.drain(); };
-    if (job.worker) void job.worker.terminate().then(release, release);
-    else release();
+    if (job.worker) {
+      const termination = job.worker.terminate().then(release, release);
+      this.terminations.add(termination);
+      void termination.then(() => this.terminations.delete(termination));
+    } else release();
     if (error) job.reject(error);
     else if (!png || png.length > 8 * 1024 * 1024) job.reject(new Error('Invalid panel output size.'));
     else job.resolve(png);
@@ -100,5 +104,6 @@ export class PanelImageRendererService implements OnModuleDestroy {
     this.closed = true;
     const jobs = [...this.queue, ...this.running];
     for (const job of jobs) this.finish(job, new Error('Panel renderer is shutting down.'));
+    await Promise.all(this.terminations);
   }
 }

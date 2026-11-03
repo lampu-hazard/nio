@@ -1,3 +1,12 @@
+export class PreviewTrigger {
+  private consumed = 0;
+  shouldRender(automatic: boolean, refresh: number) {
+    const manual = refresh !== this.consumed;
+    this.consumed = refresh;
+    return automatic || manual;
+  }
+}
+
 export class PreviewRequest {
   private controller?: AbortController;
   private blobUrl?: string;

@@ -2,10 +2,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { PanelVisualDocument } from '@/lib/panel-visual/generated/panel-visual.document';
-import { PreviewRequest } from '@/lib/panel-visual/preview-request';
+import { PreviewRequest, PreviewTrigger } from '@/lib/panel-visual/preview-request';
 
 export function DiscordPanelPreview({ guildId, document }: { guildId: string; document: PanelVisualDocument }) {
   const request = useRef<PreviewRequest | null>(null);
+  const trigger = useRef(new PreviewTrigger());
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -21,14 +22,15 @@ export function DiscordPanelPreview({ guildId, document }: { guildId: string; do
     const client = request.current;
     if (!client) return;
     client.cancel(); setUrl(''); setError(''); setBusy(false);
-    if (!hasImage || (!automatic && refresh === 0)) return;
+    if (!hasImage || !trigger.current.shouldRender(automatic, refresh)) return;
+    let active = true;
     const timer = setTimeout(() => {
       setBusy(true);
-      client.render(`/api/guilds/${guildId}/panels/visual-preview`, { visualDocument: document }, setUrl)
-        .catch(cause => setError(cause instanceof Error ? cause.message : 'Preview failed.'))
-        .finally(() => setBusy(false));
-    }, 400);
-    return () => { clearTimeout(timer); client.cancel(); };
+      client.render(`/api/guilds/${guildId}/panels/visual-preview`, { visualDocument: document }, value => { if (active) setUrl(value); })
+        .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Preview failed.'); })
+        .finally(() => { if (active) setBusy(false); });
+    }, automatic ? 400 : 0);
+    return () => { active = false; clearTimeout(timer); client.cancel(); };
   }, [document, guildId, automatic, refresh, hasImage]);
   if (!hasImage) return null;
   return <section className="card-flat p-4 space-y-3">

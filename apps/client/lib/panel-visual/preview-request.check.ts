@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { PreviewRequest } from './preview-request';
+import { PreviewRequest, PreviewTrigger } from './preview-request';
+const trigger = new PreviewTrigger();
+assert.equal(trigger.shouldRender(false, 0), false);
+assert.equal(trigger.shouldRender(false, 1), true);
+assert.equal(trigger.shouldRender(false, 1), false, 'Editing after a manual render must not trigger another request');
+assert.equal(trigger.shouldRender(true, 1), true);
+assert.equal(trigger.shouldRender(false, 1), false);
+assert.equal(trigger.shouldRender(false, 2), true);
 const pending: { signal: AbortSignal; resolve: (value: Response) => void }[] = [];
 const revoked: string[] = [];
 const displayed: string[] = [];

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createCanvas, GlobalFonts, loadImage } from '@napi-rs/canvas';
 import type { CanvasScene } from './panel-visual.document';
 import { cropSourceRect, layoutCanvas } from './panel-visual.layout';
-import { inspectPanelRaster } from './panel-asset.service';
+import { inspectPanelRaster } from './panel-raster';
 
 async function render() {
   for (const name of ['DejaVuSans.ttf', 'DejaVuSans-Bold.ttf']) {

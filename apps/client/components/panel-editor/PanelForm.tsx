@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 import type { Panel } from '@/lib/types';
 import type { PanelVisualDocument } from '@/lib/panel-visual/generated/panel-visual.document';
-import { mediaPayload, switchEditorMode, uploadedAssetKey } from '@/lib/panel-visual/workspace-state';
+import { mediaPayload, switchEditorMode, uploadedAssetKey, updateBanner } from '@/lib/panel-visual/workspace-state';
 import { CanvasEditor } from './canvas/CanvasEditor';
 import { DiscordPanelPreview } from './canvas/DiscordPanelPreview';
 import { PresentationSettings } from './PresentationSettings';
@@ -153,8 +153,9 @@ export function PanelForm({
 
   function patchDraft(patch: Partial<Draft>) {
     const next = { ...draft, ...patch };
-    setDraft(next); setDirty(true);
-    onPreviewChange?.({ ...panel, ...next, visualDocument: visual, channelId, roles: panel?.roles || [] });
+    const nextVisual = patch.imageUrl === undefined ? visual : updateBanner(visual, draft.imageUrl, patch.imageUrl);
+    setDraft(next); setVisual(nextVisual); setDirty(true);
+    onPreviewChange?.({ ...panel, ...next, visualDocument: nextVisual, channelId, roles: panel?.roles || [] });
   }
 
   function applyTemplate(key: keyof typeof TEMPLATES) {
@@ -312,7 +313,7 @@ export function PanelForm({
           <button type="button" onClick={() => applyTemplate('rules')} className="btn border-transparent bg-[var(--panel)]">Rules Template</button>
           <button type="button" onClick={() => applyTemplate('selfRole')} className="btn border-transparent bg-[var(--panel)]">Self Role Template</button>
           <button type="button" onClick={() => applyTemplate('announcement')} className="btn border-transparent bg-[var(--panel)]">Announcement Template</button>
-          <button type="button" onClick={() => applyTemplate('leaderboard')} className="btn border-transparent bg-[var(--panel)]">Leaderboard Template</button>
+          <button type="button" disabled={visual?.editorMode === 'CANVAS'} onClick={() => applyTemplate('leaderboard')} className="btn border-transparent bg-[var(--panel)]">Leaderboard Template</button>
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">

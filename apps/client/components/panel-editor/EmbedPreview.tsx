@@ -12,8 +12,9 @@ const STYLE_LABELS: Record<string, string> = {
 export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
   const document = panel?.visualDocument;
   const presentation = resolvePresentation(panel?.style ?? 'PREMIUM', document?.presentation);
+  const native = document?.editorMode === 'CANVAS' ? document.native : undefined;
   const allRoles = panel?.roles || [];
-  const roles = document?.native ? allRoles.filter(role => document.native!.controls.some(control => control.kind === 'role' && control.panelRoleId === role.id)) : allRoles;
+  const roles = native ? native.controls.flatMap(control => control.kind === 'role' ? allRoles.filter(role => role.id === control.panelRoleId) : []) : allRoles;
   function media(value?: string | null) { try { return normalizePanelMediaUrl(value, typeof window === 'undefined' ? 'https://localhost' : window.location.origin); } catch { return null; } }
   const banner = media(panel?.imageUrl);
   const thumbnail = media(panel?.thumbnailUrl);
@@ -51,7 +52,7 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
                     <div className="flex items-start gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="text-lg font-black text-white">{panel?.title || 'Self Roles'}</div>
-                        {!document?.native && panel?.style !== 'MINIMAL' && panel?.accentText && (
+                        {!native && panel?.style !== 'MINIMAL' && panel?.accentText && (
                           <div className="mt-1 text-sm font-semibold" style={{ color }}>{panel.accentText}</div>
                         )}
                       </div>
@@ -62,10 +63,10 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
                     </div>
 
                     <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#dbdee1]">
-                      {document?.native ? document.native.blocks.map(block => block.text).join('\n\n') : panel?.description || 'Select roles below to customize your profile.'}
+                      {native ? native.blocks.map(block => block.text).join('\n\n') : panel?.description || 'Select roles below to customize your profile.'}
                     </p>
 
-                    {showRoleComponents && roles.length > 0 && (
+                    {!native && showRoleComponents && roles.length > 0 && (
                       <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
                         {roles.map((role) => (
                           <div key={role.id} className="text-sm text-[#dbdee1]">

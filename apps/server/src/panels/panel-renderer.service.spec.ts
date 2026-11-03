@@ -56,6 +56,11 @@ describe('PanelRendererService', () => {
     expect(res.allowedMentions).toMatchObject({ parse: [], users: [], roles: [] });
   });
 
+  it('publishes Simple fields after switching back while retaining the inactive canvas native draft', async () => {
+    const res = await service.render({ id: 'p', type: 'RULES', title: 'Rules', style: 'MINIMAL', description: 'Simple description', roles: [], visualDocument: { version: 1, editorMode: 'SIMPLE', canvas: { width: 600, height: 400, background: '#000000', description: 'Canvas', elements: [] }, native: { blocks: [{ id: 'b', text: 'Canvas native text' }], controls: [] } } }, mockGuild as any);
+    expect(res.embeds[0].data.description).toBe('Simple description');
+  });
+
   it('renders a chat leaderboard panel with podium indicators', async () => {
     const panel = {
       id: 'panel-2',

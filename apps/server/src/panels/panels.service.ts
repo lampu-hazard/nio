@@ -35,6 +35,18 @@ export class PanelsService {
     return document as unknown as Prisma.InputJsonValue;
   }
 
+  private auditMetadata(panel: { revision: number; visualDocument?: unknown }, extra?: Record<string, unknown>) {
+    const doc = panel.visualDocument && typeof panel.visualDocument === 'object' ? (panel.visualDocument as Partial<PanelVisualDocument>) : null;
+    return {
+      mode: doc?.editorMode ?? 'SIMPLE',
+      version: doc?.version ?? 0,
+      revision: panel.revision,
+      elementCount: doc?.canvas?.elements?.length ?? (doc?.simpleCrop ? 1 : 0),
+      nativeControlCount: doc?.native?.controls?.length ?? 0,
+      ...extra,
+    };
+  }
+
   private async mutate<T>(guildId: string, panelId: string, expectedRevision: number | undefined, work: (tx: Prisma.TransactionClient, panel: Awaited<ReturnType<PanelsService['get']>>) => Promise<T>, lockHeld = false): Promise<T> {
     const execute = async () => {
       const panel = await this.get(guildId, panelId);
@@ -99,7 +111,7 @@ export class PanelsService {
       include: { roles: true },
     });
 
-    await this.auditLog(guildId, createdById, 'PANEL_CREATE', panel.id, { revision: panel.revision });
+    await this.auditLog(guildId, createdById, 'PANEL_CREATE', panel.id, this.auditMetadata(panel));
     return panel;
   }
 
@@ -134,7 +146,7 @@ export class PanelsService {
       });
     });
 
-    await this.auditLog(guildId, userId, 'PANEL_UPDATE', panelId, { revision: updated.revision });
+    await this.auditLog(guildId, userId, 'PANEL_UPDATE', panelId, this.auditMetadata(updated));
     return updated;
   }
 
@@ -142,7 +154,7 @@ export class PanelsService {
     const updated = await this.mutate(guildId, panelId, undefined, tx =>
       tx.panel.update({ where: { id: panelId }, data: { status: PanelStatus.ARCHIVED } }),
     );
-    await this.auditLog(guildId, userId, 'PANEL_ARCHIVE', panelId, { revision: updated.revision });
+    await this.auditLog(guildId, userId, 'PANEL_ARCHIVE', panelId, this.auditMetadata(updated));
     return updated;
   }
 
@@ -231,7 +243,7 @@ export class PanelsService {
       data: { messageId, status: 'PUBLISHED', lastPublishedAt: new Date() },
       include: { roles: { orderBy: { position: 'asc' } } },
     }), lockHeld);
-    await this.auditLog(guildId, userId, 'PANEL_PUBLISH', panelId, { revision: updated.revision });
+    await this.auditLog(guildId, userId, 'PANEL_PUBLISH', panelId, this.auditMetadata(updated, { outcome: 'PUBLISHED' }));
     return updated;
   }
 
@@ -241,7 +253,7 @@ export class PanelsService {
       data: { messageId: null, status: PanelStatus.DRAFT, lastPublishedAt: null },
       include: { roles: { orderBy: { position: 'asc' } } },
     }), lockHeld);
-    await this.auditLog(guildId, userId, 'PANEL_UNPUBLISH', panelId, { revision: updated.revision });
+    await this.auditLog(guildId, userId, 'PANEL_UNPUBLISH', panelId, this.auditMetadata(updated, { outcome: 'DRAFT' }));
     return updated;
   }
 

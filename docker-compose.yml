@@ -34,7 +34,7 @@ services:
       - private
 
   nio-migrate:
-    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-server:${IMAGE_TAG:-latest}
+    image: ${GHCR_NAMESPACE:-ghcr.io/lampu-hazard}/nio-server:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -53,7 +53,7 @@ services:
       - private
 
   nio-server:
-    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-server:${IMAGE_TAG:-latest}
+    image: ${GHCR_NAMESPACE:-ghcr.io/lampu-hazard}/nio-server:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -78,7 +78,7 @@ services:
       - private
 
   nio-client:
-    image: ${DOCKERHUB_NAMESPACE:-lampuhazard}/nio-client:${IMAGE_TAG:-latest}
+    image: ${GHCR_NAMESPACE:-ghcr.io/lampu-hazard}/nio-client:${IMAGE_TAG:-latest}
     build:
       context: ./apps/client
       dockerfile: Dockerfile

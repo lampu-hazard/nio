@@ -37,6 +37,7 @@
     "nest-winston": "latest",
     "pg": "^8.22.0",
     "prisma": "^6.19.0",
+    "quickjs-emscripten": "0.32.0",
     "reflect-metadata": "latest",
     "rxjs": "latest",
     "sharp": "0.35.5",

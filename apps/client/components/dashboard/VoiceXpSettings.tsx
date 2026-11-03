@@ -8,7 +8,7 @@ export function VoiceXpSettings({ guildId }: { guildId: string }) {
     <section className="dashboard-section"><h2>Voice XP</h2>
       <Toggle label="Enable voice XP" checked={settings.voiceXpEnabled} onChange={checked => setSettings(previous => ({ ...previous, voiceXpEnabled: checked }))} />
       <label className="dashboard-field mt-5"><span className="field-label">XP per minute</span><input className="input" type="number" required min={1} max={1000} step={1} value={Number.isNaN(settings.voiceXpPerMinute) ? '' : settings.voiceXpPerMinute} onChange={event => setSettings(previous => ({ ...previous, voiceXpPerMinute: event.target.valueAsNumber }))} /></label>
-      <p className="text-[var(--muted)]">At least two eligible people must be in ordinary voice. Bots, AFK, stage, muted and deafened members do not earn XP.</p>
+      <p className="text-[var(--muted)]">Join ordinary voice with another eligible member or a bot to earn XP. Bots count as companions even when muted or deafened, but never earn XP or reward roles. You cannot earn XP while alone, muted, deafened, or in AFK/stage channels. Progress is saved every minute.</p>
     </section>
     <section className="dashboard-section"><h2>Level rewards</h2><p className="mb-5 text-[var(--muted)]">Level 1 requires 100 XP; level 2 requires 400 XP. Each level requires 100 × level² total XP. Earlier reward roles are kept.</p>
       {settings.voiceXpRewards.map((reward, index) => <div key={index} className="dashboard-reward">

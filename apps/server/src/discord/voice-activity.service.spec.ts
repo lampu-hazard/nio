@@ -86,7 +86,7 @@ describe('voice activity', () => {
   });
 
   it.each([
-    ['alone', null, {}], ['bot', 'general', { member: { user: { bot: true }, id: 'b' } }],
+    ['alone', null, {}],
     ['self mute', 'general', { selfMute: true }], ['server mute', 'general', { serverMute: true }],
     ['self deaf', 'general', { selfDeaf: true }], ['server deaf', 'general', { serverDeaf: true }],
     ['AFK', 'afk', {}], ['stage', 'stage', {}],
@@ -98,6 +98,70 @@ describe('voice activity', () => {
     jest.setSystemTime(60000);
     await f.service.flush();
     expect([...f.balances.values()].every((b) => b.xp === 0n)).toBe(true);
+    await f.service.onModuleDestroy();
+  });
+
+  it.each([false, true])('awards a human with a bot companion (bot muted/deafened: %s)', async (inactive) => {
+    const f = fixture();
+    const bot = f.state('bot', 'general', { selfMute: inactive, serverMute: inactive, selfDeaf: inactive, serverDeaf: inactive });
+    bot.member.user.bot = true;
+    f.guild.voiceStates.cache.set('a', f.state('a', 'general'));
+    f.guild.voiceStates.cache.set('bot', bot);
+    await f.service.start();
+    jest.setSystemTime(60000);
+    await f.service.flush();
+    expect(f.balances.get('a')?.xp).toBe(10n);
+    expect(f.balances.has('bot')).toBe(false);
+    await f.service.onModuleDestroy();
+  });
+
+  it.each(['leave', 'move'])('credits only the interval with a bot companion before its %s', async (kind) => {
+    const f = fixture(); f.settings.voiceNotificationChannelId = 'logs';
+    f.guild.voiceStates.cache.set('a', f.state('a', 'general'));
+    const absent = f.state('bot', null); absent.member.user.bot = true;
+    const joined = f.state('bot', 'general'); joined.member.user.bot = true;
+    const departed = f.state('bot', kind === 'leave' ? null : 'lounge'); departed.member.user.bot = true;
+    await f.service.start();
+    jest.setSystemTime(30000);
+    await f.change(absent, joined);
+    jest.setSystemTime(60000);
+    await f.change(joined, departed);
+    jest.setSystemTime(120000);
+    await f.service.flush();
+    expect(f.balances.get('a')?.xp).toBe(5n);
+    expect(f.balances.has('bot')).toBe(false);
+    expect(f.send).not.toHaveBeenCalled();
+    await f.service.onModuleDestroy();
+  });
+
+  it.each([
+    ['self mute', 'general', { selfMute: true }], ['server mute', 'general', { serverMute: true }],
+    ['self deaf', 'general', { selfDeaf: true }], ['server deaf', 'general', { serverDeaf: true }],
+    ['AFK', 'afk', {}], ['stage', 'stage', {}], ['different channel', 'lounge', {}],
+  ])('does not award a human with a bot when blocked by %s', async (_name, channel, extra) => {
+    const f = fixture();
+    const bot = f.state('bot', channel === 'lounge' ? 'general' : channel); bot.member.user.bot = true;
+    f.guild.voiceStates.cache.set('a', f.state('a', channel, extra));
+    f.guild.voiceStates.cache.set('bot', bot);
+    await f.service.start();
+    jest.setSystemTime(60000);
+    await f.service.flush();
+    expect(f.balances.size).toBe(0);
+    await f.service.onModuleDestroy();
+  });
+
+  it('never grants reward roles or XP to bots with an existing balance', async () => {
+    const f = fixture(); f.addRole('one', 1);
+    const bot = f.state('bot', 'general'); bot.member.user.bot = true;
+    f.balances.set('bot', { xp: 100n, remainder: 0 });
+    f.guild.voiceStates.cache.set('a', f.state('a', 'general'));
+    f.guild.voiceStates.cache.set('bot', bot);
+    await f.service.start();
+    jest.setSystemTime(60000);
+    await f.service.flush();
+    expect(f.balances.get('a')?.xp).toBe(10n);
+    expect(f.balances.get('bot').xp).toBe(100n);
+    expect(bot.member.roles.cache.size).toBe(0);
     await f.service.onModuleDestroy();
   });
 

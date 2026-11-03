@@ -46,11 +46,11 @@ export class VoiceActivityService implements OnModuleDestroy {
 
   private snapshot(guild: Guild): MemberState[] {
     return [...guild.voiceStates.cache.values()].flatMap((state) => {
-      if (!state.channelId || !state.member || state.member.user.bot) return [];
+      if (!state.channelId || !state.member) return [];
       return [{
         member: state.member, channelId: state.channelId,
         eligible: state.channel?.type === ChannelType.GuildVoice && state.channelId !== guild.afkChannelId
-          && !state.selfMute && !state.serverMute && !state.selfDeaf && !state.serverDeaf,
+          && (state.member.user.bot || (!state.selfMute && !state.serverMute && !state.selfDeaf && !state.serverDeaf)),
       }];
     });
   }
@@ -86,7 +86,7 @@ export class VoiceActivityService implements OnModuleDestroy {
     const counts = new Map<string, number>();
     for (const m of tracking.members) if (m.eligible) counts.set(m.channelId, (counts.get(m.channelId) ?? 0) + 1);
     for (const m of tracking.members) {
-      if (!m.eligible || (counts.get(m.channelId) ?? 0) < 2) continue;
+      if (m.member.user.bot || !m.eligible || (counts.get(m.channelId) ?? 0) < 2) continue;
       const key = `${tracking.guild.id}:${m.member.id}`;
       const previous = this.pending.get(key);
       this.pending.set(key, { guild: tracking.guild, member: m.member, units: (previous?.units ?? 0n) + BigInt(elapsed) * BigInt(tracking.config.rate), rewards: tracking.config.rewards });
@@ -136,6 +136,7 @@ export class VoiceActivityService implements OnModuleDestroy {
     for (const tracking of this.tracking.values()) {
       if (!tracking.config.enabled) continue;
       for (const { member } of tracking.members) {
+        if (member.user.bot) continue;
         candidates.set(`${tracking.guild.id}:${member.id}`, { guild: tracking.guild, member, rewards: tracking.config.rewards });
       }
     }
@@ -199,7 +200,6 @@ export class VoiceActivityService implements OnModuleDestroy {
 
   async handleVoiceStateUpdate(oldState: VoiceState, newState: VoiceState): Promise<void> {
     const member = newState.member ?? oldState.member;
-    if (member?.user.bot) return;
     const guild = newState.guild;
     const now = Date.now();
     const members = this.snapshot(guild);
@@ -221,7 +221,7 @@ export class VoiceActivityService implements OnModuleDestroy {
       }
       await this.persist();
     });
-    if (!notification || !member) return;
+    if (!notification || !member || member.user.bot) return;
     try {
       const config = await this.config(guild.id);
       if (!config.channelId) return;

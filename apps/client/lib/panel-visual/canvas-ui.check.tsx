@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { CanvasEditor } from '../../components/panel-editor/canvas/CanvasEditor';
+import { createCanvasFromSimple } from './editor-state';
+const document = createCanvasFromSimple({ title: 'Welcome', description: 'Move this text' });
+const html = renderToStaticMarkup(<CanvasEditor document={document} onChange={() => {}} guildId="123" roles={[]} />);
+for (const label of ['Canvas width', 'Canvas height', 'Add text', 'Add rectangle', 'Add line', 'Upload image', 'Layers', 'Image description', 'Undo', 'Redo']) assert.ok(html.includes(label), label);
+assert.ok(html.includes('Move this text'));
+console.log('Canvas editor initial accessible controls render passed.');

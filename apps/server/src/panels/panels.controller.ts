@@ -32,7 +32,7 @@ export class PanelsController {
 
   @Post('panels/upload-url')
   async uploadUrl(@Param('guildId') guildId: string, @Body() dto: UploadUrlDto) {
-    const ext = dto.fileName.split('.').pop() || 'png';
+    const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[dto.contentType];
     const key = `panels/${guildId}/${randomUUID()}.${ext}`;
     const uploadUrl = await this.r2.getPresignedUploadUrl(key, dto.contentType, MAX_PANEL_IMAGE_SIZE);
     return { ok: true, uploadUrl, key, url: this.r2.getPublicUrl(key) };
@@ -51,6 +51,15 @@ export class PanelsController {
   @Get('panels/:panelId')
   async get(@Param('guildId') guildId: string, @Param('panelId') panelId: string) {
     return { ok: true, panel: await this.panels.get(guildId, panelId) };
+  }
+
+  @Get('panels/:panelId/visual-assets')
+  async visualAssets(@Param('guildId') guildId: string, @Param('panelId') panelId: string) {
+    const panel = await this.panels.get(guildId, panelId);
+    const document = panel.visualDocument as any;
+    const keys = [document?.simpleCrop?.assetKey, ...(document?.canvas?.elements ?? []).filter((element: any) => element.type === 'image').map((element: any) => element.assetKey)];
+    const unique = [...new Set<string>(keys.filter((key): key is string => typeof key === 'string' && new RegExp(`^panels/${guildId}/[\\w-]+\\.(png|jpe?g|webp)$`).test(key)))];
+    return { ok: true, assets: unique.map(key => ({ key, url: this.r2.getPublicUrl(key) })) };
   }
 
   @Patch('panels/:panelId')

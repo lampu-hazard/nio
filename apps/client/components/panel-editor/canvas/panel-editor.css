@@ -1,0 +1,13 @@
+@font-face { font-family: 'Panel DejaVu Sans'; src: url('/fonts/panel/DejaVuSans.woff2') format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'Panel DejaVu Sans'; src: url('/fonts/panel/DejaVuSans-Bold.woff2') format('woff2'); font-weight: 700; font-display: block; }
+.panel-canvas-editor { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.panel-canvas-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 16px; border-bottom: 1px solid var(--border); }
+.panel-canvas-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 240px; }
+.panel-canvas-sidebar { padding: 16px; background: var(--bg-subtle); min-width: 0; }
+.panel-canvas-scroll { overflow: auto; display: flex; padding: 24px; min-height: 360px; max-height: 650px; background-color: #202024; background-image: radial-gradient(#484850 1px, transparent 1px); background-size: 16px 16px; }
+.panel-canvas-scroll svg { box-shadow: 0 2px 12px #0005; outline-offset: 4px; }
+.panel-canvas-hint { font-size: 12px; line-height: 1.6; color: var(--text-muted, #a1a1aa); margin: 10px 0; }
+.panel-visual-preview { background: #313338; color: #f2f3f5; padding: 20px; border-radius: 8px; }
+.panel-visual-preview img { width: 100%; height: auto; border-radius: 4px; }
+@media (max-width: 1200px) { .panel-canvas-layout { grid-template-columns: 180px minmax(0, 1fr); } .panel-canvas-sidebar:last-child { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .panel-canvas-layout { display: flex; flex-direction: column; } .panel-canvas-scroll { min-height: 260px; padding: 12px; } .panel-canvas-sidebar { max-height: 340px; overflow: auto; } }

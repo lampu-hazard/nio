@@ -61,10 +61,12 @@ export function RoleOptionList({
   guildId,
   panel,
   availableRoles = [],
+  publishDisabled = false,
 }: {
   guildId: string;
   panel: Panel;
   availableRoles?: DiscordRole[];
+  publishDisabled?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<FormState>({});
@@ -211,13 +213,14 @@ export function RoleOptionList({
   }
 
   async function publishPanel() {
+    if (publishDisabled) return;
     setState({ publishing: true });
     try {
       const response = await fetch(`/api/guilds/${guildId}/panels/${panel.id}/publish`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ expectedRevision: panel.revision }),
       });
       const data = await parseApiResponse(response);
       if (!response.ok) throw new Error(data.message || `Failed to publish panel (${response.status})`);
@@ -290,7 +293,7 @@ export function RoleOptionList({
             <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">Publish, update, or delete the Discord message. Role components are only sent for Self Role panels.</p>
           </div>
           <div className="flex flex-wrap gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-2">
-            <button type="button" onClick={publishPanel} disabled={state.publishing} className="btn btn-primary">
+            <button type="button" onClick={publishPanel} disabled={state.publishing || publishDisabled} className="btn btn-primary">
               {state.publishing ? 'Syncing...' : isPublished ? 'Update Discord Message' : 'Publish Panel'}
             </button>
             {panel.messageId && (

@@ -1,14 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { IsInt, IsOptional, Min } from 'class-validator';
+import { randomUUID } from 'crypto';
 import { CurrentUser, SessionUser } from '../common/decorators/current-user.decorator';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { GuildAccessGuard } from '../guilds/guards/guild-access.guard';
+import { R2Service } from '../r2/r2.service';
 import { PanelPublishCoordinatorService } from './visual/panel-publish-coordinator.service';
-import { IsInt, IsOptional, Min } from 'class-validator';
-
-class PublishPanelDto {
-  @IsOptional() @IsInt() @Min(0) expectedRevision?: number;
-}
 import { PanelsService } from './panels.service';
 import { CreatePanelDto } from './dto/create-panel.dto';
 import { UpdatePanelDto } from './dto/update-panel.dto';
@@ -16,10 +13,13 @@ import { CreatePanelRoleDto } from './dto/create-panel-role.dto';
 import { UpdatePanelRoleDto } from './dto/update-panel-role.dto';
 import { ReorderPanelRolesDto } from './dto/reorder-panel-roles.dto';
 import { UploadUrlDto } from './dto/upload-url.dto';
-import { R2Service } from '../r2/r2.service';
-import { randomUUID } from 'crypto';
+
+class PublishPanelDto {
+  @IsOptional() @IsInt() @Min(0) expectedRevision?: number;
+}
 
 const MAX_PANEL_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const PANEL_ASSET_KEY_PATTERN = /^panels\/\d+\/[\w-]+\.(png|jpe?g|webp)$/;
 
 @UseGuards(SessionAuthGuard, GuildAccessGuard)
 @Controller('guilds/:guildId')
@@ -57,8 +57,9 @@ export class PanelsController {
   async visualAssets(@Param('guildId') guildId: string, @Param('panelId') panelId: string) {
     const panel = await this.panels.get(guildId, panelId);
     const document = panel.visualDocument as any;
+    const prefix = `panels/${guildId}/`;
     const keys = [document?.simpleCrop?.assetKey, ...(document?.canvas?.elements ?? []).filter((element: any) => element.type === 'image').map((element: any) => element.assetKey)];
-    const unique = [...new Set<string>(keys.filter((key): key is string => typeof key === 'string' && new RegExp(`^panels/${guildId}/[\\w-]+\\.(png|jpe?g|webp)$`).test(key)))];
+    const unique = [...new Set<string>(keys.filter((key): key is string => typeof key === 'string' && key.startsWith(prefix) && PANEL_ASSET_KEY_PATTERN.test(key)))];
     return { ok: true, assets: unique.map(key => ({ key, url: this.r2.getPublicUrl(key) })) };
   }
 

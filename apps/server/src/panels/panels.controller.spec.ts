@@ -14,4 +14,21 @@ describe('panel uploaded visual assets', () => {
     const result = await controller.uploadUrl('123', { fileName: 'IMAGE.JPEG', contentType: 'image/jpeg' });
     expect(result.key).toMatch(/^panels\/123\/[\w-]+\.jpg$/);
   });
+  it('treats guildId literally instead of interpolating regex metacharacters in visualAssets', async () => {
+    const get = jest.fn(async (..._args: any[]) => ({
+      visualDocument: {
+        simpleCrop: { assetKey: 'panels/123/banner.webp' },
+        canvas: { elements: [{ type: 'image', assetKey: 'panels/123/one.png' }] },
+      },
+    }));
+    const controller = new PanelsController({ get } as any, {} as any, { getPublicUrl: (key: string) => `https://cdn.example.com/${key}` } as any);
+    expect(await controller.visualAssets('.*', 'p')).toEqual({ ok: true, assets: [] });
+    expect(await controller.visualAssets('123', 'p')).toEqual({
+      ok: true,
+      assets: [
+        { key: 'panels/123/banner.webp', url: 'https://cdn.example.com/panels/123/banner.webp' },
+        { key: 'panels/123/one.png', url: 'https://cdn.example.com/panels/123/one.png' },
+      ],
+    });
+  });
 });

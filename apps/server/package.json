@@ -39,6 +39,7 @@
     "prisma": "^6.19.0",
     "reflect-metadata": "latest",
     "rxjs": "latest",
+    "sharp": "0.35.5",
     "winston": "latest"
   },
   "devDependencies": {

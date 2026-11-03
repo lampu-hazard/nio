@@ -7,11 +7,17 @@ import { PanelsController } from './panels.controller';
 import { PanelsService } from './panels.service';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 import { LeaderboardUpdaterService } from './leaderboard-updater.service';
+import { PanelPublishLockService } from './visual/panel-publish-lock.service';
+import { PanelAssetService } from './visual/panel-asset.service';
+import { PanelImageRendererService } from './visual/panel-image-renderer.service';
+import { PanelPreviewController } from './visual/panel-preview.controller';
+import { PanelPreviewLimitService } from './visual/panel-preview-limit.service';
+import { PanelPublishCoordinatorService } from './visual/panel-publish-coordinator.service';
 
 @Module({
   imports: [DiscordModule, forwardRef(() => LeaderboardModule), EmbedTemplateModule],
-  controllers: [PanelsController],
-  providers: [PanelsService, PanelRendererService, DiscordPublisherService, LeaderboardUpdaterService],
+  controllers: [PanelsController, PanelPreviewController],
+  providers: [PanelsService, PanelRendererService, DiscordPublisherService, LeaderboardUpdaterService, PanelPublishLockService, PanelAssetService, PanelImageRendererService, PanelPreviewLimitService, PanelPublishCoordinatorService],
   exports: [PanelsService, PanelRendererService, LeaderboardUpdaterService],
 })
 export class PanelsModule {}

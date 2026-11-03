@@ -14,6 +14,7 @@ const PREVIEW_BY_TYPE: Record<PanelType, Panel> = {
   RULES: {
     id: 'preview',
     guildId: 'preview',
+    revision: 0,
     name: 'Server Rules',
     title: 'Server Rules',
     accentText: 'Please read before participating',
@@ -29,6 +30,7 @@ const PREVIEW_BY_TYPE: Record<PanelType, Panel> = {
   SELF_ROLE: {
     id: 'preview',
     guildId: 'preview',
+    revision: 0,
     name: 'Self Roles',
     title: 'Self Roles',
     accentText: 'Customize your profile',
@@ -47,6 +49,7 @@ const PREVIEW_BY_TYPE: Record<PanelType, Panel> = {
   ANNOUNCEMENT: {
     id: 'preview',
     guildId: 'preview',
+    revision: 0,
     name: 'Announcement',
     title: 'Announcement',
     accentText: 'Official server update',
@@ -62,6 +65,7 @@ const PREVIEW_BY_TYPE: Record<PanelType, Panel> = {
   LEADERBOARD: {
     id: 'preview',
     guildId: 'preview',
+    revision: 0,
     name: 'Leaderboard Panel',
     title: '✦ Server Leaderboard',
     accentText: 'Most active members',

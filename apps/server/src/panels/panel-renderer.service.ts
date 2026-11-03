@@ -4,6 +4,10 @@ import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { EmbedTemplateService } from '../embed-templates/embed-template.service';
 import { EmbedTemplateRendererService } from '../embed-templates/embed-template-renderer.service';
 import { EmbedTemplateCategory } from '../embed-templates/embed-template.types';
+import { PanelImageRendererService } from './visual/panel-image-renderer.service';
+import { validatePanelVisualDocument } from './visual/panel-visual.validation';
+import { resolvePresentation } from './visual/panel-visual.document';
+import { nativePanelComponents } from './visual/panel-native-components';
 
 const BUTTON_STYLES: Record<string, ButtonStyle> = {
   PRIMARY: ButtonStyle.Primary,
@@ -33,43 +37,51 @@ export class PanelRendererService {
     private readonly leaderboard: LeaderboardService,
     @Optional() private readonly templates?: EmbedTemplateService,
     @Optional() private readonly templateRenderer?: EmbedTemplateRendererService,
+    @Optional() private readonly images?: PanelImageRendererService,
   ) {}
 
   async render(panel: any, guild: Guild) {
     const isMinimal = panel.style === 'MINIMAL';
+    const document = panel.visualDocument ? validatePanelVisualDocument(panel.visualDocument) : null;
+    const presentation = resolvePresentation(panel.style, document?.presentation);
+    const allowedMentions = { parse: [] as [], users: [], roles: [], repliedUser: false };
     const category = PANEL_TYPE_CATEGORY[panel.type || 'SELF_ROLE'];
 
     // Try custom template first
-    if (category && this.templates && this.templateRenderer) {
+    if (!document && category && this.templates && this.templateRenderer) {
       try {
         const tpl = await this.templates.getTemplate(panel.guildId, category);
         if (tpl && !tpl.isDefault) {
           const variables = await this.panelVariables(panel, guild);
           const rendered = this.templateRenderer.render(tpl.template, variables);
-          return { ...rendered, components: this.components(panel) };
+          return { ...rendered, components: this.components(panel), allowedMentions, files: undefined as { attachment: Buffer; name: string; description: string }[] | undefined };
         }
       } catch { /* fall through to default */ }
     }
 
+    const description = document?.native ? document.native.blocks.map(block => block.text).join('\n\n') : await this.description(panel);
     const embed = new EmbedBuilder()
       .setColor(this.parseColor(panel.color))
-      .setTitle(panel.title || this.defaultTitle(panel.type))
-      .setDescription(await this.description(panel));
-
-    if (!isMinimal) {
-      embed.setAuthor({ name: guild.name, iconURL: guild.iconURL({ size: 128 }) || undefined });
-      embed.setFooter({ text: this.footer(panel) });
-      embed.setTimestamp();
-    }
-
-    if (!isMinimal && panel.thumbnailUrl && panel.thumbnailUrl.startsWith('http')) {
-      embed.setThumbnail(panel.thumbnailUrl);
-    }
-    if (panel.imageUrl && panel.imageUrl.startsWith('http')) {
-      embed.setImage(panel.imageUrl);
-    }
-
-    return { embeds: [embed], components: this.components(panel) };
+      .setTitle(panel.title || this.defaultTitle(panel.type));
+    if (description) embed.setDescription(description);
+    if (presentation.author) embed.setAuthor({ name: guild.name, iconURL: guild.iconURL({ size: 128 }) || undefined });
+    if (presentation.footer) embed.setFooter({ text: this.footer(panel) });
+    if (presentation.timestamp) embed.setTimestamp();
+    if (presentation.thumbnail && panel.thumbnailUrl?.startsWith('https://')) embed.setThumbnail(panel.thumbnailUrl);
+    let files: { attachment: Buffer; name: string; description: string }[] | undefined;
+    const crop = document?.simpleCrop;
+    const scene = document?.editorMode === 'CANVAS' ? document.canvas : crop ? {
+      width: crop.width, height: crop.height, background: '#000000', description: crop.description,
+      elements: [{ id: 'banner', type: 'image' as const, assetKey: crop.assetKey, crop: crop.crop, x: 0, y: 0, width: crop.width, height: crop.height }],
+    } : undefined;
+    if (scene) {
+      if (!this.images) throw new Error('Panel image renderer is unavailable.');
+      if (panel.type === 'LEADERBOARD') throw new Error('Leaderboard does not support Canvas images.');
+      const attachment = await this.images.render(panel.guildId, scene);
+      files = [{ attachment, name: 'panel-visual.png', description: scene.description }];
+      embed.setImage('attachment://panel-visual.png');
+    } else if (panel.imageUrl?.startsWith('https://')) embed.setImage(panel.imageUrl);
+    return { embeds: [embed], components: document ? nativePanelComponents(panel, document.native?.controls) : this.components(panel), files, allowedMentions };
   }
 
   private async panelVariables(panel: any, guild: Guild): Promise<Record<string, unknown>> {

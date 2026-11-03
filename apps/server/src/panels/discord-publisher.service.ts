@@ -15,6 +15,10 @@ export class DiscordPublisherService {
   ) {}
 
   async publish(panel: any) {
+    return this.sendPrepared(panel, await this.prepare(panel));
+  }
+
+  async prepare(panel: any) {
     if (!panel.channelId) {
       throw new AppError('PANEL_CHANNEL_REQUIRED', 'Select a target channel before publishing this panel.', 400);
     }
@@ -27,12 +31,20 @@ export class DiscordPublisherService {
 
     const payload = await this.renderer.render(panel, guild);
     this.validatePublishPayload(panel, payload);
+    if (payload.files?.length) {
+      const me = guild.members.me || await guild.members.fetchMe();
+      if (!textChannel.permissionsFor(me)?.has(PermissionsBitField.Flags.AttachFiles)) throw new AppError('DISCORD_MISSING_PERMISSIONS', 'The bot needs Attach Files to publish this visual panel.', 403);
+    }
+    return { textChannel, payload };
+  }
 
+  async sendPrepared(panel: any, prepared: Awaited<ReturnType<DiscordPublisherService['prepare']>>) {
+    const { textChannel, payload } = prepared;
     try {
       const message = panel.messageId ? await textChannel.messages.fetch(panel.messageId).catch(() => null) : null;
       if (message) {
         try {
-          const updated = await message.edit(payload);
+          const updated = await message.edit({ ...payload, attachments: [] });
           this.logger.log(`Panel updated in #${textChannel.name}: ${panel.name}`, 'Publisher');
           return updated;
         } catch (error) {

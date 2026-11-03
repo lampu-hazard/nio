@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
+import * as workerThreads from 'node:worker_threads';
 import { PanelImageRendererService } from './panel-image-renderer.service';
 import type { CanvasScene } from './panel-visual.document';
 
@@ -12,7 +13,23 @@ function renderer(load: (...args: any[]) => Promise<any> = async () => { throw n
 }
 
 describe('panel image workers', () => {
-  it('starts a compiled worker and produces a bounded PNG', async () => {
+  it('awaits physical termination of a CPU-hung worker on shutdown', async () => {
+    const RealWorker = workerThreads.Worker;
+    let worker: workerThreads.Worker | undefined;
+    const spy = jest.spyOn(require('node:worker_threads') as typeof workerThreads, 'Worker').mockImplementation((() => {
+      worker = new RealWorker('while (true) {}', { eval: true });
+      return worker;
+    }) as any);
+    try {
+      const instance = renderer();
+      const result = instance.render('123', scene).catch(error => error);
+      await instance.onModuleDestroy();
+      expect((await result).message).toMatch(/shutting down/);
+      expect(worker!.threadId).toBe(-1);
+    } finally { spy.mockRestore(); if (worker) await worker.terminate(); }
+  });
+
+  it('starts a source worker and produces a bounded PNG', async () => {
     const png = await renderer().render('123', scene);
     expect(png.subarray(0, 8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));
     expect(png.readUInt32BE(16)).toBe(600);

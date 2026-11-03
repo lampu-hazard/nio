@@ -59,7 +59,8 @@ export class PanelRendererService {
       } catch { /* fall through to default */ }
     }
 
-    const description = document?.native ? document.native.blocks.map(block => block.text).join('\n\n') : await this.description(panel);
+    const native = document?.editorMode === 'CANVAS' ? document.native : undefined;
+    const description = native ? native.blocks.map(block => block.text).join('\n\n') : await this.description(panel);
     const embed = new EmbedBuilder()
       .setColor(this.parseColor(panel.color))
       .setTitle(panel.title || this.defaultTitle(panel.type));
@@ -81,7 +82,7 @@ export class PanelRendererService {
       files = [{ attachment, name: 'panel-visual.png', description: scene.description }];
       embed.setImage('attachment://panel-visual.png');
     } else if (panel.imageUrl?.startsWith('https://')) embed.setImage(panel.imageUrl);
-    return { embeds: [embed], components: document ? nativePanelComponents(panel, document.native?.controls) : this.components(panel), files, allowedMentions };
+    return { embeds: [embed], components: document ? nativePanelComponents(panel, native?.controls) : this.components(panel), files, allowedMentions };
   }
 
   private async panelVariables(panel: any, guild: Guild): Promise<Record<string, unknown>> {

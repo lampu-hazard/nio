@@ -17,7 +17,12 @@ export function switchEditorMode(document: PanelVisualDocument | null | undefine
   if (mode === 'SIMPLE') return { ...(document ?? { version: 1 }), editorMode: mode };
   if (document?.canvas) return { ...document, editorMode: mode };
   const converted = createCanvasFromSimple(panel);
-  return { ...document, ...converted, presentation: document?.presentation, native: { blocks: [], controls: (panel.roles ?? []).map(role => ({ kind: 'role', panelRoleId: role.id })) } };
+  return { ...document, ...converted, presentation: document?.presentation, native: document?.native ?? { blocks: [], controls: (panel.roles ?? []).map(role => ({ kind: 'role', panelRoleId: role.id })) } };
+}
+
+export function updateBanner(document: PanelVisualDocument | null, previousUrl: string, nextUrl: string): PanelVisualDocument | null {
+  if (!document?.simpleCrop || previousUrl === nextUrl) return document;
+  return { ...document, simpleCrop: undefined };
 }
 
 export function moveElement(element: CanvasElement, dx: number, dy: number): Partial<CanvasElement> {

@@ -9,6 +9,7 @@ import { CanvasEditor } from './canvas/CanvasEditor';
 import { DiscordPanelPreview } from './canvas/DiscordPanelPreview';
 import { PresentationSettings } from './PresentationSettings';
 import { PanelMediaCrop } from './PanelMediaCrop';
+import { PanelEditorNavigation } from './PanelEditorNavigation';
 
 type ChannelOption = { id: string; name: string };
 type PanelType = 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT' | 'LEADERBOARD';
@@ -114,6 +115,7 @@ export function PanelForm({
 }) {
   const router = useRouter();
   const [state, setState] = useState<FormState>({ loading: false });
+  const [section, setSection] = useState('content');
   const [draft, setDraft] = useState<Draft>(() => ({ ...initialDraft(panel), ...initialValues }));
   const [channelId, setChannelId] = useState(panel?.channelId || '');
   const isPublished = panel?.status === 'PUBLISHED';
@@ -234,6 +236,14 @@ export function PanelForm({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
+    const invalid = form.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input:invalid, select:invalid, textarea:invalid');
+    if (invalid) {
+      const destination = invalid.closest<HTMLElement>('[data-panel-section]')?.dataset.panelSection;
+      if (destination) setSection(destination);
+      requestAnimationFrame(() => { invalid.focus(); invalid.reportValidity(); });
+      return;
+    }
     setState({ loading: true });
 
     const name = draft.name.trim();
@@ -286,14 +296,24 @@ export function PanelForm({
     }
   }
 
+  function sectionProps(id: string, simpleOnly = false) {
+    return {
+      'data-panel-section': id,
+      style: section !== id || (simpleOnly && visual?.editorMode === 'CANVAS') ? { display: 'none' } : undefined,
+    };
+  }
+
   return (
-    <form onSubmit={onSubmit} className="card overflow-hidden">
+    <form noValidate onSubmit={onSubmit} onInvalidCapture={event => {
+      const target = event.target as HTMLElement;
+      const destination = target.closest<HTMLElement>('[data-panel-section]')?.dataset.panelSection;
+      if (destination) setSection(destination);
+    }} className="card min-w-0">
       <div className="border-b border-[var(--border)] bg-[var(--bg-subtle)] px-6 py-5 md:px-7">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="badge mb-3">Panel Builder</div>
-            <h2 className="text-2xl font-black tracking-tight">Panel identity</h2>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">Create rules, announcement, or self-role panels from one focused editor.</p>
+            <h2 className="text-xl font-bold tracking-tight">Edit panel</h2>
+            <p className="mt-1 max-w-2xl text-sm text-[var(--muted)]">Edit the design, save your changes, then publish to Discord.</p>
           </div>
           {panel?.status && <span className={`badge ${isPublished ? 'badge-live' : ''}`}>{isPublished ? 'Live' : panel.status}</span>}
         </div>
@@ -309,15 +329,19 @@ export function PanelForm({
         {state.error && <div className="notice notice-error mb-4">{state.error}</div>}
         {state.success && <div className="notice notice-success mb-4">{state.success}</div>}
 
-        <div className="mb-6 grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-2 sm:grid-cols-4">
+        <PanelEditorNavigation label="Panel settings" active={section} onChange={setSection} items={[{ id: 'content', label: 'Content' }, { id: 'appearance', label: 'Appearance' }, { id: 'settings', label: 'Settings' }]} />
+        <details {...sectionProps('content', true)} className="my-4 rounded-lg border border-[var(--border)] p-3">
+          <summary className="cursor-pointer text-sm font-semibold">Start from a template</summary>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <button type="button" onClick={() => applyTemplate('rules')} className="btn border-transparent bg-[var(--panel)]">Rules Template</button>
           <button type="button" onClick={() => applyTemplate('selfRole')} className="btn border-transparent bg-[var(--panel)]">Self Role Template</button>
           <button type="button" onClick={() => applyTemplate('announcement')} className="btn border-transparent bg-[var(--panel)]">Announcement Template</button>
           <button type="button" disabled={visual?.editorMode === 'CANVAS'} onClick={() => applyTemplate('leaderboard')} className="btn border-transparent bg-[var(--panel)]">Leaderboard Template</button>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-2">
-          <label className="block">
+        </details>
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
+          <label {...sectionProps('settings')} className="block">
             <span className="field-label">Panel type</span>
             <select value={draft.type} onChange={(event) => patchDraft({ type: event.target.value as PanelType })} className="input">
               <option value="RULES">Rules / Info</option>
@@ -327,7 +351,7 @@ export function PanelForm({
             </select>
           </label>
 
-          <label className="block">
+          <label {...sectionProps('settings')} className="block">
             <span className="field-label">Target channel</span>
             <select value={channelId} onChange={(event) => { setChannelId(event.target.value); setDirty(true); onPreviewChange?.({ channelId: event.target.value }); }} className="input" required>
               <option value="" disabled>Select channel</option>
@@ -336,12 +360,12 @@ export function PanelForm({
             {!channels.length && <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">No channels were found. Make sure the bot is in the server and can access channels.</p>}
           </label>
 
-          <label className="block">
+          <label {...sectionProps('settings')} className="block">
             <span className="field-label">Internal name</span>
             <input value={draft.name} onChange={(event) => patchDraft({ name: event.target.value })} className="input" placeholder="Server Rules" maxLength={100} required />
           </label>
 
-          <label className="block">
+          <label {...sectionProps('appearance')} className="block">
             <span className="field-label">Visual style</span>
             <select value={draft.style} onChange={(event) => patchDraft({ style: event.target.value as Draft['style'] })} className="input">
               <option value="PREMIUM">Premium</option>
@@ -351,23 +375,23 @@ export function PanelForm({
             </select>
           </label>
 
-          <label className="block md:col-span-2">
+          <label {...sectionProps('content')} className="block md:col-span-2">
             <span className="field-label">Embed title</span>
             <input value={draft.title} onChange={(event) => patchDraft({ title: event.target.value })} className="input text-lg font-bold" maxLength={256} required />
           </label>
 
-          <label className="block md:col-span-2">
+          <label {...sectionProps('content', true)} className="block md:col-span-2">
             <span className="field-label">Accent text</span>
             <input value={draft.accentText} onChange={(event) => patchDraft({ accentText: event.target.value })} placeholder="Optional subtitle or server identity line" className="input" maxLength={256} />
           </label>
 
-          <label className="block md:col-span-2">
+          <label {...sectionProps('content', true)} className="block md:col-span-2">
             <span className="field-label">Description / content body</span>
-            <textarea value={draft.description} onChange={(event) => patchDraft({ description: event.target.value })} rows={12} className="input resize-y leading-7" maxLength={4000} />
+            <textarea value={draft.description} onChange={(event) => patchDraft({ description: event.target.value })} rows={6} className="input resize-y leading-7" maxLength={4000} />
             <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Discord markdown is supported: **bold**, bullets, section headings, and blank lines.</p>
           </label>
 
-          <label className="block">
+          <label {...sectionProps('settings')} className="block">
             <span className="field-label">Interaction mode</span>
             <select value={draft.mode} onChange={(event) => patchDraft({ mode: event.target.value as Draft['mode'] })} className="input" disabled={draft.type !== 'SELF_ROLE'}>
               <option value="BUTTONS">Buttons</option>
@@ -377,7 +401,7 @@ export function PanelForm({
           </label>
 
           {draft.type === 'SELF_ROLE' && (
-            <label className="block">
+            <label {...sectionProps('settings')} className="block">
               <span className="field-label">Role selection</span>
               <select value={draft.maxRoles === 0 ? 'unlimited' : draft.maxRoles === 1 ? 'exclusive' : 'capped'} onChange={(event) => patchDraft({ maxRoles: event.target.value === 'unlimited' ? 0 : event.target.value === 'exclusive' ? 1 : Math.max(2, draft.maxRoles) })} className="input">
                 <option value="unlimited">Unlimited</option>
@@ -391,7 +415,7 @@ export function PanelForm({
             </label>
           )}
 
-          <label className="block">
+          <label {...sectionProps('appearance')} className="block">
             <span className="field-label">Accent color</span>
             <div className="card-flat flex items-center gap-4 p-3">
               <input type="color" value={draft.color} onChange={(event) => patchDraft({ color: event.target.value })} className="h-12 w-16 cursor-pointer rounded-md border border-[var(--border)] bg-white p-1" />
@@ -402,13 +426,12 @@ export function PanelForm({
             </div>
           </label>
 
-          <div className="md:col-span-2">
+          <div {...sectionProps('appearance', true)} className="md:col-span-2">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-black">Media & banner</h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">Use public HTTPS image URLs. Local files must be uploaded first before Discord can render them.</p>
               </div>
-              <span className="badge">Media ready</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
@@ -438,15 +461,21 @@ export function PanelForm({
             </div>
           </div>
         </div>
-        <div className="mt-6 space-y-5">
+        <div {...sectionProps('appearance')} className="mt-5 space-y-5">
           <PresentationSettings document={visual ?? { version: 1, editorMode: 'SIMPLE' }} style={draft.style} onChange={changeVisual} />
-          {visual?.editorMode === 'CANVAS' ? <CanvasEditor document={visual} guildId={guildId} roles={draft.type === 'SELF_ROLE' ? panel?.roles ?? [] : []} initialAssets={assets} onChange={changeVisual} /> : draft.type !== 'LEADERBOARD' && <PanelMediaCrop document={visual ?? { version: 1, editorMode: 'SIMPLE' }} assetKey={uploadedAssetKey(draft.imageUrl, guildId)} title={draft.title} onChange={changeVisual} />}
-          {visual && <DiscordPanelPreview guildId={guildId} document={visual} />}
-          {visual && <button type="button" className="btn" onClick={() => { setVisual(null); setDirty(true); onPreviewChange?.({ visualDocument: null }); }}>Restore legacy / guild template rendering</button>}
+          {visual?.editorMode !== 'CANVAS' && draft.type !== 'LEADERBOARD' && <PanelMediaCrop document={visual ?? { version: 1, editorMode: 'SIMPLE' }} assetKey={uploadedAssetKey(draft.imageUrl, guildId)} title={draft.title} onChange={changeVisual} />}
+          {visual?.editorMode === 'CANVAS' && <label className="block"><span className="field-label">Thumbnail / logo URL</span><input className="input" value={draft.thumbnailUrl} onChange={event => patchDraft({ thumbnailUrl: event.target.value })} placeholder="https://.../logo.png" /></label>}
+        </div>
+        <div {...sectionProps('content')} className="mt-5 space-y-5">
+          {visual?.editorMode === 'CANVAS' && <CanvasEditor document={visual} guildId={guildId} roles={draft.type === 'SELF_ROLE' ? panel?.roles ?? [] : []} initialAssets={assets} onChange={changeVisual} />}
+          {visual && <details className="rounded-lg border border-[var(--border)] p-3"><summary className="cursor-pointer text-sm font-semibold">Server-rendered image preview</summary><div className="mt-3"><DiscordPanelPreview guildId={guildId} document={visual} /></div></details>}
+        </div>
+        <div {...sectionProps('settings')} className="mt-5">
+          {visual && <details className="rounded-lg border border-[var(--border)] p-3"><summary className="cursor-pointer text-sm font-semibold">Advanced rendering</summary><p className="my-3 text-sm text-[var(--muted)]">Remove the visual design and return to the existing panel or guild template.</p><button type="button" className="btn" onClick={() => { if (!window.confirm('Remove the visual design and restore legacy rendering?')) return; setVisual(null); setDirty(true); onPreviewChange?.({ visualDocument: null }); }}>Restore legacy rendering</button></details>}
         </div>
       </fieldset>
 
-      <div className="flex flex-col gap-3 border-t border-[var(--border)] bg-[var(--bg-subtle)] px-6 py-5 sm:flex-row sm:items-center sm:justify-between md:px-7">
+      <div className="sticky bottom-0 z-20 flex flex-col gap-3 rounded-b-xl border-t border-[var(--border)] bg-[var(--panel)] px-5 py-3 shadow-lg sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Save stores the dashboard draft. Publish or update to sync with Discord.</p>
         <div className="flex flex-wrap gap-2 sm:justify-end">
           {panel && (

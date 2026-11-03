@@ -190,7 +190,7 @@ A master `Makefile` at the repository root delegates actions to individual sub-p
 
 ## Production Deployment
 
-Create a root `.env` file from `.env.example` and set your Docker Hub namespace:
+Create a root `.env` file from `.env.example` and set your GitHub Container Registry namespace:
 
 ```bash
 cp .env.example .env
@@ -199,7 +199,7 @@ cp .env.example .env
 Example:
 
 ```env
-DOCKERHUB_NAMESPACE=your-dockerhub-username
+GHCR_NAMESPACE=ghcr.io/lampu-hazard
 IMAGE_TAG=latest
 ```
 
@@ -210,13 +210,23 @@ make pull
 make up
 ```
 
-If you want to build images directly on the server instead of pulling Docker Hub images:
+The workflow pushes `nio-server` and `nio-client` to GHCR using `GITHUB_TOKEN` with `packages: write`. For private packages, authenticate Docker on the VPS with a token that has `read:packages` before pulling; no Docker Hub credentials are used.
+
+If you want to build images directly on the server instead of pulling GHCR images:
 
 ```bash
 make up-build
 ```
 
 ---
+
+## Panel editor
+
+Open a panel from the dashboard's Panels list. The workspace separates **Edit**, **Roles** (self-role only), and **Discord preview**; Edit groups **Content**, **Appearance**, and **Settings**. Simple mode uses native embed text; Canvas renders uploaded images, text, and shapes into a PNG while keeping Discord text/buttons separate. Save the draft before publishing. Image/artboard width is configurable; Discord's native embed width is not.
+
+Apply the additive panel migration through the existing Prisma deploy script before serving the updated API. Missing `Panel.visualDocument` / `revision` columns prevent panel access; do not reset production or bypass revision checks. See [backend migration and rendering limits](apps/server/README.md#panel-visual-preview) and the [acceptance checklist](apps/client/scripts/panel-canvas-smoke.md).
+
+Run `bun scripts/check-client.ts` and `bun scripts/sync-panel-visual.ts --check` at the repository root for client checks and shared-contract drift.
 
 ## Testing
 

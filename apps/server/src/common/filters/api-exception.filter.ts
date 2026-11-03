@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Inject } from '@nestjs/common';
 import { Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../errors/app-error';
 import { AppLogger } from '../../logger/logger.service';
 
@@ -26,6 +27,15 @@ export class ApiExceptionFilter implements ExceptionFilter {
       const message = Array.isArray(detailMessage) ? detailMessage.join('; ') : detailMessage || exception.message;
       this.logger.warn(`HTTP ${exception.getStatus()}: ${message} [${url}]`, 'ExceptionFilter');
       return response.status(exception.getStatus()).json({ ok: false, code: 'HTTP_ERROR', message, details });
+    }
+
+    if (exception instanceof Prisma.PrismaClientKnownRequestError && ['P2021', 'P2022'].includes(exception.code)) {
+      this.logger.error(`Database schema mismatch [${url}]: ${exception.message}`, exception.stack, 'ExceptionFilter');
+      return response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
+        ok: false,
+        code: 'DATABASE_SCHEMA_OUTDATED',
+        message: 'Database schema is out of date. Ask the administrator to apply the pending Prisma migrations before retrying.',
+      });
     }
 
     const err = exception instanceof Error ? exception : new Error(String(exception));

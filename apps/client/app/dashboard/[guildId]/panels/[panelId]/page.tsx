@@ -4,13 +4,13 @@ import { PanelEditorWorkspace } from '@/components/panel-editor/PanelEditorWorks
 
 export default async function EditPanelPage({ params }: { params: Promise<{ guildId: string; panelId: string }> }) {
   const { guildId, panelId } = await params;
-  const [data, channelsData, rolesData] = await Promise.all([
-    api<{ ok: true; panel: Panel }>(`/guilds/${guildId}/panels/${panelId}`).catch(() => null),
+  const [panelResult, channelsData, rolesData] = await Promise.all([
+    api<{ ok: true; panel: Panel }>(`/guilds/${guildId}/panels/${panelId}`).then(data => ({ data, error: '' })).catch(error => ({ data: null, error: error instanceof Error ? error.message : 'Panel data unavailable.' })),
     api<{ ok: true; channels: { id: string; name: string }[] }>(`/guilds/${guildId}/channels`).catch(() => null),
     api<{ ok: true; roles: { id: string; name: string; color?: string; position: number; manageable: boolean }[] }>(`/guilds/${guildId}/roles`).catch(() => null)
   ]);
-  if (!data || !channelsData || !rolesData) return <main className="dashboard-page"><h1>Edit panel</h1><div className="dashboard-notice" role="alert">Panel data unavailable. <a className="underline" href={`/dashboard/${guildId}/panels/${panelId}`}>Retry</a></div></main>;
-  const panel = data.panel;
+  if (!panelResult.data || !channelsData || !rolesData) return <main className="dashboard-page"><h1>Edit panel</h1><div className="dashboard-notice" role="alert">{panelResult.error || 'Channels or roles could not be loaded. Check bot access and try again.'} <a className="underline" href={`/dashboard/${guildId}/panels/${panelId}`}>Retry</a></div></main>;
+  const panel = panelResult.data.panel;
   const channel = channelsData.channels.find((item) => item.id === panel.channelId);
   const typeLabel = panel.type === 'RULES' ? 'Rules' : panel.type === 'ANNOUNCEMENT' ? 'Announcement' : 'Self Role';
 

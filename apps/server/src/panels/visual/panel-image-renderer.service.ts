@@ -6,6 +6,17 @@ import { PanelAssetService } from './panel-asset.service';
 import type { CanvasScene } from './panel-visual.document';
 import { validatePanelVisualDocument } from './panel-visual.validation';
 
+export function resolvePanelVisualRuntimePaths(baseDir = __dirname, entryFile = __filename) {
+  const jsCandidate = join(baseDir, 'panel-image.worker.js');
+  const tsCandidate = join(baseDir, 'panel-image.worker.ts');
+  const sourceMode = entryFile.endsWith('.ts');
+  return {
+    sourceMode,
+    workerPath: sourceMode ? tsCandidate : jsCandidate,
+    fontsDir: join(baseDir, 'fonts'),
+  };
+}
+
 type Job = {
   guildId: string;
   scene: CanvasScene;
@@ -74,8 +85,8 @@ export class PanelImageRendererService implements OnModuleDestroy {
       assets[key] = asset.bytes;
     }
     if (job.settled) return;
-    const sourceMode = __filename.endsWith('.ts');
-    const worker = new Worker(join(__dirname, sourceMode ? 'panel-image.worker.ts' : 'panel-image.worker.js'), {
+    const { sourceMode, workerPath } = resolvePanelVisualRuntimePaths();
+    const worker = new Worker(workerPath, {
       workerData: { scene: job.scene, assets },
       env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
       ...(sourceMode && !process.versions.bun ? { execArgv: ['-r', 'ts-node/register/transpile-only'] } : {}),

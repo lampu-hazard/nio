@@ -1,4 +1,5 @@
-import { IsHexColor, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { IsHexColor, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import type { PanelVisualDocument } from '../visual/panel-visual.document';
 
 export class CreatePanelDto {
   @IsOptional() @IsString() channelId?: string;
@@ -10,8 +11,10 @@ export class CreatePanelDto {
   @IsIn(['BUTTONS', 'MENU']) mode: 'BUTTONS' | 'MENU' = 'BUTTONS';
   @IsIn(['PREMIUM', 'MINIMAL', 'COLORFUL', 'NEON']) style: 'PREMIUM' | 'MINIMAL' | 'COLORFUL' | 'NEON' = 'PREMIUM';
   @IsOptional() @IsHexColor() color?: string;
-  @IsOptional() @IsUrl() imageUrl?: string;
-  @IsOptional() @IsUrl() thumbnailUrl?: string;
+  @IsOptional() @IsUrl() imageUrl?: string | null;
+  @IsOptional() @IsUrl() thumbnailUrl?: string | null;
+  @IsOptional() @IsObject() visualDocument?: PanelVisualDocument | null;
+  @IsOptional() @IsInt() @Min(0) expectedRevision?: number;
   @IsOptional() @IsString() requireRoleId?: string;
   @IsOptional() @IsInt() @Min(0) @Max(25) maxRoles?: number;
 }

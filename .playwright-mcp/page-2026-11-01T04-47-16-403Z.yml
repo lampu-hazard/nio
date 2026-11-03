@@ -1,0 +1,71 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#dashboard-content"
+    - complementary [ref=e5]:
+      - link "nio" [ref=e6] [cursor=pointer]:
+        - /url: /dashboard
+      - navigation "Server navigation" [ref=e7]:
+        - generic [ref=e8]:
+          - heading "Workspace" [level=2] [ref=e9]
+          - link "Overview" [ref=e10] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/overview
+          - link "Panels" [ref=e11] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678
+          - link "AI Agent" [ref=e12] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/ai-agent
+        - generic [ref=e13]:
+          - heading "Community" [level=2] [ref=e14]
+          - link "Voice XP & Rewards" [ref=e15] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/voice-xp
+          - link "Voice Notifications" [ref=e16] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/voice-notifications
+          - link "Hall of Fame" [ref=e17] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/hall-of-fame
+          - link "Stickers" [ref=e18] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/stickers
+          - link "Booster Roles" [ref=e19] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/booster-roles
+          - link "Tako Rewards" [ref=e20] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/tako
+        - generic [ref=e21]:
+          - heading "Management" [level=2] [ref=e22]
+          - link "Moderation" [ref=e23] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/moderation
+          - link "Slowmode" [ref=e24] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/slowmode
+          - link "Security" [ref=e25] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/security
+          - link "Logging" [ref=e26] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/logging
+        - generic [ref=e27]:
+          - heading "Tools" [level=2] [ref=e28]
+          - link "Embed Studio" [ref=e29] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/embed-templates
+          - link "Plugins" [ref=e30] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/plugins
+        - generic [ref=e31]:
+          - heading "Activity" [level=2] [ref=e32]
+          - link "Analytics" [ref=e33] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/analytics
+          - link "Leaderboard" [ref=e34] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/leaderboard
+          - link "Audit Logs" [ref=e35] [cursor=pointer]:
+            - /url: /dashboard/123456789012345678/audit-logs
+      - generic [ref=e36]:
+        - paragraph [ref=e37]: Server workspace
+        - paragraph [ref=e38]: "123456789012345678"
+        - link "Switch server" [ref=e39] [cursor=pointer]:
+          - /url: /dashboard
+        - link "All settings" [ref=e40] [cursor=pointer]:
+          - /url: /dashboard/123456789012345678/settings
+    - generic [ref=e41]:
+      - banner [ref=e42]:
+        - paragraph [ref=e43]: Server / Voice Notifications
+        - link "Switch server" [ref=e44] [cursor=pointer]:
+          - /url: /dashboard
+      - generic [ref=e46]:
+        - heading "Voice Notifications" [level=1] [ref=e47]
+        - paragraph [ref=e48]: Choose independent destinations for voice activity and level-up announcements.
+        - status [ref=e49]: Loading settings…
+  - button "Open Next.js Dev Tools" [ref=e55] [cursor=pointer]

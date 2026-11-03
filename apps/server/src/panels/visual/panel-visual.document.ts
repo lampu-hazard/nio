@@ -1,0 +1,27 @@
+export type NormalizedCrop = { x: number; y: number; width: number; height: number };
+export type PanelPresentation = Partial<Record<'author' | 'thumbnail' | 'footer' | 'timestamp', boolean>>;
+export type ResolvedPresentation = Required<PanelPresentation>;
+
+type ElementBox = { id: string; x: number; y: number; width: number; height: number };
+export type CanvasElement =
+  | (ElementBox & { type: 'text'; text: string; font: 'dejavu-sans'; fontSize: number; weight: 'regular' | 'bold'; color: string; align: 'left' | 'center' | 'right'; lineHeight: number })
+  | (ElementBox & { type: 'image'; assetKey: string; crop?: NormalizedCrop })
+  | (ElementBox & { type: 'rectangle'; fill: string; radius: number })
+  | { id: string; type: 'line'; x1: number; y1: number; x2: number; y2: number; color: string; strokeWidth: number };
+export type CanvasScene = { width: number; height: number; background: string; description: string; elements: CanvasElement[] };
+export type NativePanelControl =
+  | { kind: 'role'; panelRoleId: string }
+  | { kind: 'link'; id: string; label: string; url: string };
+export type PanelVisualDocument = {
+  version: 1;
+  editorMode: 'SIMPLE' | 'CANVAS';
+  presentation?: PanelPresentation;
+  simpleCrop?: { assetKey: string; crop: NormalizedCrop; width: number; height: number; description: string };
+  canvas?: CanvasScene;
+  native?: { blocks: { id: string; text: string }[]; controls: NativePanelControl[] };
+};
+
+export function resolvePresentation(style: string, overrides?: PanelPresentation): ResolvedPresentation {
+  const visible = style !== 'MINIMAL';
+  return { author: visible, thumbnail: visible, footer: visible, timestamp: visible, ...overrides };
+}

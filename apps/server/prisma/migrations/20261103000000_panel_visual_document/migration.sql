@@ -1,0 +1,3 @@
+ALTER TABLE "Panel"
+ADD COLUMN "visualDocument" JSONB,
+ADD COLUMN "revision" INTEGER NOT NULL DEFAULT 0;

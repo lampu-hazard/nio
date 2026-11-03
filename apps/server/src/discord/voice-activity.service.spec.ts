@@ -69,7 +69,7 @@ describe('voice XP arithmetic', () => {
 describe('voice activity', () => {
   beforeEach(() => {
     jest.useFakeTimers(); jest.setSystemTime(0);
-    jest.spyOn(levelCard, 'renderVoiceLevelCard').mockRejectedValue(new Error('Renderer unavailable'));
+    jest.spyOn(levelCard, 'renderVoiceLevelCard').mockResolvedValue(Buffer.from('test-png'));
   });
   afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
 
@@ -185,7 +185,7 @@ describe('voice activity', () => {
     else await f.service.flush();
     await f.service.flush();
     expect(f.send.mock.calls.map(([payload]) => payload)).toEqual([{
-      embeds: [{ title: 'Level Up', description: 'Othinus reached level 1' }],
+      files: [{ attachment: Buffer.from('test-png'), name: 'voice-level-up.png', description: 'Othinus: level 0 → 1. Total XP 100. Next level 2: 400 XP.' }],
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     }]);
     expect(f.balances.get('a').xp).toBe(100n);
@@ -201,10 +201,14 @@ describe('voice activity', () => {
     await f.change(f.state('b', null), f.state('b', 'general'));
     jest.setSystemTime(60000); await f.service.flush();
     expect(f.send.mock.calls.map(([p]) => p.embeds[0].title)).toEqual(['Member joined voice channel']);
-    expect(levelSend.mock.calls.map(([p]) => p.embeds)).toEqual([
-      [{ title: 'Level Up', description: 'Othinus reached level 3' }],
-      [{ title: 'Level Up', description: 'b reached level 3' }],
+    expect(levelSend.mock.calls.map(([p]) => p.files[0].description)).toEqual([
+      'Othinus: level 0 → 3. Total XP 1000. Next level 4: 1600 XP.',
+      'b: level 0 → 3. Total XP 1000. Next level 4: 1600 XP.',
     ]);
+    for (const [payload] of levelSend.mock.calls) {
+      expect(payload.embeds).toBeUndefined();
+      expect(payload.content).toBeUndefined();
+    }
     await f.service.onModuleDestroy();
   });
 
@@ -219,23 +223,38 @@ describe('voice activity', () => {
     await f.service.start(); jest.setSystemTime(30000); await f.service.flush(); await f.service.flush();
     expect(levelCard.renderVoiceLevelCard).toHaveBeenCalledWith({ name: 'Othinus', previousLevel: 1, level: 2, xp: 400n, avatarUrl: 'https://cdn.discordapp.com/avatars/123/hash.png?size=128' });
     expect(f.send).toHaveBeenCalledTimes(1);
-    expect(f.send.mock.calls[0][0]).toMatchObject({
-      embeds: [{ description: 'Othinus reached level 2', image: { url: 'attachment://voice-level-up.png' } }],
+    expect(f.send.mock.calls[0][0]).toEqual({
       files: [{ attachment: png, name: 'voice-level-up.png', description: 'Othinus: level 1 → 2. Total XP 400. Next level 3: 900 XP.' }],
+      allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     });
     expect(f.balances.get('a').xp).toBe(400n);
     await f.service.onModuleDestroy();
   });
 
-  it('falls back to the plain embed if the card attachment cannot be delivered', async () => {
+  it('does not fall back to text or an embed if the card attachment cannot be delivered', async () => {
     jest.mocked(levelCard.renderVoiceLevelCard).mockResolvedValue(Buffer.from('test-png'));
     const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs'; f.addRole('one', 1);
     f.balances.set('a', { xp: 95n, remainder: 0 }); const a = f.state('a', 'general');
     f.guild.voiceStates.cache.set('a', a); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
     f.send.mockRejectedValueOnce(new Error('Missing Attach Files permission'));
     await f.service.start(); jest.setSystemTime(30000); await f.service.flush(); await f.service.flush();
-    expect(f.send).toHaveBeenCalledTimes(2);
-    expect(f.send.mock.calls[1][0]).toEqual({ embeds: [{ title: 'Level Up', description: 'Othinus reached level 1' }], allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } });
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.send.mock.calls[0][0].embeds).toBeUndefined();
+    expect(f.send.mock.calls[0][0].content).toBeUndefined();
+    expect(f.logger.error).toHaveBeenCalled();
+    expect(f.balances.get('a').xp).toBe(100n);
+    expect(a.member.roles.cache.has('one')).toBe(true);
+    await f.service.onModuleDestroy();
+  });
+
+  it('keeps XP and role rewards without sending a fallback when rendering fails', async () => {
+    jest.mocked(levelCard.renderVoiceLevelCard).mockRejectedValue(new Error('Renderer unavailable'));
+    const f = fixture(); f.settings.voiceLevelUpChannelId = 'logs'; f.addRole('one', 1);
+    const a = f.state('a', 'general'); f.balances.set('a', { xp: 95n, remainder: 0 });
+    f.guild.voiceStates.cache.set('a', a); f.guild.voiceStates.cache.set('b', f.state('b', 'general'));
+    await f.service.start(); jest.setSystemTime(30000); await f.service.flush(); await f.service.flush();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.logger.error).toHaveBeenCalled();
     expect(f.balances.get('a').xp).toBe(100n);
     expect(a.member.roles.cache.has('one')).toBe(true);
     await f.service.onModuleDestroy();

@@ -121,22 +121,16 @@ export class VoiceActivityService implements OnModuleDestroy {
         await this.validateNotificationChannel(pending.guild.id, channelId);
         const channel = await pending.guild.channels.fetch(channelId);
         if (channel?.type !== ChannelType.GuildText && channel?.type !== ChannelType.GuildAnnouncement) continue;
-        const embed = { title: 'Level Up', description: `${this.plain(pending.member.displayName)} reached level ${levelUp.level}` };
         const allowedMentions = { parse: [] as [], users: [], roles: [], repliedUser: false };
-        try {
-          const image = await renderVoiceLevelCard({
-            name: pending.member.displayName, ...levelUp,
-            avatarUrl: pending.member.displayAvatarURL?.({ extension: 'png', size: 128 }) ?? null,
-          });
-          const nextXp = 100n * (BigInt(levelUp.level) + 1n) ** 2n;
-          await channel.send({
-            embeds: [{ ...embed, image: { url: 'attachment://voice-level-up.png' } }], allowedMentions,
-            files: [{ attachment: image, name: 'voice-level-up.png', description: `${pending.member.displayName.slice(0, 100)}: level ${levelUp.previousLevel} → ${levelUp.level}. Total XP ${levelUp.xp}. Next level ${levelUp.level + 1}: ${nextXp} XP.` }],
-          });
-        } catch (err) {
-          this.log('Voice level-up card', err);
-          await channel.send({ embeds: [embed], allowedMentions });
-        }
+        const image = await renderVoiceLevelCard({
+          name: pending.member.displayName, ...levelUp,
+          avatarUrl: pending.member.displayAvatarURL?.({ extension: 'png', size: 128 }) ?? null,
+        });
+        const nextXp = 100n * (BigInt(levelUp.level) + 1n) ** 2n;
+        await channel.send({
+          allowedMentions,
+          files: [{ attachment: image, name: 'voice-level-up.png', description: `${pending.member.displayName.slice(0, 100)}: level ${levelUp.previousLevel} → ${levelUp.level}. Total XP ${levelUp.xp}. Next level ${levelUp.level + 1}: ${nextXp} XP.` }],
+        });
       } catch (err) { this.log('Voice level-up notification', err); }
     }
     for (const tracking of this.tracking.values()) {

@@ -71,6 +71,25 @@ describe('panel image workers', () => {
     expect([...context.getImageData(15, 15, 1, 1).data]).toEqual([255,255,255,255]);
   }, 10000);
 
+  it('keeps cancelled asset work inside the two-job physical limit until it settles', async () => {
+    const releases: (() => void)[] = [];
+    const load = jest.fn(() => new Promise(resolve => releases.push(() => resolve({ bytes: Buffer.alloc(0) }))));
+    const instance = renderer(load);
+    const imageScene: CanvasScene = { ...scene, elements: [{ id: 'i', type: 'image', x: 0, y: 0, width: 100, height: 100, assetKey: 'panels/123/a.png' }] };
+    const controller = new AbortController();
+    const first = instance.render('123', imageScene, controller.signal).catch(error => error);
+    const second = instance.render('123', imageScene, controller.signal).catch(error => error);
+    controller.abort();
+    const thirdController = new AbortController();
+    const third = instance.render('123', imageScene, thirdController.signal).catch(error => error);
+    expect(load).toHaveBeenCalledTimes(2);
+    releases.splice(0).forEach(release => release());
+    await new Promise(resolve => setImmediate(resolve));
+    expect(load).toHaveBeenCalledTimes(3);
+    thirdController.abort(); releases.splice(0).forEach(release => release());
+    await Promise.all([first, second, third]);
+  });
+
   it('checks guild ownership before loading assets', async () => {
     await expect(renderer().render('123', { ...scene, elements: [{ id: 'i', type: 'image', x: 0, y: 0, width: 100, height: 100, assetKey: 'panels/456/a.png' }] })).rejects.toThrow(/server|guild/i);
   });

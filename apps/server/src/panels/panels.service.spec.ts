@@ -125,4 +125,28 @@ describe('panel visual persistence', () => {
     const canvas = { version: 1, editorMode: 'CANVAS', canvas: { width: 600, height: 400, background: '#141719', description: 'Test', elements: [] } };
     await expect(f.service.create('123', 'u', { name: 'L', title: 'L', type: 'LEADERBOARD', visualDocument: canvas } as any)).rejects.toThrow();
   });
+
+  it('records metadata-only audit entries with mode, version, revision, element counts, and publish outcome', async () => {
+    const f = fixture();
+    const canvasDoc = {
+      version: 1,
+      editorMode: 'CANVAS',
+      canvas: { width: 600, height: 400, background: '#141719', description: 'Secret alt text', elements: [{ id: 'r1', type: 'rectangle', x: 0, y: 0, width: 100, height: 100, fill: '#ffffff', radius: 0 }] },
+      native: { blocks: [{ id: 'b1', text: 'Secret markdown' }], controls: [] },
+    };
+    await f.service.update('123', 'p', 'u', { visualDocument: canvasDoc, expectedRevision: 0 } as any);
+    expect(f.prisma.auditLog.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        action: 'PANEL_UPDATE',
+        metadata: { mode: 'CANVAS', version: 1, revision: 1, elementCount: 1, nativeControlCount: 0 },
+      }),
+    });
+    await f.service.markPublished('123', 'p', 'msg-1', 'u');
+    expect(f.prisma.auditLog.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        action: 'PANEL_PUBLISH',
+        metadata: { mode: 'CANVAS', version: 1, revision: 2, elementCount: 1, nativeControlCount: 0, outcome: 'PUBLISHED' },
+      }),
+    });
+  });
 });

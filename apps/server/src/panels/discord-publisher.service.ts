@@ -5,6 +5,7 @@ import { AppError } from '../common/errors/app-error';
 import { AppLogger } from '../logger/logger.service';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { PanelRendererService } from './panel-renderer.service';
+import { validatePanelPayload } from './visual/panel-payload.validation';
 
 @Injectable()
 export class DiscordPublisherService {
@@ -41,7 +42,7 @@ export class DiscordPublisherService {
   async sendPrepared(panel: any, prepared: Awaited<ReturnType<DiscordPublisherService['prepare']>>) {
     const { textChannel, payload } = prepared;
     try {
-      const message = panel.messageId ? await textChannel.messages.fetch(panel.messageId).catch(() => null) : null;
+      const message = panel.messageId ? await textChannel.messages.fetch(panel.messageId).catch(error => { if (this.isUnknownMessage(error)) return null; throw error; }) : null;
       if (message) {
         try {
           const updated = await message.edit({ ...payload, attachments: [] });
@@ -100,6 +101,7 @@ export class DiscordPublisherService {
   }
 
   private validatePublishPayload(panel: any, payload: MessageCreateOptions) {
+    validatePanelPayload(payload);
     const firstEmbed = payload.embeds?.[0] as any;
     const embed = (typeof firstEmbed?.toJSON === 'function' ? firstEmbed.toJSON() : firstEmbed) as APIEmbed | undefined;
     const titleLength = embed?.title?.length ?? 0;
@@ -144,7 +146,7 @@ export class DiscordPublisherService {
         throw new Error('not https');
       }
     } catch {
-      throw new AppError('PANEL_IMAGE_URL_INVALID', `The ${label} must be a valid public HTTPS URL before publishing.`, 400, { value });
+      throw new AppError('PANEL_IMAGE_URL_INVALID', `The ${label} must be a valid public HTTPS URL before publishing.`, 400);
     }
   }
 
@@ -161,10 +163,7 @@ export class DiscordPublisherService {
     return JSON.stringify({
       code: discordError.code,
       status: discordError.status,
-      message: discordError.message,
       rawCode: discordError.rawError?.code,
-      rawMessage: discordError.rawError?.message,
-      rawErrors: discordError.rawError?.errors,
     });
   }
 
@@ -183,7 +182,7 @@ export class DiscordPublisherService {
         'DISCORD_INVALID_PANEL_PAYLOAD',
         'Discord rejected this panel content. Check for invalid emoji, overly long labels, or unsupported image URLs.',
         400,
-        { discordMessage: discordError.rawError?.message || discordError.message, errors: discordError.rawError?.errors },
+        { discordCode: 50035 },
       );
     }
 

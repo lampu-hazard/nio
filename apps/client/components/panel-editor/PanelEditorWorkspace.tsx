@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Panel } from '@/lib/types';
 import { PanelForm } from './PanelForm';
 import { RoleOptionList } from './RoleOptionList';
@@ -21,13 +21,19 @@ export function PanelEditorWorkspace({
   availableRoles: DiscordRole[];
 }) {
   const [previewPanel, setPreviewPanel] = useState<Panel>(panel);
+  const [savedPanel, setSavedPanel] = useState(panel);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    setSavedPanel(panel);
+    setPreviewPanel(current => dirty ? { ...current, roles: panel.roles, revision: panel.revision } : panel);
+  }, [panel]);
 
   return (
-    <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.05fr)_440px]">
+    <div className="space-y-6">
       <div className="space-y-5">
-        <PanelForm guildId={guildId} panel={panel} channels={channels} onPreviewChange={(draft) => setPreviewPanel((current) => ({ ...current, ...draft }))} />
+        <PanelForm guildId={guildId} panel={savedPanel} channels={channels} onDirtyChange={setDirty} onSaved={next => { setSavedPanel(next); setPreviewPanel(next); }} onPreviewChange={(draft) => setPreviewPanel((current) => ({ ...current, ...draft }))} />
         {previewPanel.type !== 'LEADERBOARD' && (
-          <RoleOptionList guildId={guildId} panel={previewPanel} availableRoles={availableRoles} />
+          <RoleOptionList guildId={guildId} panel={savedPanel} availableRoles={availableRoles} publishDisabled={dirty} />
         )}
       </div>
       <EmbedPreview panel={previewPanel} />

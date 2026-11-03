@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { PreviewRequest } from './preview-request';
+const pending: { signal: AbortSignal; resolve: (value: Response) => void }[] = [];
+const revoked: string[] = [];
+const displayed: string[] = [];
+const request = new PreviewRequest(async (_url, init) => new Promise<Response>(resolve => pending.push({ signal: init!.signal as AbortSignal, resolve })), () => `blob:${pending.length}`, value => revoked.push(value));
+const first = request.render('/api/preview', {}, value => displayed.push(value));
+const second = request.render('/api/preview', {}, value => displayed.push(value));
+assert.equal(pending[0].signal.aborted, true);
+pending[1].resolve(new Response(new Blob(['png']), { status: 200 }));
+await second;
+pending[0].resolve(new Response(new Blob(['old']), { status: 200 }));
+await first;
+assert.deepEqual(displayed, ['blob:2']);
+request.dispose();
+assert.deepEqual(revoked, ['blob:2']);
+console.log('Preview cancellation and blob disposal passed.');

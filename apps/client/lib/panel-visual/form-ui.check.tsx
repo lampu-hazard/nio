@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { PresentationSettings } from '../../components/panel-editor/PresentationSettings';
+import { PanelMediaCrop } from '../../components/panel-editor/PanelMediaCrop';
+const document = { version: 1 as const, editorMode: 'SIMPLE' as const };
+const html = renderToStaticMarkup(<><PresentationSettings document={document} style="MINIMAL" onChange={() => {}} /><PanelMediaCrop document={document} assetKey="panels/123/a.png" title="Test" onChange={() => {}} /></>);
+assert.ok(html.includes('Enable banner crop'));
+assert.ok(html.includes('Embed appearance'));
+assert.ok(!html.includes('checked=""'));
+console.log('Simple appearance/crop UI render passed.');

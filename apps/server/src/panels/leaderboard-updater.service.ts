@@ -1,6 +1,6 @@
 import { Injectable, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DiscordPublisherService } from './discord-publisher.service';
+import { PanelPublishCoordinatorService } from './visual/panel-publish-coordinator.service';
 import { PanelsService } from './panels.service';
 import { AppLogger } from '../logger/logger.service';
 
@@ -10,7 +10,7 @@ export class LeaderboardUpdaterService implements OnApplicationBootstrap, OnModu
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly publisher: DiscordPublisherService,
+    private readonly publisher: PanelPublishCoordinatorService,
     private readonly panels: PanelsService,
     private readonly logger: AppLogger,
   ) {}
@@ -46,12 +46,7 @@ export class LeaderboardUpdaterService implements OnApplicationBootstrap, OnModu
 
     for (const panel of activePanels) {
       try {
-        // Fetch panel details along with roles (to match panels.service.get schema)
-        const detailedPanel = await this.panels.get(panel.guildId, panel.id);
-        const message = await this.publisher.publish(detailedPanel);
-
-        // Update database status and update time
-        await this.panels.markPublished(panel.guildId, panel.id, message.id, 'system');
+        await this.publisher.publish(panel.guildId, panel.id, 'system', panel.revision);
         this.logger.log(`Successfully auto-updated leaderboard panel ${panel.id} in guild ${panel.guildId}`, 'LeaderboardUpdater');
       } catch (error: any) {
         this.logger.error(`Failed to auto-update leaderboard panel ${panel.id}: ${error.message}`, error.stack, 'LeaderboardUpdater');

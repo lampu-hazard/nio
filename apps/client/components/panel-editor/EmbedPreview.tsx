@@ -1,4 +1,6 @@
 import type { Panel } from '@/lib/types';
+import { normalizePanelMediaUrl } from '@/lib/panel-visual/generated/panel-media-url';
+import { resolvePresentation } from '@/lib/panel-visual/generated/panel-visual.document';
 
 const STYLE_LABELS: Record<string, string> = {
   PREMIUM: 'Premium finish',
@@ -8,7 +10,13 @@ const STYLE_LABELS: Record<string, string> = {
 };
 
 export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
-  const roles = panel?.roles || [];
+  const document = panel?.visualDocument;
+  const presentation = resolvePresentation(panel?.style ?? 'PREMIUM', document?.presentation);
+  const allRoles = panel?.roles || [];
+  const roles = document?.native ? allRoles.filter(role => document.native!.controls.some(control => control.kind === 'role' && control.panelRoleId === role.id)) : allRoles;
+  function media(value?: string | null) { try { return normalizePanelMediaUrl(value, typeof window === 'undefined' ? 'https://localhost' : window.location.origin); } catch { return null; } }
+  const banner = media(panel?.imageUrl);
+  const thumbnail = media(panel?.thumbnailUrl);
   const showRoleComponents = (panel?.type || 'SELF_ROLE') === 'SELF_ROLE';
   const color = panel?.color || '#18181B';
   const isPublished = panel?.status === 'PUBLISHED' && panel?.messageId;
@@ -38,30 +46,23 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
                   <span className="text-xs text-[#949ba4]">Today at 12:00</span>
                 </div>
 
-                {panel?.imageUrl && (
-                  <div className="mt-3 overflow-hidden rounded-xl border border-black/20 bg-[#2b2d31]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={panel.imageUrl} alt="Panel banner" className="max-h-64 w-full object-cover" />
-                  </div>
-                )}
-
                 <div className="mt-3 overflow-hidden rounded border border-black/20 bg-[#2b2d31]" style={{ borderLeft: `4px solid ${color}` }}>
                   <div className="p-4">
                     <div className="flex items-start gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="text-lg font-black text-white">{panel?.title || 'Self Roles'}</div>
-                        {panel?.style !== 'MINIMAL' && panel?.accentText && (
+                        {!document?.native && panel?.style !== 'MINIMAL' && panel?.accentText && (
                           <div className="mt-1 text-sm font-semibold" style={{ color }}>{panel.accentText}</div>
                         )}
                       </div>
-                      {panel?.style !== 'MINIMAL' && panel?.thumbnailUrl && (
+                      {presentation.thumbnail && thumbnail && (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={panel.thumbnailUrl} alt="Panel thumbnail" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                        <img src={thumbnail} alt="Panel thumbnail" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
                       )}
                     </div>
 
                     <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#dbdee1]">
-                      {panel?.description || 'Select roles below to customize your profile.'}
+                      {document?.native ? document.native.blocks.map(block => block.text).join('\n\n') : panel?.description || 'Select roles below to customize your profile.'}
                     </p>
 
                     {showRoleComponents && roles.length > 0 && (
@@ -75,11 +76,11 @@ export function EmbedPreview({ panel }: { panel?: Partial<Panel> | null }) {
                       </div>
                     )}
 
-                    {panel?.style !== 'MINIMAL' && (
+                    {document?.editorMode === 'CANVAS' || document?.simpleCrop ? <div className="mt-3 border border-dashed border-white/20 p-4 text-sm text-[#949ba4]">Generated image · use Server image preview above</div> : banner && <img src={banner} alt="Panel banner" className="mt-3 h-auto w-full rounded" />}
+                    {(presentation.footer || presentation.timestamp) && (
                       <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3 text-xs text-[#949ba4]">
-                        <span>{panel?.type === 'RULES' ? 'Rules panel' : panel?.type === 'ANNOUNCEMENT' ? 'Announcement panel' : 'Self-role panel'}</span>
-                        <span>•</span>
-                        <span>Today at 12:00</span>
+                        {presentation.footer && <span>{panel?.type === 'RULES' ? 'Rules panel' : panel?.type === 'ANNOUNCEMENT' ? 'Announcement panel' : 'Self-role panel'}</span>}
+                        {presentation.timestamp && <span>Today at 12:00</span>}
                       </div>
                     )}
                   </div>

@@ -1,8 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import type { Panel } from '@/lib/types';
+import type { PanelVisualDocument } from '@/lib/panel-visual/generated/panel-visual.document';
+import { mediaPayload, switchEditorMode, uploadedAssetKey } from '@/lib/panel-visual/workspace-state';
+import { CanvasEditor } from './canvas/CanvasEditor';
+import { DiscordPanelPreview } from './canvas/DiscordPanelPreview';
+import { PresentationSettings } from './PresentationSettings';
+import { PanelMediaCrop } from './PanelMediaCrop';
 
 type ChannelOption = { id: string; name: string };
 type PanelType = 'SELF_ROLE' | 'RULES' | 'ANNOUNCEMENT' | 'LEADERBOARD';
@@ -89,25 +95,21 @@ function optional(value: string) {
   return trimmed || undefined;
 }
 
-function publicUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith('/')) return `${window.location.origin}${trimmed}`;
-  return trimmed;
-}
-
 export function PanelForm({
   guildId,
   panel,
   channels = [],
   onPreviewChange,
+  onSaved,
+  onDirtyChange,
   initialValues,
 }: {
   guildId: string;
   panel?: Panel | null;
   channels?: ChannelOption[];
   onPreviewChange?: (draft: Partial<Panel>) => void;
+  onSaved?: (panel: Panel) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   initialValues?: Partial<Draft>;
 }) {
   const router = useRouter();
@@ -115,11 +117,44 @@ export function PanelForm({
   const [draft, setDraft] = useState<Draft>(() => ({ ...initialDraft(panel), ...initialValues }));
   const [channelId, setChannelId] = useState(panel?.channelId || '');
   const isPublished = panel?.status === 'PUBLISHED';
+  const [visual, setVisual] = useState<PanelVisualDocument | null>(panel?.visualDocument ?? null);
+  const [revision, setRevision] = useState(panel?.revision ?? 0);
+  const [dirty, setDirty] = useState(false);
+  const [assets, setAssets] = useState<{ key: string; url: string }[]>([]);
+  useEffect(() => {
+    if (!panel?.id) return;
+    const controller = new AbortController();
+    fetch(`/api/guilds/${guildId}/panels/${panel.id}/visual-assets`, { signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error('Saved images could not be loaded. Reload to retry.'); return response.json(); })
+      .then(data => { if (!controller.signal.aborted) setAssets(previous => [...previous, ...data.assets]); })
+      .catch(error => { if (!controller.signal.aborted) setState({ loading: false, error: error.message }); });
+    return () => controller.abort();
+  }, [guildId, panel?.id]);
+  useEffect(() => { setRevision(panel?.revision ?? 0); }, [panel?.revision]);
+  useEffect(() => {
+    if (!dirty && panel) { setDraft(initialDraft(panel)); setChannelId(panel.channelId || ''); setVisual(panel.visualDocument ?? null); }
+  }, [panel, dirty]);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    if (!dirty) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', beforeUnload);
+    const guardLink = (event: MouseEvent) => {
+      const link = (event.target as HTMLElement).closest('a');
+      if (link?.href && link.href !== window.location.href && !window.confirm('Discard unsaved panel changes?')) { event.preventDefault(); event.stopPropagation(); }
+    };
+    document.addEventListener('click', guardLink, true);
+    return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', guardLink, true); };
+  }, [dirty, onDirtyChange]);
+  function changeVisual(next: PanelVisualDocument) {
+    setVisual(next); setDirty(true);
+    onPreviewChange?.({ ...draft, visualDocument: next });
+  }
 
   function patchDraft(patch: Partial<Draft>) {
     const next = { ...draft, ...patch };
-    setDraft(next);
-    onPreviewChange?.({ ...panel, ...next, channelId, roles: panel?.roles || [] });
+    setDraft(next); setDirty(true);
+    onPreviewChange?.({ ...panel, ...next, visualDocument: visual, channelId, roles: panel?.roles || [] });
   }
 
   function applyTemplate(key: keyof typeof TEMPLATES) {
@@ -144,7 +179,8 @@ export function PanelForm({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to get upload URL');
 
-      const { uploadUrl, url } = data;
+      const { uploadUrl, url, key } = data;
+      setAssets(previous => [...previous, { key, url }]);
 
       let uploadSuccess = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -176,17 +212,18 @@ export function PanelForm({
   }
 
   async function publishPanel() {
-    if (!panel) return;
+    if (!panel || dirty) return;
     setState({ loading: false, publishing: true });
     try {
       const response = await fetch(`/api/guilds/${guildId}/panels/${panel.id}/publish`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ expectedRevision: revision }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || 'Failed to publish panel');
+      if (data.panel) { setRevision(data.panel.revision); onSaved?.(data.panel); }
       setState({ loading: false, success: isPublished ? 'Discord message updated.' : `Panel published. Message ID: ${data.messageId}` });
       router.refresh();
     } catch (error) {
@@ -208,6 +245,7 @@ export function PanelForm({
       return;
     }
 
+    try {
     const payload = {
       channelId: optional(channelId),
       name,
@@ -218,12 +256,12 @@ export function PanelForm({
       mode: draft.mode,
       style: draft.style,
       color: draft.color,
-      imageUrl: optional(publicUrl(draft.imageUrl)),
-      thumbnailUrl: optional(publicUrl(draft.thumbnailUrl)),
+      ...mediaPayload(draft.imageUrl, draft.thumbnailUrl, window.location.origin),
       maxRoles: draft.maxRoles,
+      visualDocument: visual,
+      expectedRevision: panel ? revision : undefined,
     };
 
-    try {
       const response = await fetch(panel ? `/api/guilds/${guildId}/panels/${panel.id}` : `/api/guilds/${guildId}/panels`, {
         method: panel ? 'PATCH' : 'POST',
         credentials: 'include',
@@ -233,20 +271,8 @@ export function PanelForm({
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || 'Failed to save panel');
 
-      if (!panel && data.panel?.id && draft.type === 'LEADERBOARD') {
-        const publishResponse = await fetch(`/api/guilds/${guildId}/panels/${data.panel.id}/publish`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        const publishData = await publishResponse.json().catch(() => ({}));
-        if (!publishResponse.ok) throw new Error(publishData.message || 'Panel saved, but failed to publish leaderboard');
-        setState({ loading: false, success: 'Leaderboard panel created and published.' });
-        router.push(`/dashboard/${guildId}/panels/${data.panel.id}`);
-        router.refresh();
-        return;
-      }
+      if (data.panel) { setRevision(data.panel.revision); onSaved?.(data.panel); }
+      setDirty(false);
 
       setState({
         loading: false,
@@ -272,7 +298,13 @@ export function PanelForm({
         </div>
       </div>
 
-      <div className="px-6 py-6 md:px-7">
+      <fieldset disabled={state.loading || state.publishing || Boolean(state.uploading)} className="px-6 py-6 md:px-7 min-w-0">
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <button type="button" className={`btn ${visual?.editorMode !== 'CANVAS' ? 'btn-primary' : ''}`} onClick={() => changeVisual(switchEditorMode(visual, 'SIMPLE', { ...draft, roles: panel?.roles }))}>Simple</button>
+          <button type="button" className={`btn ${visual?.editorMode === 'CANVAS' ? 'btn-primary' : ''}`} disabled={draft.type === 'LEADERBOARD'} onClick={() => changeVisual(switchEditorMode(visual, 'CANVAS', { ...draft, roles: panel?.roles }))}>Canvas</button>
+          <span className="text-sm text-[var(--muted)]">{dirty ? 'Unsaved changes — save before publishing' : `Saved revision ${revision}`}</span>
+          {draft.type === 'LEADERBOARD' && <p className="text-sm text-[var(--muted)]">Leaderboard content stays dynamic; Canvas mode is unavailable.</p>}
+        </div>
         {state.error && <div className="notice notice-error mb-4">{state.error}</div>}
         {state.success && <div className="notice notice-success mb-4">{state.success}</div>}
 
@@ -290,13 +322,13 @@ export function PanelForm({
               <option value="RULES">Rules / Info</option>
               <option value="SELF_ROLE">Self Role</option>
               <option value="ANNOUNCEMENT">Announcement</option>
-              <option value="LEADERBOARD">Leaderboard</option>
+              <option value="LEADERBOARD" disabled={visual?.editorMode === 'CANVAS'}>Leaderboard</option>
             </select>
           </label>
 
           <label className="block">
             <span className="field-label">Target channel</span>
-            <select value={channelId} onChange={(event) => setChannelId(event.target.value)} className="input" required>
+            <select value={channelId} onChange={(event) => { setChannelId(event.target.value); setDirty(true); onPreviewChange?.({ channelId: event.target.value }); }} className="input" required>
               <option value="" disabled>Select channel</option>
               {channels.map((ch) => <option key={ch.id} value={ch.id}>#{ch.name}</option>)}
             </select>
@@ -405,18 +437,24 @@ export function PanelForm({
             </div>
           </div>
         </div>
-      </div>
+        <div className="mt-6 space-y-5">
+          <PresentationSettings document={visual ?? { version: 1, editorMode: 'SIMPLE' }} style={draft.style} onChange={changeVisual} />
+          {visual?.editorMode === 'CANVAS' ? <CanvasEditor document={visual} guildId={guildId} roles={draft.type === 'SELF_ROLE' ? panel?.roles ?? [] : []} initialAssets={assets} onChange={changeVisual} /> : draft.type !== 'LEADERBOARD' && <PanelMediaCrop document={visual ?? { version: 1, editorMode: 'SIMPLE' }} assetKey={uploadedAssetKey(draft.imageUrl, guildId)} title={draft.title} onChange={changeVisual} />}
+          {visual && <DiscordPanelPreview guildId={guildId} document={visual} />}
+          {visual && <button type="button" className="btn" onClick={() => { setVisual(null); setDirty(true); onPreviewChange?.({ visualDocument: null }); }}>Restore legacy / guild template rendering</button>}
+        </div>
+      </fieldset>
 
       <div className="flex flex-col gap-3 border-t border-[var(--border)] bg-[var(--bg-subtle)] px-6 py-5 sm:flex-row sm:items-center sm:justify-between md:px-7">
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Save stores the dashboard draft. Publish or update to sync with Discord.</p>
         <div className="flex flex-wrap gap-2 sm:justify-end">
-          {panel && draft.type === 'LEADERBOARD' && (
-            <button type="button" onClick={publishPanel} disabled={state.publishing} className="btn btn-primary">
+          {panel && (
+            <button type="button" onClick={publishPanel} disabled={state.publishing || state.loading || dirty} className="btn btn-primary">
               {state.publishing ? 'Publishing...' : isPublished ? 'Update Discord Message' : 'Publish Panel'}
             </button>
           )}
-          <button disabled={state.loading} className="btn btn-primary">
-            {state.loading ? 'Saving...' : panel ? 'Save Changes' : draft.type === 'LEADERBOARD' ? 'Create & Publish Panel' : 'Create Panel'}
+          <button disabled={state.loading || state.publishing || Boolean(state.uploading)} className="btn btn-primary">
+            {state.loading ? 'Saving...' : panel ? 'Save Changes' : 'Create Panel Draft'}
           </button>
         </div>
       </div>

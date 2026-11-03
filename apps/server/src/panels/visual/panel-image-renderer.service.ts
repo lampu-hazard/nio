@@ -16,6 +16,7 @@ type Job = {
   cleanup: () => void;
   worker?: Worker;
   settled: boolean;
+  starting?: boolean;
 };
 
 @Injectable()
@@ -54,7 +55,13 @@ export class PanelImageRendererService implements OnModuleDestroy {
       const job = this.queue.shift()!;
       if (job.settled) continue;
       this.running.add(job);
-      void this.start(job).catch(error => this.finish(job, error instanceof Error ? error : new Error('Panel rendering failed.')));
+      job.starting = true;
+      void this.start(job)
+        .catch(error => this.finish(job, error instanceof Error ? error : new Error('Panel rendering failed.')))
+        .finally(() => {
+          job.starting = false;
+          if (job.settled && !job.worker) { this.running.delete(job); this.drain(); }
+        });
     }
   }
 
@@ -70,6 +77,7 @@ export class PanelImageRendererService implements OnModuleDestroy {
     const sourceMode = __filename.endsWith('.ts');
     const worker = new Worker(join(__dirname, sourceMode ? 'panel-image.worker.ts' : 'panel-image.worker.js'), {
       workerData: { scene: job.scene, assets },
+      env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
       ...(sourceMode && !process.versions.bun ? { execArgv: ['-r', 'ts-node/register/transpile-only'] } : {}),
     });
     job.worker = worker;
@@ -94,7 +102,7 @@ export class PanelImageRendererService implements OnModuleDestroy {
       const termination = job.worker.terminate().then(release, release);
       this.terminations.add(termination);
       void termination.then(() => this.terminations.delete(termination));
-    } else release();
+    } else if (!job.starting) release();
     if (error) job.reject(error);
     else if (!png || png.length > 8 * 1024 * 1024) job.reject(new Error('Invalid panel output size.'));
     else job.resolve(png);

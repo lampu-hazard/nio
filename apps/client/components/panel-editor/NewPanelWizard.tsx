@@ -83,8 +83,11 @@ const PREVIEW_BY_TYPE: Record<PanelType, Panel> = {
 export function NewPanelWizard({ guildId, channels }: { guildId: string; channels: Channel[] }) {
   const [selectedType, setSelectedType] = useState<PanelType>('RULES');
   const [previewPanel, setPreviewPanel] = useState<Panel>(PREVIEW_BY_TYPE.RULES);
+  const [dirty, setDirty] = useState(false);
 
   function selectType(type: PanelType) {
+    if (type === selectedType || (dirty && !window.confirm('Discard unsaved panel changes?'))) return;
+    setDirty(false);
     setSelectedType(type);
     setPreviewPanel(PREVIEW_BY_TYPE[type]);
   }
@@ -106,8 +109,8 @@ export function NewPanelWizard({ guildId, channels }: { guildId: string; channel
   return (
     <div className="space-y-6">
       <PanelTypePicker selected={selectedType} onSelect={selectType} />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.12fr)_minmax(380px,.88fr)]">
-        <PanelForm key={selectedType} guildId={guildId} panel={null} channels={channels} initialValues={initialValues} onPreviewChange={(draft) => setPreviewPanel((current) => ({ ...current, ...templatePanel, ...draft }))} />
+      <div className="space-y-6">
+        <PanelForm key={selectedType} guildId={guildId} onDirtyChange={setDirty} panel={null} channels={channels} initialValues={initialValues} onPreviewChange={(draft) => setPreviewPanel((current) => ({ ...current, ...templatePanel, ...draft }))} />
         <EmbedPreview panel={previewPanel} />
       </div>
     </div>

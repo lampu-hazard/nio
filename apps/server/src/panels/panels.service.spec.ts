@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { Prisma } from '@prisma/client';
 import { PanelsService } from './panels.service';
 import { PanelPublishLockService } from './visual/panel-publish-lock.service';
 
@@ -7,7 +8,14 @@ function fixture() {
   const prisma: any = {
     panel: {
       findFirst: jest.fn(async ({ where }: any) => where.guildId === panel.guildId && where.id === panel.id ? { ...panel, roles: [...panel.roles] } : null),
-      create: jest.fn(async ({ data }: any) => (panel = { ...panel, ...data })),
+      create: jest.fn(async ({ data }: any) => {
+        for (const [key, value] of Object.entries(data)) if (value !== undefined) panel[key] = value === Prisma.DbNull ? null : value;
+        return { ...panel, roles: [...panel.roles] };
+      }),
+      update: jest.fn(async ({ data }: any) => {
+        for (const [key, value] of Object.entries(data)) if (value !== undefined) panel[key] = value === Prisma.DbNull ? null : value;
+        return { ...panel, roles: [...panel.roles] };
+      }),
       updateMany: jest.fn(async ({ where, data }: any) => {
         if (where.id !== panel.id || where.guildId !== panel.guildId || (where.revision !== undefined && where.revision !== panel.revision)) return { count: 0 };
         for (const [key, value] of Object.entries(data)) if (value !== undefined) panel[key] = key === 'revision' ? panel.revision + (value as any).increment : value;
@@ -90,6 +98,25 @@ describe('panel visual persistence', () => {
     const doc: any = { ...visual, simpleCrop: { assetKey: 'panels/456/a.png', width: 600, height: 400, description: 'Banner', crop: { x: 0, y: 0, width: 1, height: 1 } } };
     await expect(f.service.update('123', 'p', 'u', { visualDocument: doc, expectedRevision: 0 } as any)).rejects.toThrow();
     await expect(f.service.update('123', 'p', 'u', { visualDocument: { ...visual, native: { blocks: [], controls: [{ kind: 'role', panelRoleId: 'foreign' }] } }, expectedRevision: 0 } as any)).rejects.toThrow();
+  });
+
+  it('removes native references atomically when deleting their role', async () => {
+    const f = fixture();
+    const role = await f.service.addRole('123', 'p', 'u', { roleId: 'role', label: 'Role' } as any);
+    await f.service.update('123', 'p', 'u', { expectedRevision: 1, visualDocument: { ...visual, native: { blocks: [], controls: [{ kind: 'role', panelRoleId: role.id }] } } } as any);
+    await f.service.removeRole('123', 'p', role.id, 'u');
+    expect(f.current().visualDocument.native.controls).toEqual([]);
+    expect(f.current().revision).toBe(3);
+  });
+
+  it('serializes publish status and archive mutations with content writes', async () => {
+    const f = fixture();
+    await f.service.markPublished('123', 'p', 'message', 'u');
+    expect(f.current()).toMatchObject({ revision: 1, status: 'PUBLISHED', messageId: 'message' });
+    await f.service.markUnpublished('123', 'p', 'u');
+    expect(f.current()).toMatchObject({ revision: 2, status: 'DRAFT', messageId: null });
+    await f.service.archive('123', 'p', 'u');
+    expect(f.current()).toMatchObject({ revision: 3, status: 'ARCHIVED' });
   });
 
   it('rejects malformed documents and Canvas leaderboard mode', async () => {

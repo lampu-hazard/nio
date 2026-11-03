@@ -3,7 +3,12 @@ import { Request } from 'express';
 import { CurrentUser, SessionUser } from '../common/decorators/current-user.decorator';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { GuildAccessGuard } from '../guilds/guards/guild-access.guard';
-import { DiscordPublisherService } from './discord-publisher.service';
+import { PanelPublishCoordinatorService } from './visual/panel-publish-coordinator.service';
+import { IsInt, IsOptional, Min } from 'class-validator';
+
+class PublishPanelDto {
+  @IsOptional() @IsInt() @Min(0) expectedRevision?: number;
+}
 import { PanelsService } from './panels.service';
 import { CreatePanelDto } from './dto/create-panel.dto';
 import { UpdatePanelDto } from './dto/update-panel.dto';
@@ -21,7 +26,7 @@ const MAX_PANEL_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 export class PanelsController {
   constructor(
     private readonly panels: PanelsService,
-    private readonly publisher: DiscordPublisherService,
+    private readonly publisher: PanelPublishCoordinatorService,
     private readonly r2: R2Service,
   ) {}
 
@@ -113,11 +118,9 @@ export class PanelsController {
     @Param('guildId') guildId: string,
     @Param('panelId') panelId: string,
     @CurrentUser() user: SessionUser,
+    @Body() dto: PublishPanelDto,
   ) {
-    const panel = await this.panels.get(guildId, panelId);
-    const message = await this.publisher.publish(panel);
-    const updated = await this.panels.markPublished(guildId, panelId, message.id, user.id);
-    return { ok: true, messageId: message.id, panel: updated };
+    return this.publisher.publish(guildId, panelId, user.id, dto?.expectedRevision);
   }
 
   @Delete('panels/:panelId/publish')
@@ -126,10 +129,7 @@ export class PanelsController {
     @Param('panelId') panelId: string,
     @CurrentUser() user: SessionUser,
   ) {
-    const panel = await this.panels.get(guildId, panelId);
-    await this.publisher.deletePublishedMessage(panel);
-    const updated = await this.panels.markUnpublished(guildId, panelId, user.id);
-    return { ok: true, panel: updated };
+    return this.publisher.unpublish(guildId, panelId, user.id);
   }
 
   @Get('analytics')

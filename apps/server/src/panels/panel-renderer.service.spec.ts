@@ -46,6 +46,16 @@ describe('PanelRendererService', () => {
     expect(res.components).toHaveLength(1);
   });
 
+  it('renders an explicit canvas document as an attachment with native content and no pings', async () => {
+    const images = { render: jest.fn<any>().mockResolvedValue(Buffer.from('png')) };
+    service = new PanelRendererService(mockLeaderboard as any, undefined, undefined, images as any);
+    const res = await service.render({ id: 'p', guildId: '123', type: 'RULES', title: 'Rules', style: 'PREMIUM', description: 'Legacy', visualDocument: { version: 1, editorMode: 'CANVAS', presentation: { footer: false, author: false, timestamp: false }, canvas: { width: 600, height: 400, background: '#000000', description: 'Accessible banner', elements: [] }, native: { blocks: [{ id: 'b', text: '**Read** <@&123>' }], controls: [] } } }, mockGuild as any);
+    expect(res.embeds[0].data).toMatchObject({ description: '**Read** <@&123>', image: { url: 'attachment://panel-visual.png' } });
+    expect(res.embeds[0].data.footer).toBeUndefined();
+    expect(res.files?.[0]).toMatchObject({ name: 'panel-visual.png', description: 'Accessible banner' });
+    expect(res.allowedMentions).toMatchObject({ parse: [], users: [], roles: [] });
+  });
+
   it('renders a chat leaderboard panel with podium indicators', async () => {
     const panel = {
       id: 'panel-2',

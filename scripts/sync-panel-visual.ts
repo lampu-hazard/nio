@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '..');
 const source = resolve(root, 'apps/server/src/panels/visual');
 const target = resolve(root, 'apps/client/lib/panel-visual/generated');
-const modules = ['panel-visual.document.ts', 'panel-media-url.ts'];
+const modules = ['panel-visual.document.ts', 'panel-media-url.ts', 'panel-visual.layout.ts'];
 const check = process.argv.includes('--check');
 let mismatch = false;
 for (const name of modules) {

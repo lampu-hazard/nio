@@ -1,3 +1,5 @@
+import type { PanelVisualDocument } from './panel-visual/generated/panel-visual.document';
+
 export type ApiResponse<T> = { ok: true } & T;
 
 export type GuildSummary = {
@@ -34,6 +36,8 @@ export type Panel = {
   color: string;
   imageUrl?: string | null;
   thumbnailUrl?: string | null;
+  visualDocument?: PanelVisualDocument | null;
+  revision: number;
   maxRoles: number;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   lastPublishedAt?: string | null;

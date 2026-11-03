@@ -35,8 +35,8 @@ export class PanelsService {
     return document as unknown as Prisma.InputJsonValue;
   }
 
-  private async mutate<T>(guildId: string, panelId: string, expectedRevision: number | undefined, work: (tx: Prisma.TransactionClient, panel: Awaited<ReturnType<PanelsService['get']>>) => Promise<T>): Promise<T> {
-    return this.locks.run(guildId, panelId, async () => {
+  private async mutate<T>(guildId: string, panelId: string, expectedRevision: number | undefined, work: (tx: Prisma.TransactionClient, panel: Awaited<ReturnType<PanelsService['get']>>) => Promise<T>, lockHeld = false): Promise<T> {
+    const execute = async () => {
       const panel = await this.get(guildId, panelId);
       if (expectedRevision !== undefined && panel.revision !== expectedRevision) throw new AppError('PANEL_REVISION_CONFLICT', 'Panel changed. Reload before saving.', 409);
       return this.prisma.$transaction(async tx => {
@@ -44,7 +44,8 @@ export class PanelsService {
         if (claimed.count !== 1) throw new AppError('PANEL_REVISION_CONFLICT', 'Panel changed. Reload before saving.', 409);
         return work(tx, panel);
       });
-    });
+    };
+    return lockHeld ? execute() : this.locks.run(guildId, panelId, execute);
   }
 
   list(guildId: string) {
@@ -65,6 +66,7 @@ export class PanelsService {
   }
 
   async create(guildId: string, createdById: string, dto: CreatePanelDto) {
+    const visualDocument = this.visualData(dto.visualDocument, guildId, dto.type || 'SELF_ROLE', []);
     // Pastikan Guild sudah terdaftar di database sebelum membuat panel (agar tidak melanggar foreign key constraint)
     const discordGuild = this.bot.client.guilds.cache.get(guildId) || await this.bot.client.guilds.fetch(guildId).catch(() => null);
     if (!discordGuild) throw new AppError('GUILD_NOT_FOUND', 'Discord server not found or bot is not in it', 404);
@@ -92,139 +94,154 @@ export class PanelsService {
         thumbnailUrl: dto.thumbnailUrl,
         requireRoleId: dto.requireRoleId,
         maxRoles: dto.maxRoles ?? 0,
+        visualDocument,
       },
       include: { roles: true },
     });
 
-    await this.auditLog(guildId, createdById, 'PANEL_CREATE', panel.id, { name: panel.name });
+    await this.auditLog(guildId, createdById, 'PANEL_CREATE', panel.id, { revision: panel.revision });
     return panel;
   }
 
   async update(guildId: string, panelId: string, userId: string, dto: UpdatePanelDto) {
-    await this.get(guildId, panelId);
-    const updated = await this.prisma.panel.update({
-      where: { id: panelId },
-      data: {
-        channelId: dto.channelId,
-        name: dto.name,
-        title: dto.title,
-        accentText: dto.accentText,
-        description: dto.description,
-        type: dto.type,
-        mode: dto.mode,
-        style: dto.style,
-        color: dto.color,
-        imageUrl: dto.imageUrl,
-        thumbnailUrl: dto.thumbnailUrl,
-        requireRoleId: dto.requireRoleId,
-        maxRoles: dto.maxRoles,
-      },
-      include: { roles: { orderBy: { position: 'asc' } } },
+    if (dto.visualDocument !== undefined && dto.expectedRevision === undefined) {
+      throw new AppError('PANEL_REVISION_CONFLICT', 'Reload the panel before saving visual changes.', 409);
+    }
+    const updated = await this.mutate(guildId, panelId, dto.expectedRevision, async (tx, panel) => {
+      const visualDocument = this.visualData(
+        dto.visualDocument === undefined ? panel.visualDocument : dto.visualDocument,
+        guildId, dto.type ?? panel.type, panel.roles.map(role => role.id),
+      );
+      return tx.panel.update({
+        where: { id: panelId },
+        data: {
+          channelId: dto.channelId,
+          name: dto.name,
+          title: dto.title,
+          accentText: dto.accentText,
+          description: dto.description,
+          type: dto.type,
+          mode: dto.mode,
+          style: dto.style,
+          color: dto.color,
+          imageUrl: dto.imageUrl,
+          thumbnailUrl: dto.thumbnailUrl,
+          requireRoleId: dto.requireRoleId,
+          maxRoles: dto.maxRoles,
+          visualDocument: dto.visualDocument === undefined ? undefined : visualDocument,
+        },
+        include: { roles: { orderBy: { position: 'asc' } } },
+      });
     });
 
-    await this.auditLog(guildId, userId, 'PANEL_UPDATE', panelId, { name: updated.name });
+    await this.auditLog(guildId, userId, 'PANEL_UPDATE', panelId, { revision: updated.revision });
     return updated;
   }
 
   async archive(guildId: string, panelId: string, userId: string) {
-    const panel = await this.get(guildId, panelId);
-    const updated = await this.prisma.panel.update({ where: { id: panelId }, data: { status: PanelStatus.ARCHIVED } });
-    await this.auditLog(guildId, userId, 'PANEL_ARCHIVE', panelId, { name: panel.name });
+    const updated = await this.mutate(guildId, panelId, undefined, tx =>
+      tx.panel.update({ where: { id: panelId }, data: { status: PanelStatus.ARCHIVED } }),
+    );
+    await this.auditLog(guildId, userId, 'PANEL_ARCHIVE', panelId, { revision: updated.revision });
     return updated;
   }
 
   async addRole(guildId: string, panelId: string, userId: string, dto: CreatePanelRoleDto) {
-    const panel = await this.get(guildId, panelId);
-    if (panel.roles.length >= 25) throw new AppError('VALIDATION_ERROR', 'Maximum 25 roles per panel', 400);
-    const maxPosition = panel.roles.reduce((max: number, role: PanelRole) => Math.max(max, role.position), -1);
-    const role = await this.prisma.panelRole.create({
-      data: {
-        panelId,
-        roleId: dto.roleId,
-        emoji: dto.emoji,
-        label: dto.label,
-        description: dto.description,
-        buttonStyle: dto.buttonStyle,
-        position: maxPosition + 1,
-      },
+    const role = await this.mutate(guildId, panelId, undefined, async (tx, panel) => {
+      if (panel.roles.length >= 25) throw new AppError('VALIDATION_ERROR', 'Maximum 25 roles per panel', 400);
+      const maxPosition = panel.roles.reduce((max: number, role: PanelRole) => Math.max(max, role.position), -1);
+      return tx.panelRole.create({
+        data: {
+          panelId,
+          roleId: dto.roleId,
+          emoji: dto.emoji,
+          label: dto.label,
+          description: dto.description,
+          buttonStyle: dto.buttonStyle,
+          position: maxPosition + 1,
+        },
+      });
     });
-    await this.auditLog(guildId, userId, 'PANEL_ROLE_ADD', panelId, { roleId: dto.roleId, label: dto.label });
+    await this.auditLog(guildId, userId, 'PANEL_ROLE_ADD', panelId, { count: 1 });
     return role;
   }
 
   async updateRole(guildId: string, panelId: string, roleOptionId: string, userId: string, dto: UpdatePanelRoleDto) {
-    await this.get(guildId, panelId);
-
-    const roleOption = await this.prisma.panelRole.findFirst({
-      where: { id: roleOptionId, panelId },
+    const updated = await this.mutate(guildId, panelId, undefined, async (tx, panel) => {
+      if (!panel.roles.some(role => role.id === roleOptionId)) {
+        throw new AppError('PANEL_ROLE_NOT_FOUND', 'Role option not found', 404);
+      }
+      return tx.panelRole.update({
+        where: { id: roleOptionId },
+        data: {
+          roleId: dto.roleId,
+          emoji: dto.emoji,
+          label: dto.label,
+          description: dto.description,
+          buttonStyle: dto.buttonStyle,
+        },
+      });
     });
-    if (!roleOption) throw new AppError('PANEL_ROLE_NOT_FOUND', 'Role option not found', 404);
-
-    const updated = await this.prisma.panelRole.update({
-      where: { id: roleOptionId },
-      data: {
-        roleId: dto.roleId,
-        emoji: dto.emoji,
-        label: dto.label,
-        description: dto.description,
-        buttonStyle: dto.buttonStyle,
-      },
-    });
-    await this.auditLog(guildId, userId, 'PANEL_ROLE_UPDATE', panelId, { roleId: updated.roleId, label: updated.label });
+    await this.auditLog(guildId, userId, 'PANEL_ROLE_UPDATE', panelId, { count: 1 });
     return updated;
   }
 
   async removeRole(guildId: string, panelId: string, roleOptionId: string, userId: string) {
-    await this.get(guildId, panelId);
-    const deleted = await this.prisma.panelRole.delete({ where: { id: roleOptionId } });
-    await this.auditLog(guildId, userId, 'PANEL_ROLE_REMOVE', panelId, { roleId: deleted.roleId, label: deleted.label });
+    const deleted = await this.mutate(guildId, panelId, undefined, async (tx, panel) => {
+      if (!panel.roles.some(role => role.id === roleOptionId)) {
+        throw new AppError('PANEL_ROLE_NOT_FOUND', 'Role option not found', 404);
+      }
+      if (panel.visualDocument) {
+        const document = validatePanelVisualDocument(panel.visualDocument);
+        if (document.native) {
+          document.native.controls = document.native.controls.filter(control => control.kind !== 'role' || control.panelRoleId !== roleOptionId);
+          await tx.panel.update({ where: { id: panelId }, data: { visualDocument: document as unknown as Prisma.InputJsonValue } });
+        }
+      }
+      return tx.panelRole.delete({ where: { id: roleOptionId } });
+    });
+    await this.auditLog(guildId, userId, 'PANEL_ROLE_REMOVE', panelId, { count: 1 });
     return deleted;
   }
 
   async reorderRoles(guildId: string, panelId: string, userId: string, dto: ReorderPanelRolesDto) {
-    const panel = await this.get(guildId, panelId);
-    const currentIds = new Set(panel.roles.map((role: PanelRole) => role.id));
-    const uniqueIds = new Set(dto.roleOptionIds);
-
-    if (uniqueIds.size !== dto.roleOptionIds.length || uniqueIds.size !== currentIds.size) {
-      throw new AppError('VALIDATION_ERROR', 'Role order must include every panel role exactly once', 400);
-    }
-
-    for (const roleOptionId of dto.roleOptionIds) {
-      if (!currentIds.has(roleOptionId)) {
-        throw new AppError('VALIDATION_ERROR', 'Role order contains role from another panel', 400);
+    await this.mutate(guildId, panelId, undefined, async (tx, panel) => {
+      const currentIds = new Set(panel.roles.map(role => role.id));
+      const uniqueIds = new Set(dto.roleOptionIds);
+      if (uniqueIds.size !== dto.roleOptionIds.length || uniqueIds.size !== currentIds.size) {
+        throw new AppError('VALIDATION_ERROR', 'Role order must include every panel role exactly once', 400);
       }
-    }
-
-    await this.prisma.$transaction(
-      dto.roleOptionIds.map((roleOptionId, position) =>
-        this.prisma.panelRole.update({ where: { id: roleOptionId }, data: { position } }),
-      ),
-    );
+      for (const roleOptionId of dto.roleOptionIds) {
+        if (!currentIds.has(roleOptionId)) {
+          throw new AppError('VALIDATION_ERROR', 'Role order contains role from another panel', 400);
+        }
+      }
+      for (const [position, roleOptionId] of dto.roleOptionIds.entries()) {
+        await tx.panelRole.update({ where: { id: roleOptionId }, data: { position } });
+      }
+    });
 
     await this.auditLog(guildId, userId, 'PANEL_ROLE_REORDER', panelId);
     return this.get(guildId, panelId);
   }
 
-  async markPublished(guildId: string, panelId: string, messageId: string, userId: string) {
-    await this.get(guildId, panelId);
-    const updated = await this.prisma.panel.update({
+  async markPublished(guildId: string, panelId: string, messageId: string, userId: string, lockHeld = false) {
+    const updated = await this.mutate(guildId, panelId, undefined, tx => tx.panel.update({
       where: { id: panelId },
       data: { messageId, status: 'PUBLISHED', lastPublishedAt: new Date() },
       include: { roles: { orderBy: { position: 'asc' } } },
-    });
-    await this.auditLog(guildId, userId, 'PANEL_PUBLISH', panelId, { name: updated.name });
+    }), lockHeld);
+    await this.auditLog(guildId, userId, 'PANEL_PUBLISH', panelId, { revision: updated.revision });
     return updated;
   }
 
-  async markUnpublished(guildId: string, panelId: string, userId: string) {
-    await this.get(guildId, panelId);
-    const updated = await this.prisma.panel.update({
+  async markUnpublished(guildId: string, panelId: string, userId: string, lockHeld = false) {
+    const updated = await this.mutate(guildId, panelId, undefined, tx => tx.panel.update({
       where: { id: panelId },
       data: { messageId: null, status: PanelStatus.DRAFT, lastPublishedAt: null },
       include: { roles: { orderBy: { position: 'asc' } } },
-    });
-    await this.auditLog(guildId, userId, 'PANEL_UNPUBLISH', panelId, { name: updated.name });
+    }), lockHeld);
+    await this.auditLog(guildId, userId, 'PANEL_UNPUBLISH', panelId, { revision: updated.revision });
     return updated;
   }
 

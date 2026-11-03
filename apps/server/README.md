@@ -52,6 +52,14 @@ XP requires at least two non-bot, unmuted and undeafened members in a regular vo
 
 The independent **Voice notifications** channel setting sends plain join, leave and move embeds. The bot needs View Channel, Send Messages and Embed Links there, and Manage Roles with reward roles below its highest role for level rewards. Selecting Disabled stops notifications without disabling XP.
 
+### Panel visual preview
+
+Panel documents use an additive nullable JSON column and an integer revision. Generate types with `bun run prisma:generate`; apply pending additive migrations through `bun run prisma:deploy` only against the intended database. Never reset or schema-push production. Local database acceptance requires a disposable database.
+
+`R2_PUBLIC_URL` must be an absolute HTTPS URL (for example `https://cdn.example.com`), without credentials, query or fragment. Canvas assets must be uploaded under `panels/<current-guild-id>/`; external URLs are not downloaded by the renderer. Only static PNG/JPEG/WebP are accepted: 5 MiB input, 16 million decoded pixels, 8 MiB output. Bundled DejaVu Sans fonts are copied by Nest build; unsupported glyphs and overflowing text block export.
+
+Authenticated guild-scoped POST routes `panels/visual-preview` and `panels/:panelId/visual-preview` accept `{visualDocument,expectedRevision}` and return a no-store PNG. Saved previews require the current revision. Limits are ten previews/minute per user+guild, two active jobs, eight pending jobs, a five-second total deadline and two-second asset download timeout. Native raster work runs in disposable workers. Bun source and compiled CommonJS entry points are supported; Node source loading uses the existing ts-node transpile-only loader after normal build/typecheck.
+
 ## Technology Stack
 
 - **Runtime**: Bun

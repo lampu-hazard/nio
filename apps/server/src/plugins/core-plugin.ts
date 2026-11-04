@@ -29,5 +29,11 @@ export const CORE_PLUGIN: NioPlugin = {
       .addStringOption((option) => option.setName('id').setDescription('The warning ID').setRequired(true))
       .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers | PermissionFlagsBits.BanMembers | PermissionFlagsBits.Administrator)
       .setDMPermission(false).toJSON(),
+    new SlashCommandBuilder().setName('ai').setDescription('Ask the public NIO AI assistant')
+      .addStringOption((option) => option.setName('prompt').setDescription('Pertanyaan atau instruksi untuk Agent Umum').setRequired(true))
+      .setDMPermission(false).toJSON(),
+    new SlashCommandBuilder().setName('admin-ai').setDescription('Ask the server administration NIO AI assistant')
+      .addStringOption((option) => option.setName('prompt').setDescription('Instruksi administrasi atau moderasi untuk Agent Admin').setRequired(true))
+      .setDMPermission(false).toJSON(),
   ].map((data) => ({ name: data.name, data, execute })),
 };

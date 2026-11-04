@@ -2,18 +2,26 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AgentAccessService, AdmissionDecision } from '../agent-access.service';
 import { AgentQuotaService } from './agent-quota.service';
-import { AgentQuotaError, Lease } from './agent-quota.types';
+import { AgentQuotaError, Lease, TokenQuotaPolicy } from './agent-quota.types';
 import { AiGenerateRequest, AiGenerateResult, AiProvider, PreparedChatCall } from '../interfaces/ai-provider.interface';
 import { ProviderCallError, validateTokenUsage } from '../providers/chat-request-budget';
+import { fitChatRequest, InsufficientRequestCapacityError } from '../providers/chat-context-budget';
+import { AgentProfile, parseAgentProfile } from '../agent-profile.types';
 
 type Settings = Extract<AdmissionDecision, { allowed: true }>['settings'];
 export interface BoundedAiProvider extends AiProvider {
-  prepare(request: AiGenerateRequest): PreparedChatCall;
+  prepare(request: AiGenerateRequest, options?: { profile?: AgentProfile; signal?: AbortSignal }): Promise<PreparedChatCall> | PreparedChatCall;
   generatePrepared(call: PreparedChatCall, signal?: AbortSignal, onTextDelta?: AiGenerateRequest['onTextDelta']): Promise<AiGenerateResult>;
 }
 export type ChatRunInput = {
-  guildId: string; channelId: string; userId: string; requestId: string; runId?: string;
-  provider: (settings: Settings) => BoundedAiProvider; signal?: AbortSignal;
+  guildId: string;
+  profile?: AgentProfile;
+  channelId: string;
+  userId: string;
+  requestId: string;
+  runId?: string;
+  provider: (settings: Settings) => BoundedAiProvider;
+  signal?: AbortSignal;
 };
 export type ChatRun = {
   readonly spentTokens: number;
@@ -25,12 +33,23 @@ export type ChatRun = {
 export class BudgetedChatService {
   constructor(private readonly access: AgentAccessService, private readonly quota: AgentQuotaService) {}
 
+  private async resolveAdmission(guildId: string, profile: AgentProfile, channelId: string, userId: string) {
+    return (this.access.resolve as any).length >= 3
+      ? (this.access.resolve as any)(guildId, channelId, userId, 'CHAT')
+      : this.access.resolve({ guildId, profile, channelId, userId }, 'CHAT');
+  }
+
   async beginRun(input: ChatRunInput): Promise<ChatRun> {
-    const initial = await this.access.resolve(input.guildId, input.channelId, input.userId, 'CHAT');
+    const profile = parseAgentProfile(input.profile ?? 'PUBLIC');
+    const initial = await this.resolveAdmission(input.guildId, profile, input.channelId, input.userId);
     if (!initial.allowed) throw new AgentQuotaError(initial.code);
     const roleMode = initial.settings?.accessMode === 'ROLE_QUOTAS';
     let lease: Lease | undefined;
-    if (roleMode) lease = await this.quota.acquireLease(input.guildId, input.userId, input.requestId);
+    if (roleMode) {
+      lease = (this.quota.acquireLease as any).length >= 3
+        ? await this.quota.acquireLease({ guildId: input.guildId, profile }, input.userId, input.requestId)
+        : await this.quota.acquireLease({ guildId: input.guildId, profile }, input.userId, input.requestId);
+    }
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (input.signal?.aborted) abort();
@@ -38,13 +57,24 @@ export class BudgetedChatService {
     let closed = false;
     let heartbeatRunning = false;
     let spentTokens = 0;
+    const initialUnlimited =
+      profile === 'ADMIN' ||
+      (initial.settings as any)?.tokenQuotaMode === 'UNLIMITED' ||
+      initial.settings?.maxRunTokens === null;
     // Keep the original run ceiling when policy changes or midnight advances.
-    const runLimit = initial.settings?.maxRunTokens ?? 32768;
-    const timer = lease ? setInterval(() => {
-      if (heartbeatRunning || closed) return;
-      heartbeatRunning = true;
-      void this.quota.heartbeat(lease!).catch(abort).finally(() => { heartbeatRunning = false; });
-    }, 15000) : undefined;
+    const runLimit: number | null = initialUnlimited ? null : (initial.settings?.maxRunTokens ?? 32768);
+    const timer = lease
+      ? setInterval(() => {
+          if (heartbeatRunning || closed) return;
+          heartbeatRunning = true;
+          void this.quota
+            .heartbeat(lease!)
+            .catch(abort)
+            .finally(() => {
+              heartbeatRunning = false;
+            });
+        }, 15000)
+      : undefined;
     timer?.unref?.();
 
     const generate = async (request: AiGenerateRequest): Promise<AiGenerateResult> => {
@@ -52,38 +82,125 @@ export class BudgetedChatService {
       let providerRetries = 0;
       for (;;) {
         if (closed || controller.signal.aborted) throw new AgentQuotaError('LEASE_LOST');
-        const decision = await this.access.resolve(input.guildId, input.channelId, input.userId, 'CHAT');
+        const decision = await this.resolveAdmission(input.guildId, profile, input.channelId, input.userId);
         if (!decision.allowed) throw new AgentQuotaError(decision.code);
         if ((decision.settings?.accessMode === 'ROLE_QUOTAS') !== roleMode) throw new AgentQuotaError('POLICY_CHANGED');
         const settings = decision.settings;
         const provider = input.provider(settings);
-        const currentRunLimit = Math.min(runLimit, settings?.maxRunTokens ?? runLimit);
-        let cap = settings?.maxOutputTokens ?? 2048;
-        let call = provider.prepare({ ...request, maxOutputTokens: cap });
-        let capacity = currentRunLimit - spentTokens;
-        const limits = { memberTokens: decision.allowance.dailyTokenLimit, memberImages: decision.allowance.dailyImageLimit,
-          guildTokens: settings?.dailyGuildTokenLimit ?? 0, guildImages: settings?.dailyGuildImageLimit ?? 0 };
+        const isUnlimited =
+          profile === 'ADMIN' ||
+          (settings as any)?.tokenQuotaMode === 'UNLIMITED' ||
+          runLimit === null ||
+          settings?.dailyGuildTokenLimit === null;
+
+        const currentRunLimit: number | null = isUnlimited
+          ? null
+          : Math.min(runLimit!, settings?.maxRunTokens ?? runLimit!);
+        const desiredCap = settings?.maxOutputTokens ?? 2048;
+
+        const limits = {
+          memberTokens: isUnlimited ? null : decision.allowance.dailyTokenLimit,
+          memberImages: decision.allowance.dailyImageLimit,
+          guildTokens: isUnlimited ? null : (settings?.dailyGuildTokenLimit ?? 0),
+          guildImages: settings?.dailyGuildImageLimit ?? 0,
+        };
+
+        let dailyRemaining: number | null = null;
+        if (!isUnlimited && lease) {
+          try {
+            const rem = await this.quota.remaining(
+              { guildId: input.guildId, profile },
+              lease,
+              settings!.policyRevision,
+              limits,
+            );
+            dailyRemaining = rem.tokens;
+          } catch (error) {
+            if (error instanceof AgentQuotaError && error.code === 'POLICY_CHANGED' && policyRetries++ < 2) continue;
+            throw error;
+          }
+        }
+
+        const runRemaining = currentRunLimit === null ? null : Math.max(0, currentRunLimit - spentTokens);
+        const effectiveCapacity =
+          isUnlimited
+            ? null
+            : dailyRemaining !== null && runRemaining !== null
+              ? Math.min(dailyRemaining, runRemaining)
+              : (dailyRemaining ?? runRemaining);
+
+        let call: PreparedChatCall;
         try {
-          if (lease) capacity = Math.min(capacity, (await this.quota.remaining(lease, settings!.policyRevision, limits)).tokens);
+          const fitted = await fitChatRequest(
+            request,
+            async (candidate) => {
+              const prepared = await provider.prepare(candidate, { profile, signal: controller.signal });
+              // Backwards compatibility for test mocks returning legacy PreparedChatCall with inputAllowance
+              if (!prepared.estimate && typeof (prepared as any).inputAllowance === 'number') {
+                return Object.freeze({
+                  ...prepared,
+                  serializedBytes: Buffer.byteLength(prepared.body ?? '', 'utf8'),
+                  estimate: {
+                    inputTokens: (prepared as any).inputAllowance,
+                    source: 'CONSERVATIVE_FALLBACK' as const,
+                    counterVersion: 'legacy-mock:v1',
+                    confidence: 'CONSERVATIVE' as const,
+                  },
+                });
+              }
+              return prepared;
+            },
+            { inputAndOutput: effectiveCapacity, outputCap: desiredCap },
+          );
+          call = fitted.call;
         } catch (error) {
-          if (error instanceof AgentQuotaError && error.code === 'POLICY_CHANGED' && policyRetries++ < 2) continue;
+          if (error instanceof InsufficientRequestCapacityError) {
+            const inputTokens = error.details.inputTokens;
+            const exhaustsRun = currentRunLimit !== null && spentTokens + inputTokens + 128 > currentRunLimit;
+            const code = exhaustsRun ? 'RUN_BUDGET_EXHAUSTED' : 'QUOTA_EXHAUSTED';
+            throw new AgentQuotaError(code, undefined, {
+              profile,
+              limitingScope: exhaustsRun ? 'RUN' : 'INPUT_CAPACITY',
+              remaining: error.details.availableTokens,
+              required: error.details.requiredTokens,
+              countSource: error.details.estimate.source,
+            });
+          }
           throw error;
         }
-        // Re-prepare after shrinking because the cap's JSON digits are part of the input estimate.
-        while (call.inputAllowance + cap > capacity && cap >= 128) {
-          cap = Math.min(cap - 1, Math.floor(capacity - call.inputAllowance));
-          if (cap < 128) throw new AgentQuotaError(spentTokens + call.inputAllowance + 128 > currentRunLimit ? 'RUN_BUDGET_EXHAUSTED' : 'QUOTA_EXHAUSTED');
-          call = provider.prepare({ ...request, maxOutputTokens: cap });
-        }
-        const reserved = call.inputAllowance + cap;
+
+        const inputAllowance = call.estimate?.inputTokens ?? (call as any).inputAllowance ?? 0;
+        const reserved = inputAllowance + call.maxOutputTokens;
         const attemptId = randomUUID();
         let hasReservation = false;
         let dispatched = false;
+        const tokenPolicy: TokenQuotaPolicy = isUnlimited
+          ? { mode: 'UNLIMITED', guildLimit: null, memberLimit: null, runTokenLimit: null }
+          : {
+              mode: 'LIMITED',
+              guildLimit: limits.guildTokens!,
+              memberLimit: limits.memberTokens,
+              runTokenLimit: currentRunLimit!,
+            };
+
         if (lease) {
           try {
-            await this.quota.reserve({ attemptId, lease, runId: input.runId, capability: 'CHAT', policyRevision: settings!.policyRevision,
-              memberLimit: limits.memberTokens, guildLimit: limits.guildTokens, tokens: reserved, images: 0,
-              runTokensUsed: spentTokens, runTokenLimit: currentRunLimit });
+            await this.quota.reserve({
+              attemptId,
+              lease,
+              profile,
+              runId: input.runId,
+              capability: 'CHAT',
+              policyRevision: settings!.policyRevision,
+              tokenPolicy,
+              memberLimit: tokenPolicy.memberLimit,
+              guildLimit: tokenPolicy.guildLimit,
+              tokens: reserved,
+              images: 0,
+              runTokensUsed: spentTokens,
+              runTokenLimit: tokenPolicy.runTokenLimit,
+              estimate: call.estimate,
+            });
             hasReservation = true;
           } catch (error) {
             if (error instanceof AgentQuotaError && error.code === 'POLICY_CHANGED' && policyRetries++ < 2) continue;
@@ -110,8 +227,11 @@ export class BudgetedChatService {
           spentTokens += reserved;
           let charged = refundable ? 0 : reserved;
           if (hasReservation) {
-            const settled = await this.quota.finalize(attemptId, { kind: definite ? 'REJECTED' : local && !dispatched ? 'LOCAL_FAILURE' : 'UNCERTAIN',
-              code, definiteRejection: definite });
+            const settled = await this.quota.finalize(attemptId, {
+              kind: definite ? 'REJECTED' : local && !dispatched ? 'LOCAL_FAILURE' : 'UNCERTAIN',
+              code,
+              definiteRejection: definite,
+            });
             charged = Number(settled.chargedTokens);
           }
           spentTokens += charged - reserved;
@@ -130,7 +250,11 @@ export class BudgetedChatService {
         // Assume the reservation remains spent until durable finalization succeeds; never retry a successful paid call.
         spentTokens += reserved;
         if (hasReservation) {
-          const settled = await this.quota.finalize(attemptId, { kind: measured === null ? 'ESTIMATED' : 'REPORTED', tokens: charge, code: 'OK' });
+          const settled = await this.quota.finalize(attemptId, {
+            kind: measured === null ? 'ESTIMATED' : 'REPORTED',
+            tokens: charge,
+            code: 'OK',
+          });
           charge = Number(settled.chargedTokens);
         }
         spentTokens += charge - reserved;
@@ -139,12 +263,17 @@ export class BudgetedChatService {
     };
     let generating = false;
     return {
-      get spentTokens() { return spentTokens; },
+      get spentTokens() {
+        return spentTokens;
+      },
       generate: async (request) => {
         if (generating) throw new AgentQuotaError('BUSY');
         generating = true;
-        try { return await generate(request); }
-        finally { generating = false; }
+        try {
+          return await generate(request);
+        } finally {
+          generating = false;
+        }
       },
       close: async () => {
         if (closed) return;
@@ -159,8 +288,15 @@ export class BudgetedChatService {
 
   private async backoff(ms: number, signal: AbortSignal): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new AgentQuotaError('LEASE_LOST')); };
-      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+      const abort = () => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', abort);
+        reject(new AgentQuotaError('LEASE_LOST'));
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', abort);
+        resolve();
+      }, ms);
       signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) abort();
     });

@@ -61,7 +61,7 @@ describe('DiscordInteractionService', () => {
     await service.handle(interaction);
 
     expect(interaction.deferUpdate).toHaveBeenCalled();
-    expect(agentProposalsMock.approveAndExecute).toHaveBeenCalledWith('prop-123', 'admin-1');
+    expect(agentProposalsMock.approveAndExecute).toHaveBeenCalledWith('prop-123', 'admin-1', 'guild-1');
     expect(agentActionRendererMock.renderExecutionResult).toHaveBeenCalledWith(
       'Proposal Executed',
       'Proposal executed successfully.',
@@ -160,5 +160,35 @@ describe('DiscordInteractionService', () => {
     await service.handle(interaction);
 
     expect(selfRolesMock.toggleFromInteraction).toHaveBeenCalledWith(interaction, 'panel-2', 'role-chosen');
+  });
+
+  it('routes /ai to PUBLIC and /admin-ai to ADMIN via AgentCommandService without cross-profile fallback', async () => {
+    const agentCommandsMock = {
+      handle: jest.fn<any>(async () => {}),
+    };
+    const svc = new DiscordInteractionService(
+      selfRolesMock,
+      agentProposalsMock,
+      agentActionRendererMock,
+      commandRegistryMock,
+      pluginAccessMock,
+      agentCommandsMock as any,
+    );
+
+    const aiInteraction: any = {
+      isChatInputCommand: () => true,
+      commandName: 'ai',
+    };
+    const adminAiInteraction: any = {
+      isChatInputCommand: () => true,
+      commandName: 'admin-ai',
+    };
+
+    await svc.handle(aiInteraction);
+    await svc.handle(adminAiInteraction);
+
+    expect(agentCommandsMock.handle).toHaveBeenNthCalledWith(1, aiInteraction, 'PUBLIC');
+    expect(agentCommandsMock.handle).toHaveBeenNthCalledWith(2, adminAiInteraction, 'ADMIN');
+    expect(commandRegistryMock.get).not.toHaveBeenCalled();
   });
 });

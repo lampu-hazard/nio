@@ -5,12 +5,31 @@ import { AiAgentSettingsController } from './ai-agent-settings.controller';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { GuildAccessGuard } from '../guilds/guards/guild-access.guard';
 import { AgentQuotaQueryService } from './quota/agent-quota-query.service';
+import { AgentProfileManagerGuard } from './agent-profile-manager.guard';
 
 function httpContext(request: any) {
   return { switchToHttp: () => ({ getRequest: () => request }) } as any;
 }
 
 describe('AI settings controller quotas and security guards', () => {
+  it('scopes profile routes strictly and protects both PATCH routes with the fresh manager guard', async () => {
+    const calls: unknown[] = [];
+    const toolCalls: unknown[] = [];
+    const controller = new AiAgentSettingsController(
+      { getSettings: async (scope: unknown) => { calls.push(scope); return {}; } } as any,
+      {} as any,
+      { catalog: async (scope: unknown) => { toolCalls.push(scope); return [{ id: 'web_search' }]; } } as any,
+    );
+    await controller.getProfileSettings('guild', 'PUBLIC');
+    await controller.getSettings('guild');
+    expect(await (controller as any).getProfileTools('guild', 'PUBLIC')).toEqual({ ok: true, tools: [{ id: 'web_search' }] });
+    expect(await (controller as any).getTools('guild')).toEqual({ ok: true, tools: [{ id: 'web_search' }] });
+    expect(calls).toEqual([{ guildId: 'guild', profile: 'PUBLIC' }, { guildId: 'guild', profile: 'ADMIN' }]);
+    expect(toolCalls).toEqual([{ guildId: 'guild', profile: 'PUBLIC' }, { guildId: 'guild', profile: 'ADMIN' }]);
+    await expect(controller.getProfileSettings('guild', 'admin')).rejects.toThrow();
+    expect(Reflect.getMetadata(GUARDS_METADATA, AiAgentSettingsController.prototype.updateSettings)).toEqual([AgentProfileManagerGuard]);
+    expect(Reflect.getMetadata(GUARDS_METADATA, AiAgentSettingsController.prototype.updateProfileSettings)).toEqual([AgentProfileManagerGuard]);
+  });
   it('preserves session and guild guards on all AI management routes', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, AiAgentSettingsController)).toEqual([SessionAuthGuard, GuildAccessGuard]);
   });
@@ -28,7 +47,7 @@ describe('AI settings controller quotas and security guards', () => {
     const page = { periodStart: 'today', members: [] };
     const controller = new AiAgentSettingsController({} as any, { getToday: async (...args: unknown[]) => { calls.push(args); return page; } } as any);
     expect(await controller.getQuotas('guild', 'cursor', '50')).toEqual({ ok: true, quotas: page });
-    expect(calls).toEqual([['guild', 'cursor', '50']]);
+    expect(calls).toEqual([[{ guildId: 'guild', profile: 'ADMIN' }, 'cursor', '50']]);
     const realQuotas = new AgentQuotaQueryService({} as any, {} as any);
     const realController = new AiAgentSettingsController({} as any, realQuotas);
     await expect(realController.getQuotas('guild-1', undefined, '101')).rejects.toThrow('Invalid page size');

@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { Client } from 'pg';
 import { PrismaClient } from '@prisma/client';
+import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 export function quotaTestDatabaseUrl(env: Record<string, string | undefined>): string {
   if (!env.AGENT_QUOTA_TEST_DATABASE_URL) throw new Error('AGENT_QUOTA_TEST_DATABASE_URL must explicitly identify a disposable PostgreSQL database. Application DATABASE_URL is never used.');
@@ -11,7 +14,7 @@ export function quotaTestDatabaseUrl(env: Record<string, string | undefined>): s
   return url.toString();
 }
 
-export async function createQuotaTestDatabase() {
+export async function createQuotaTestDatabase(options: { beforeMigration?: string } = {}) {
   const databaseUrl = quotaTestDatabaseUrl(process.env);
   const url = new URL(databaseUrl);
   const schema = url.searchParams.get('schema')!;
@@ -31,11 +34,28 @@ export async function createQuotaTestDatabase() {
   try {
     await admin.query(`CREATE SCHEMA "${schema}"`);
     created = true;
-    const result = spawnSync('bun', ['run', 'prisma:deploy'], {
-      cwd: process.cwd(), env: { ...process.env, DATABASE_URL: databaseUrl }, encoding: 'utf8', timeout: 120000,
-    });
-    if (result.status !== 0) throw new Error('Disposable quota schema migration failed; no application database was used.');
+    const deploy = (schemaPath?: string) => {
+      const result = spawnSync('bun', ['run', 'prisma:deploy', ...(schemaPath ? ['--schema', schemaPath] : [])], {
+        cwd: process.cwd(), env: { ...process.env, DATABASE_URL: databaseUrl }, encoding: 'utf8', timeout: 120000,
+      });
+      if (result.status !== 0) throw new Error('Disposable quota schema migration failed; no application database was used.');
+    };
+    if (options.beforeMigration) {
+      // Stage an owned temporary copy; never modify checked-in migration history.
+      const staged = mkdtempSync(join(tmpdir(), 'nio-quota-migrations-'));
+      try {
+        const prismaPath = join(process.cwd(), 'prisma');
+        cpSync(join(prismaPath, 'schema.prisma'), join(staged, 'schema.prisma'));
+        cpSync(join(prismaPath, 'migrations'), join(staged, 'migrations'), { recursive: true });
+        for (const entry of readdirSync(join(staged, 'migrations'), { withFileTypes: true })) {
+          if (entry.isDirectory() && entry.name >= options.beforeMigration) {
+            rmSync(join(staged, 'migrations', entry.name), { recursive: true });
+          }
+        }
+        deploy(join(staged, 'schema.prisma'));
+      } finally { rmSync(staged, { recursive: true }); }
+    } else deploy();
     for (let i = 0; i < 2; i++) clients.push(new PrismaClient({ datasources: { db: { url: databaseUrl } } }));
-    return { clients, close };
+    return { clients, close, migrateRemaining: async () => deploy() };
   } catch (error) { await close(); throw error; }
 }

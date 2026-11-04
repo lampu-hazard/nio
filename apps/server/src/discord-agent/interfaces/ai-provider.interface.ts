@@ -1,3 +1,5 @@
+import { AgentProfile } from '../agent-profile.types';
+
 export type JsonSchema = {
   type?: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
   description?: string;
@@ -57,7 +59,22 @@ export type AiGenerateRequest = {
   signal?: AbortSignal;
 };
 
-export type PreparedChatCall = Readonly<{ body: string; inputAllowance: number; maxOutputTokens: number }>;
+export type TokenEstimateSource = 'PROVIDER_COUNT' | 'MODEL_TOKENIZER' | 'CONSERVATIVE_FALLBACK';
+export type TokenEstimateConfidence = 'REPORTED_COUNT' | 'ESTIMATED' | 'CONSERVATIVE';
+
+export type TokenEstimate = {
+  inputTokens: number;
+  source: TokenEstimateSource;
+  counterVersion: string;
+  confidence: TokenEstimateConfidence;
+};
+
+export type PreparedChatCall = Readonly<{
+  body: string;
+  serializedBytes: number;
+  estimate: TokenEstimate;
+  maxOutputTokens: number;
+}>;
 
 export type AiGenerateResult = {
   message: AiMessage;

@@ -16,7 +16,7 @@ describe('budgeted chat calls', () => {
   const lease = { guildId: 'guild', userId: 'user', requestId: 'request', fence: 1n, expiresAt: new Date(Date.now() + 60000) };
   beforeEach(() => {
     sends = 0; outcomes = []; reservations = [];
-    settings = { accessMode: 'ROLE_QUOTAS', policyRevision: 1n, maxOutputTokens: 2048, maxRunTokens: 32768, dailyGuildTokenLimit: 100000, dailyGuildImageLimit: 100 };
+    settings = { profile: 'PUBLIC', tokenQuotaMode: 'LIMITED', accessMode: 'ROLE_QUOTAS', policyRevision: 1n, maxOutputTokens: 2048, maxRunTokens: 32768, dailyGuildTokenLimit: 100000, dailyGuildImageLimit: 100 };
     access = { resolve: jest.fn<any>(async () => ({ allowed: true, settings, allowance: { dailyTokenLimit: 100000, dailyImageLimit: 5 } })) };
     quota = {
       acquireLease: async () => lease, releaseLease: jest.fn<any>(async () => {}), heartbeat: async () => {},
@@ -25,12 +25,50 @@ describe('budgeted chat calls', () => {
       markDispatched: async () => {},
       finalize: async (_id: string, outcome: any) => { outcomes.push(outcome); return { chargedTokens: BigInt(outcome.tokens ?? reservations[reservations.length - 1].tokens) }; },
     };
-    provider = { prepare: (r: any) => prepareChatBody({ ...r, onTextDelta: undefined, signal: undefined }, r.messages.length, r.tools.length, r.maxOutputTokens),
-      generatePrepared: async () => { sends++; return { message: { role: 'assistant', parts: [{ type: 'text', text: 'ok' }] }, usage: { totalTokens: 20 } }; } };
+    provider = {
+      prepare: async (r: any) => {
+        const cap = r.maxOutputTokens ?? 2048;
+        const payload = { ...r, onTextDelta: undefined, signal: undefined };
+        const serializedBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+        return prepareChatBody(payload, cap, {
+          inputTokens: serializedBytes + 1024 + 64 * ((r.messages?.length ?? 0) + (r.tools?.length ?? 0)),
+          source: 'MODEL_TOKENIZER',
+          counterVersion: 'test:v1',
+          confidence: 'ESTIMATED',
+        });
+      },
+      generatePrepared: async () => { sends++; return { message: { role: 'assistant', parts: [{ type: 'text', text: 'ok' }] }, usage: { totalTokens: 20 } }; },
+    };
     service = new BudgetedChatService(access, quota);
   });
   afterEach(() => { jest.useRealTimers(); });
-  const args = () => ({ guildId: 'guild', channelId: 'channel', userId: 'user', requestId: 'request', provider: () => provider });
+  const args = () => ({ guildId: 'guild', profile: 'PUBLIC' as const, channelId: 'channel', userId: 'user', requestId: 'request', provider: () => provider });
+
+  it('executes ADMIN with unlimited token mode without querying remaining daily tokens or enforcing run token limits', async () => {
+    settings = {
+      profile: 'ADMIN',
+      tokenQuotaMode: 'UNLIMITED',
+      accessMode: 'ROLE_QUOTAS',
+      policyRevision: 1n,
+      maxOutputTokens: 2048,
+      maxRunTokens: null,
+      dailyGuildTokenLimit: null,
+      dailyGuildImageLimit: 10,
+    };
+    access.resolve.mockResolvedValue({ allowed: true, settings, allowance: { dailyTokenLimit: null, dailyImageLimit: 5 } });
+    quota.remaining = jest.fn<any>(async () => { throw new Error('ADMIN should not check remaining token quota'); });
+    const run = await service.beginRun({ ...args(), profile: 'ADMIN' });
+    try {
+      await run.generate(request);
+      expect(sends).toBe(1);
+      expect(reservations[0]).toMatchObject({
+        profile: 'ADMIN',
+        tokenPolicy: { mode: 'UNLIMITED', guildLimit: null, memberLimit: null, runTokenLimit: null },
+      });
+    } finally {
+      await run.close();
+    }
+  });
 
   it('accounts each loop and synthesis call toward the same run budget', async () => {
     const run = await service.beginRun(args());

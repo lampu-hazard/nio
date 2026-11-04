@@ -7,19 +7,123 @@ describe('AgentQuotaService admission boundaries', () => {
   let tx: any;
   let service: AgentQuotaService;
   const lease = { guildId: 'guild', userId: 'user', requestId: 'request', fence: 1n, expiresAt: new Date(Date.now() + 60000) };
-  const input = { attemptId: 'attempt', lease, capability: 'CHAT' as const, policyRevision: 1n,
+  const input = { attemptId: 'attempt', lease, profile: 'PUBLIC' as const, capability: 'CHAT' as const, policyRevision: 1n,
     memberLimit: 100, guildLimit: 100, tokens: 70, images: 0, runTokensUsed: 0, runTokenLimit: 1000 };
 
   beforeEach(() => {
     tx = {
       $queryRaw: jest.fn<any>(async () => []),
-      discordAgentSettings: { findUnique: jest.fn<any>(async () => ({ enabled: true, accessMode: 'ROLE_QUOTAS', policyRevision: 1n })) },
+      discordAgentSettings: { findUnique: jest.fn<any>(async ({ where }: any) => ({
+        profile: where?.guildId_profile?.profile ?? 'PUBLIC',
+        tokenQuotaMode: where?.guildId_profile?.profile === 'ADMIN' ? 'UNLIMITED' : 'LIMITED',
+        enabled: true, accessMode: 'ROLE_QUOTAS', policyRevision: 1n,
+      })) },
       agentMemberLease: { findUnique: jest.fn<any>(async () => lease), updateMany: jest.fn<any>(async () => ({ count: 0 })) },
       agentQuotaBucket: { upsert: jest.fn<any>(), update: jest.fn<any>() },
       agentQuotaAttempt: { findUnique: jest.fn<any>(), create: jest.fn<any>(), update: jest.fn<any>() },
     };
     prisma = { ...tx, $transaction: jest.fn<any>(async (work: any) => work(tx)) };
     service = new AgentQuotaService(prisma);
+  });
+
+  it('admits ADMIN successive calls after >1,000,000,000 daily tokens and >262144 run tokens without token comparison', async () => {
+    tx.agentQuotaBucket.upsert.mockResolvedValue({
+      committedTokens: 1000000001n, reservedTokens: 0n, committedImages: 0n, reservedImages: 0n,
+    });
+    tx.agentQuotaAttempt.create.mockImplementation(async ({ data }: any) => data);
+    const rem = await service.remaining({ guildId: 'guild', profile: 'ADMIN' }, lease, 1n, {
+      memberTokens: null, guildTokens: null, memberImages: 5, guildImages: 10,
+    });
+    expect(rem.tokens).toBeNull();
+    expect(rem.images).toBe(5);
+    const reserved = await service.reserve({
+      attemptId: 'admin-attempt',
+      lease,
+      profile: 'ADMIN',
+      capability: 'CHAT',
+      policyRevision: 1n,
+      tokenPolicy: { mode: 'UNLIMITED', guildLimit: null, memberLimit: null, runTokenLimit: null },
+      memberLimit: null,
+      guildLimit: null,
+      tokens: 5000,
+      images: 0,
+      runTokensUsed: 300000,
+      runTokenLimit: null,
+    });
+    expect(reserved).toMatchObject({ profile: 'ADMIN', reservedTokens: 5000n, state: 'RESERVED' });
+  });
+
+  it('keeps separate counters for PUBLIC and ADMIN on the same member/day while enforcing finite ADMIN images', async () => {
+    const buckets = new Map<string, any>();
+    tx.agentQuotaBucket.upsert.mockImplementation(async ({ where, create }: any) => {
+      const k = JSON.stringify(where.guildId_profile_periodStart_subject);
+      if (!buckets.has(k)) {
+        buckets.set(k, { ...create, committedTokens: 0n, reservedTokens: 0n, committedImages: 0n, reservedImages: 0n });
+      }
+      return buckets.get(k);
+    });
+    tx.agentQuotaBucket.update.mockImplementation(async ({ where, data }: any) => {
+      const k = JSON.stringify(where.guildId_profile_periodStart_subject);
+      const cur = buckets.get(k);
+      if (data.reservedTokens?.increment) cur.reservedTokens += data.reservedTokens.increment;
+      if (data.reservedTokens?.decrement) cur.reservedTokens -= data.reservedTokens.decrement;
+      if (data.committedTokens?.increment) cur.committedTokens += data.committedTokens.increment;
+      if (data.reservedImages?.increment) cur.reservedImages += data.reservedImages.increment;
+      return cur;
+    });
+    let storedAttempt: any;
+    tx.agentQuotaAttempt.create.mockImplementation(async ({ data }: any) => { storedAttempt = data; return data; });
+    tx.agentQuotaAttempt.findUnique.mockImplementation(async () => storedAttempt);
+    tx.agentQuotaAttempt.update.mockImplementation(async ({ data }: any) => { storedAttempt = { ...storedAttempt, ...data }; return storedAttempt; });
+
+    await service.reserve(input);
+    await service.finalize('attempt', { kind: 'REPORTED', tokens: 30, code: 'OK' });
+
+    await service.reserve({
+      ...input,
+      attemptId: 'admin-1',
+      profile: 'ADMIN',
+      tokenPolicy: { mode: 'UNLIMITED', guildLimit: null, memberLimit: null, runTokenLimit: null },
+      guildLimit: null,
+      memberLimit: null,
+      runTokenLimit: null,
+      tokens: 1000000001,
+    });
+    await service.finalize('admin-1', { kind: 'REPORTED', tokens: 1000000001, code: 'OK' });
+
+    const entries = [...buckets.values()];
+    const publicBucket = entries.find((b) => b.profile === 'PUBLIC' && b.subject === 'GUILD');
+    const adminBucket = entries.find((b) => b.profile === 'ADMIN' && b.subject === 'GUILD');
+    expect(publicBucket.committedTokens).toBe(30n);
+    expect(adminBucket.committedTokens).toBe(1000000001n);
+
+    // Finite ADMIN image quota of 1 still rejects second ADMIN image
+    await service.reserve({
+      attemptId: 'admin-img-1',
+      lease,
+      profile: 'ADMIN',
+      capability: 'IMAGE',
+      policyRevision: 1n,
+      memberLimit: 1,
+      guildLimit: 1,
+      tokens: 0,
+      images: 1,
+      runTokensUsed: 0,
+      runTokenLimit: 0,
+    });
+    await expect(service.reserve({
+      attemptId: 'admin-img-2',
+      lease,
+      profile: 'ADMIN',
+      capability: 'IMAGE',
+      policyRevision: 1n,
+      memberLimit: 1,
+      guildLimit: 1,
+      tokens: 0,
+      images: 1,
+      runTokensUsed: 0,
+      runTokenLimit: 0,
+    })).rejects.toMatchObject({ code: 'QUOTA_EXHAUSTED' });
   });
 
   it.each(['RESERVED', 'DISPATCHED'])('recovers expired %s attempts using persisted dispatch evidence', async (state) => {
@@ -65,7 +169,7 @@ describe('AgentQuotaService admission boundaries', () => {
     await expect(service.acquireLease('guild', 'user', 'other')).rejects.toMatchObject({ code: 'BUSY' });
   });
   it('returns the smallest authoritative token capacity including outstanding reservations', async () => {
-    tx.agentQuotaBucket.findUnique = jest.fn<any>(async ({ where }: any) => where.guildId_periodStart_subject.subject === 'GUILD'
+    tx.agentQuotaBucket.findUnique = jest.fn<any>(async ({ where }: any) => where.guildId_profile_periodStart_subject.subject === 'GUILD'
       ? { committedTokens: 20n, reservedTokens: 30n, committedImages: 1n, reservedImages: 1n }
       : { committedTokens: 10n, reservedTokens: 5n, committedImages: 0n, reservedImages: 1n });
     expect(await service.remaining(lease, 1n, { memberTokens: 40, guildTokens: 100, memberImages: 5, guildImages: 10 }))
@@ -82,7 +186,7 @@ describe('AgentQuotaService admission boundaries', () => {
   });
   it('limits unlimited personal remaining capacity to the server remainder', async () => {
     tx.agentQuotaBucket.findUnique = jest.fn<any>(async ({ where }: any) => ({
-      committedTokens: where.guildId_periodStart_subject.subject === 'GUILD' ? 20n : 200000000n,
+      committedTokens: where.guildId_profile_periodStart_subject.subject === 'GUILD' ? 20n : 200000000n,
       reservedTokens: 5n, committedImages: 0n, reservedImages: 0n,
     }));
     expect(await service.remaining(lease, 1n, { memberTokens: null, guildTokens: 100, memberImages: 0, guildImages: 10 } as any))
@@ -109,7 +213,7 @@ describe('AgentQuotaService admission boundaries', () => {
     await service.finalize('attempt', { kind: 'REPORTED', tokens: 30, code: 'OK' });
     expect(record).toMatchObject({ chargedTokens: 30n, state: 'FINALIZED' });
     expect(tx.agentQuotaBucket.update).toHaveBeenCalledTimes(2);
-    expect(tx.agentQuotaBucket.update).toHaveBeenCalledWith(expect.objectContaining({ where: { guildId_periodStart_subject: { guildId: 'guild', periodStart, subject: 'GUILD' } },
+    expect(tx.agentQuotaBucket.update).toHaveBeenCalledWith(expect.objectContaining({ where: { guildId_profile_periodStart_subject: { guildId: 'guild', profile: 'PUBLIC', periodStart, subject: 'GUILD' } },
       data: expect.objectContaining({ committedTokens: { increment: 30n }, reservedTokens: { decrement: 70n } }) }));
   });
 

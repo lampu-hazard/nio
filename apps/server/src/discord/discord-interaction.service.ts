@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Interaction, MessageFlags } from 'discord.js';
 import { SelfRolesService } from '../self-roles/self-roles.service';
 import { AgentActionProposalService } from '../discord-agent/agent-action-proposal.service';
 import { AgentActionRendererService } from '../discord-agent/agent-action-renderer.service';
+import { AgentCommandService } from '../discord-agent/agent-command.service';
 import { CommandRegistryService } from '../plugins/command-registry.service';
 import { PluginAccessService } from '../plugins/plugin-access.service';
 
@@ -14,10 +15,19 @@ export class DiscordInteractionService {
     private readonly agentActionRenderer: AgentActionRendererService,
     private readonly commandRegistry: CommandRegistryService,
     private readonly pluginAccess: PluginAccessService,
+    @Optional() private readonly agentCommands?: AgentCommandService,
   ) {}
 
   async handle(interaction: Interaction) {
     if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'ai' && this.agentCommands) {
+        await this.agentCommands.handle(interaction, 'PUBLIC');
+        return;
+      }
+      if (interaction.commandName === 'admin-ai' && this.agentCommands) {
+        await this.agentCommands.handle(interaction, 'ADMIN');
+        return;
+      }
       const command = this.commandRegistry.get(interaction.commandName);
       if (!command) return;
       if (command.pluginId) {
@@ -37,7 +47,7 @@ export class DiscordInteractionService {
           await interaction.deferUpdate().catch(() => null);
         }
         const result = action === 'approve'
-          ? await this.agentProposals.approveAndExecute(proposalId, interaction.user.id)
+          ? await this.agentProposals.approveAndExecute(proposalId, interaction.user.id, interaction.guildId || '')
           : await this.agentProposals.cancelProposal(proposalId, interaction.user.id);
         const rendered = await this.agentActionRenderer.renderExecutionResult(
           action === 'approve' ? 'Proposal Executed' : 'Proposal Cancelled',

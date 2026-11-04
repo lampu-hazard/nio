@@ -82,7 +82,19 @@ export class McpToolService implements OnModuleDestroy {
       throw new BadRequestException('MCP_SERVERS_JSON must be valid JSON.');
     }
     if (!Array.isArray(parsed)) throw new BadRequestException('MCP_SERVERS_JSON must be an array.');
-    return parsed.map((item, index) => this.validateConfig(item, index));
+    const configs = parsed.map((item, index) => this.validateConfig(item, index));
+    const servers = new Set<string>();
+    const names = new Set<string>();
+    for (const config of configs) {
+      if (servers.has(config.name)) throw new BadRequestException('Duplicate MCP server.');
+      servers.add(config.name);
+      for (const tool of this.allowedTools(config).keys()) {
+        const name = this.publicName(config.name, tool);
+        if (names.has(name)) throw new BadRequestException('MCP tool name collision.');
+        names.add(name);
+      }
+    }
+    return configs;
   }
 
   private validateConfig(value: unknown, index: number): McpServerConfig {
@@ -111,11 +123,9 @@ export class McpToolService implements OnModuleDestroy {
   resolve(publicName: string): ResolvedTool | undefined {
     if (!publicName.startsWith(TOOL_PREFIX)) return undefined;
     for (const config of this.configs()) {
-      const prefix = `${TOOL_PREFIX}${config.name}__`;
-      if (!publicName.startsWith(prefix)) continue;
-      const remoteName = publicName.slice(prefix.length);
-      const safety = this.allowedTools(config).get(remoteName);
-      if (safety) return { config, remoteName, safety };
+      for (const [remoteName, safety] of this.allowedTools(config)) {
+        if (this.publicName(config.name, remoteName) === publicName) return { config, remoteName, safety };
+      }
     }
     return undefined;
   }

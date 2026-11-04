@@ -10,3 +10,31 @@ server:
   secret_key: "nio-searxng-internal-secret"
   limiter: false
   image_proxy: false
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 6.0
+
+engines:
+  - name: duckduckgo
+    engine: duckduckgo
+    disabled: true
+  - name: google
+    engine: google
+    disabled: false
+  - name: bing
+    engine: bing
+    disabled: false
+  - name: brave
+    engine: brave
+    disabled: false
+  - name: wikipedia
+    engine: wikipedia
+    disabled: false
+  - name: google news
+    engine: google_news
+    disabled: false
+  - name: bing news
+    engine: bing_news
+    disabled: false
+

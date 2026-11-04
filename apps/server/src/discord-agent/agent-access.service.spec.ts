@@ -104,4 +104,20 @@ describe('AgentAccessService profile admission', () => {
     guild.members.fetch.mockRejectedValue(new Error('offline'));
     expect((await service.getAllowances({ guildId: '10000', profile: 'PUBLIC' }, [rule], ['40000'], [])).get('40000')).toBeNull();
   });
+  it('reuses cached Discord member, channel, bot, and roles on back-to-back resolve calls within the same turn window', async () => {
+    guild.channels.cache = new Map([['30000', channel]]);
+    guild.members.cache = new Map([['40000', member]]);
+    guild.members.me = { id: 'bot' };
+    guild.roles.cache = new Map([['20000', {}], ['10000', {}]]);
+
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true });
+    expect(guild.members.fetch).toHaveBeenCalledTimes(1);
+    expect(guild.members.fetch).toHaveBeenCalledWith({ user: '40000', force: true });
+    expect(guild.channels.fetch).not.toHaveBeenCalled();
+    expect(guild.members.fetchMe).not.toHaveBeenCalled();
+    expect(guild.roles.fetch).not.toHaveBeenCalled();
+
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true });
+    expect(guild.members.fetch).toHaveBeenCalledTimes(1);
+  });
 });

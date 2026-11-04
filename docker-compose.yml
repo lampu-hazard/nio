@@ -53,6 +53,14 @@ services:
       - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-nio-crawl4ai-internal-token}
       - SECRET_KEY=${CRAWL4AI_SECRET_KEY:-nio-crawl4ai-internal-secret-key-32chars}
       - REDIS_PASSWORD=${CRAWL4AI_REDIS_PASSWORD:-nio-crawl4ai-internal-redis-password}
+      - REDISCLI_AUTH=${CRAWL4AI_REDIS_PASSWORD:-nio-crawl4ai-internal-redis-password}
+      - GUNICORN_BIND=0.0.0.0:11235
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11235/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - private
 

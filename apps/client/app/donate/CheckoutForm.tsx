@@ -60,7 +60,7 @@ export function CheckoutForm({ guildId, userId, username }: { guildId: string; u
     event.preventDefault();
     if (!settings) return;
 
-    if (amount < settings.minimumAmount) {
+    if (!Number.isFinite(amount) || amount < settings.minimumAmount) {
       setError(`Minimum donation amount is Rp${settings.minimumAmount.toLocaleString('id-ID')}.`);
       return;
     }
@@ -139,9 +139,9 @@ export function CheckoutForm({ guildId, userId, username }: { guildId: string; u
         <input
           type="number"
           className="input"
-          value={amount}
+          value={Number.isNaN(amount) ? '' : amount}
           min={settings.minimumAmount}
-          onChange={(event) => setAmount(parseInt(event.target.value) || settings.minimumAmount)}
+          onChange={(event) => setAmount(event.target.value === '' ? Number.NaN : parseInt(event.target.value, 10))}
           required
         />
       </label>

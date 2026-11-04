@@ -71,6 +71,23 @@ describe('AgentQuotaService admission boundaries', () => {
     expect(await service.remaining(lease, 1n, { memberTokens: 40, guildTokens: 100, memberImages: 5, guildImages: 10 }))
       .toEqual({ tokens: 25, images: 4 });
   });
+  it('ignores unlimited personal usage but still reserves and enforces the guild budget', async () => {
+    tx.agentQuotaBucket.upsert.mockImplementation(async ({ create }: any) => ({
+      committedTokens: create.subject === 'GUILD' ? 0n : 200000000n,
+      reservedTokens: 0n, committedImages: 0n, reservedImages: 0n,
+    }));
+    tx.agentQuotaAttempt.create.mockImplementation(async ({ data }: any) => data);
+    expect(await service.reserve({ ...input, memberLimit: null } as any)).toMatchObject({ reservedTokens: 70n });
+    await expect(service.reserve({ ...input, memberLimit: null, guildLimit: 60 } as any)).rejects.toMatchObject({ code: 'QUOTA_EXHAUSTED' });
+  });
+  it('limits unlimited personal remaining capacity to the server remainder', async () => {
+    tx.agentQuotaBucket.findUnique = jest.fn<any>(async ({ where }: any) => ({
+      committedTokens: where.guildId_periodStart_subject.subject === 'GUILD' ? 20n : 200000000n,
+      reservedTokens: 5n, committedImages: 0n, reservedImages: 0n,
+    }));
+    expect(await service.remaining(lease, 1n, { memberTokens: null, guildTokens: 100, memberImages: 0, guildImages: 10 } as any))
+      .toEqual({ tokens: 75, images: 0 });
+  });
   it('reserves both guild and member amounts before dispatch', async () => {
     tx.agentQuotaBucket.upsert.mockResolvedValue({ committedTokens: 0n, reservedTokens: 0n, committedImages: 0n, reservedImages: 0n });
     tx.agentQuotaAttempt.create.mockImplementation(async ({ data }: any) => data);

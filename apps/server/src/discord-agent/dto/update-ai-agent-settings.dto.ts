@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateIf, ValidateNested } from 'class-validator';
 
 export class AgentRoleRuleDto {
   @IsString() roleId!: string;
@@ -9,7 +9,13 @@ export class AgentRoleRuleDto {
   @IsInt() @Min(0) @Max(1000) dailyImageLimit!: number;
 }
 
+export class AgentUserTokenRuleDto {
+  @IsString() userId!: string;
+  @ValidateIf((_object, value) => value !== null) @IsInt() @Min(1) @Max(100000000) dailyTokenLimit!: number | null;
+}
+
 export class UpdateAiAgentSettingsDto {
+  @IsOptional() @IsArray() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => AgentUserTokenRuleDto) userTokenRules?: AgentUserTokenRuleDto[];
   @IsOptional() @IsBoolean() enabled?: boolean;
   @IsOptional() @IsIn(['gemini', 'openai-compatible']) provider?: string;
   @IsOptional() @IsString() @MaxLength(120) model?: string;

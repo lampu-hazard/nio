@@ -114,4 +114,16 @@ describe('quota-aware image generation', () => {
     expect(JSON.stringify(runs.finish.mock.calls)).not.toContain('sensitive prompt text');
     expect(JSON.stringify(runs.finish.mock.calls)).not.toContain('secret-key');
   });
+  it('allows keyless Pollinations image generation without encryptedImageApiKey', async () => {
+    settings.imageBaseUrl = 'https://image.pollinations.ai';
+    settings.imageModel = 'flux';
+    settings.encryptedImageApiKey = null;
+    const result = await service.handle(input);
+    expect(result.files?.[0]).toMatchObject({ name: 'nio-generated.png' });
+    expect(provider.generate).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'https://image.pollinations.ai',
+      model: 'flux',
+      apiKey: '',
+    }));
+  });
 });

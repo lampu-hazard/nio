@@ -58,6 +58,8 @@ export class BudgetedChatService {
         const settings = decision.settings;
         const provider = input.provider(settings);
         const currentRunLimit = Math.min(runLimit, settings?.maxRunTokens ?? runLimit);
+        let cap = settings?.maxOutputTokens ?? 2048;
+        let call = provider.prepare({ ...request, maxOutputTokens: cap });
         let capacity = currentRunLimit - spentTokens;
         const limits = { memberTokens: decision.allowance.dailyTokenLimit, memberImages: decision.allowance.dailyImageLimit,
           guildTokens: settings?.dailyGuildTokenLimit ?? 0, guildImages: settings?.dailyGuildImageLimit ?? 0 };
@@ -67,8 +69,6 @@ export class BudgetedChatService {
           if (error instanceof AgentQuotaError && error.code === 'POLICY_CHANGED' && policyRetries++ < 2) continue;
           throw error;
         }
-        let cap = settings?.maxOutputTokens ?? 2048;
-        let call = provider.prepare({ ...request, maxOutputTokens: cap });
         // Re-prepare after shrinking because the cap's JSON digits are part of the input estimate.
         while (call.inputAllowance + cap > capacity && cap >= 128) {
           cap = Math.min(cap - 1, Math.floor(capacity - call.inputAllowance));

@@ -108,9 +108,14 @@ function ModerationSettingsForm({ guildId }: { guildId: string }) {
       setSaving(true);
       setError('');
       setSuccess('');
+      const payload = {
+        ...settings,
+        warnLimitThreshold: Number.isFinite(settings.warnLimitThreshold) ? settings.warnLimitThreshold : 3,
+        warnTimeoutDurationMin: Number.isFinite(settings.warnTimeoutDurationMin) ? settings.warnTimeoutDurationMin : 60,
+      };
       const res = await api<{ ok: boolean; settings: ModerationSettings }>(`/guilds/${guildId}/moderation/settings`, {
         method: 'PATCH',
-        body: JSON.stringify(settings), signal: lifetime.current?.signal,
+        body: JSON.stringify(payload), signal: lifetime.current?.signal,
       });
       if (lifetime.current?.signal.aborted) return;
       if (!res.ok || !res.settings) throw new Error('Settings could not be saved.');
@@ -246,8 +251,9 @@ function ModerationSettingsForm({ guildId }: { guildId: string }) {
                       type="number"
                       min="1"
                       max="20"
-                      value={settings.warnLimitThreshold}
-                      onChange={(e) => setSettings(prev => ({ ...prev, warnLimitThreshold: parseInt(e.target.value) || 3 }))}
+                      required
+                      value={Number.isNaN(settings.warnLimitThreshold) ? '' : settings.warnLimitThreshold}
+                      onChange={(e) => setSettings(prev => ({ ...prev, warnLimitThreshold: e.target.value === '' ? Number.NaN : parseInt(e.target.value, 10) }))}
                       className="input py-1.5 text-xs"
                     />
                   </label>
@@ -257,8 +263,9 @@ function ModerationSettingsForm({ guildId }: { guildId: string }) {
                     <input
                       type="number"
                       min="1"
-                      value={settings.warnTimeoutDurationMin}
-                      onChange={(e) => setSettings(prev => ({ ...prev, warnTimeoutDurationMin: parseInt(e.target.value) || 60 }))}
+                      required
+                      value={Number.isNaN(settings.warnTimeoutDurationMin) ? '' : settings.warnTimeoutDurationMin}
+                      onChange={(e) => setSettings(prev => ({ ...prev, warnTimeoutDurationMin: e.target.value === '' ? Number.NaN : parseInt(e.target.value, 10) }))}
                       className="input py-1.5 text-xs"
                     />
                   </label>

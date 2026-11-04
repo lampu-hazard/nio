@@ -1,7 +1,22 @@
 import { describe, expect, it } from '@jest/globals';
-import { parseProviderJson } from './provider-json';
+import { parseProviderJson, readProviderBody, readProviderChunk } from './provider-json';
 
 describe('parseProviderJson', () => {
+  it('bounds actual chunked response bytes while reading', async () => {
+    const response = new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new Uint8Array(5)); controller.enqueue(new Uint8Array(5)); controller.close();
+    } }));
+    await expect(readProviderBody(response, undefined, 8)).rejects.toThrow('PROVIDER_RESPONSE_TOO_LARGE');
+  });
+  it('aborts a stalled body read and cancels the underlying stream', async () => {
+    const abort = new AbortController();
+    let canceled = false;
+    const reader = new ReadableStream<Uint8Array>({ cancel() { canceled = true; } }).getReader();
+    const reading = readProviderChunk(reader, abort.signal);
+    abort.abort();
+    await expect(reading).rejects.toThrow('PROVIDER_ABORTED');
+    expect(canceled).toBe(true);
+  });
   it('parses JSON object responses', () => {
     expect(parseProviderJson('{"choices":[]}', 'openai-compatible')).toEqual({ choices: [] });
   });

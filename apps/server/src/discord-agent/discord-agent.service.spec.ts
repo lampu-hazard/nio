@@ -115,6 +115,44 @@ describe('DiscordAgentService loop', () => {
     });
   });
 
+  it('uses one metered run for tool turns and synthesis, including synthesis usage in the log', async () => {
+    const responses = [
+      { message: { role: 'assistant', parts: [{ type: 'tool_call', id: 'bounded-1', name: 'get_user_warnings', arguments: { targetUserId: 'user-1' } }] }, usage: { totalTokens: 20 } },
+      { message: { role: 'assistant', parts: [] }, usage: { totalTokens: 30 } },
+      { message: { role: 'assistant', parts: [{ type: 'text', text: 'Metered final report.' }] }, usage: { totalTokens: 15 } },
+    ];
+    const bounded = { generate: jest.fn<any>(async () => responses.shift()), close: jest.fn<any>(async () => {}), spentTokens: 65 };
+    (service as any).budgetedChat = { beginRun: jest.fn<any>(async () => bounded) };
+    const unmetered = { generate: jest.fn<any>(async () => ({ message: { role: 'assistant', parts: [] } })) };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(unmetered);
+    mockExecutor.execute.mockResolvedValue([]);
+
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> check warnings');
+
+    expect(result.content).toBe('Metered final report.');
+    expect(bounded.generate).toHaveBeenCalledTimes(3);
+    expect((bounded.generate.mock.calls[2][0] as AiGenerateRequest).tools).toEqual([]);
+    expect(unmetered.generate).not.toHaveBeenCalled();
+    expect(bounded.close).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ totalTokens: 65 }) }));
+  });
+
+  it('closes the metered run when tool discovery fails before a provider call', async () => {
+    const close = jest.fn<any>(async () => {});
+    (service as any).budgetedChat = { beginRun: async () => ({ generate: jest.fn<any>(), close, spentTokens: 0 }) };
+    mockPluginTools.definitionsForGuild.mockRejectedValueOnce(new Error('tool discovery unavailable'));
+    await expect(service.handleMention('guild-1', 'channel-1', 'admin-1', 'hello')).rejects.toThrow('tool discovery unavailable');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('delegates role admission rather than granting an allowlisted user a bypass', async () => {
+    (service as any).access = { resolve: jest.fn<any>(async () => ({ allowed: false, code: 'ROLE_DENIED' })) };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue({ generate: jest.fn<any>(async () => ({ message: { role: 'assistant', parts: [] } })) });
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', 'hello');
+    expect(result).toBeNull();
+    expect(mockPrisma.agentInteractionLog.create).not.toHaveBeenCalled();
+  });
+
   it('returns null before AI work when requester is not allowed', async () => {
     mockPrisma.discordAgentSettings.findUnique.mockResolvedValueOnce({
       enabled: true,
@@ -835,6 +873,33 @@ describe('DiscordAgentService loop', () => {
       });
       // Most recent tool result (turn 2) is within last 2 messages, so it stays raw and uncompacted
       expect((compacted[4].parts![0] as any).result.value).toEqual(largeData);
+    });
+  });
+
+  describe('role quota error reporting in handleMention', () => {
+    it('finishes AgentRun and returns friendly busy message when beginRun rejects with BUSY', async () => {
+      const { AgentQuotaError } = await import('./quota/agent-quota.types');
+      const finish = jest.fn<any>(async () => {});
+      (service as any).runs = { start: jest.fn<any>(async () => ({ id: 'run-busy' })), stage: jest.fn<any>(async () => {}), finish };
+      (service as any).budgetedChat = { beginRun: jest.fn<any>(async () => { throw new AgentQuotaError('BUSY'); }) };
+      const res = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@123456> halo');
+      expect(res.content).toContain('Permintaan AI kamu sebelumnya masih berjalan');
+      expect(finish).toHaveBeenCalledWith('run-busy', 'FAILED', expect.any(String));
+    });
+
+    it('returns friendly reset message when chatRun.generate rejects with QUOTA_EXHAUSTED', async () => {
+      const { AgentQuotaError } = await import('./quota/agent-quota.types');
+      const close = jest.fn<any>(async () => {});
+      (service as any).budgetedChat = {
+        beginRun: jest.fn<any>(async () => ({
+          spentTokens: 0,
+          generate: jest.fn<any>(async () => { throw new AgentQuotaError('QUOTA_EXHAUSTED', new Date('2026-11-05T00:00:00.000Z')); }),
+          close,
+        })),
+      };
+      const res = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@123456> halo');
+      expect(res.content).toContain('00:00 UTC');
+      expect(close).toHaveBeenCalledTimes(1);
     });
   });
 });

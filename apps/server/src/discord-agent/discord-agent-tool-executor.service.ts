@@ -2329,35 +2329,36 @@ export class DiscordAgentToolExecutorService {
     }
 
     const limit = Math.max(500, Math.min(25000, Number(maxChars) || 10000));
-    const crawl4aiBaseUrl = (process.env.CRAWL4AI_URL || 'http://127.0.0.1:11235').replace(/\/+$/, '');
-    const crawl4aiToken = process.env.CRAWL4AI_API_TOKEN?.trim();
+    const firecrawlBaseUrl = (process.env.FIRECRAWL_URL || 'http://127.0.0.1:3002').replace(/\/+$/, '');
+    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       };
-      if (crawl4aiToken) {
-        headers.Authorization = `Bearer ${crawl4aiToken}`;
+      if (firecrawlApiKey) {
+        headers.Authorization = `Bearer ${firecrawlApiKey}`;
       }
 
-      const res = await fetch(`${crawl4aiBaseUrl}/crawl`, {
+      const res = await fetch(`${firecrawlBaseUrl}/v1/scrape`, {
         method: 'POST',
         signal: controller.signal,
         headers,
         body: JSON.stringify({
-          urls: [parsedUrl.toString()],
-          priority: 10,
+          url: parsedUrl.toString(),
+          formats: ['markdown'],
+          onlyMainContent: true,
         }),
       });
 
       if (!res.ok) {
         return {
           url: parsedUrl.toString(),
-          engine: 'crawl4ai',
+          engine: 'firecrawl',
           status: res.status,
           statusText: res.statusText,
           success: false,
@@ -2366,17 +2367,28 @@ export class DiscordAgentToolExecutorService {
       }
 
       const data: any = await res.json();
-      const item: any = Array.isArray(data?.results) ? data.results[0] : data?.result ?? data;
-      const statusCode = typeof item?.status_code === 'number' ? item.status_code : res.status;
+      const item: any = data?.data ?? (Array.isArray(data?.results) ? data.results[0] : data?.result ?? data);
+      const statusCode =
+        typeof item?.metadata?.statusCode === 'number'
+          ? item.metadata.statusCode
+          : typeof item?.status_code === 'number'
+            ? item.status_code
+            : res.status;
 
-      if (item?.success === false || statusCode >= 400) {
+      if (data?.success === false || item?.success === false || statusCode >= 400) {
+        const errorMsg =
+          data?.error ||
+          item?.metadata?.error ||
+          item?.error_message ||
+          res.statusText ||
+          `HTTP error ${statusCode}`;
         return {
-          url: item?.url || parsedUrl.toString(),
-          engine: 'crawl4ai',
+          url: item?.metadata?.sourceURL || item?.metadata?.url || item?.url || parsedUrl.toString(),
+          engine: 'firecrawl',
           status: statusCode,
-          statusText: item?.error_message || res.statusText,
+          statusText: errorMsg,
           success: false,
-          error: item?.error_message || `HTTP error ${statusCode}`,
+          error: errorMsg,
         };
       }
 
@@ -2387,15 +2399,13 @@ export class DiscordAgentToolExecutorService {
             ? item.markdown.fit_markdown
             : typeof item?.markdown?.raw_markdown === 'string'
               ? item.markdown.raw_markdown
-              : typeof item?.markdown_v2?.raw_markdown === 'string'
-                ? item.markdown_v2.raw_markdown
-                : typeof item?.extracted_content === 'string'
-                  ? item.extracted_content
-                  : typeof item?.cleaned_html === 'string'
-                    ? this.stripHtmlAndEntities(item.cleaned_html)
-                    : typeof item?.html === 'string'
-                      ? this.stripHtmlAndEntities(item.html)
-                      : '';
+              : typeof item?.content === 'string'
+                ? item.content
+                : typeof item?.rawHtml === 'string'
+                  ? this.stripHtmlAndEntities(item.rawHtml)
+                  : typeof item?.html === 'string'
+                    ? this.stripHtmlAndEntities(item.html)
+                    : '';
 
       const extractedContent = rawMarkdown.trim();
       const isTruncated = extractedContent.length > limit;
@@ -2404,8 +2414,8 @@ export class DiscordAgentToolExecutorService {
         : extractedContent;
 
       return {
-        url: item?.url || parsedUrl.toString(),
-        engine: 'crawl4ai',
+        url: item?.metadata?.sourceURL || item?.metadata?.url || item?.url || parsedUrl.toString(),
+        engine: 'firecrawl',
         status: statusCode,
         title: typeof item?.metadata?.title === 'string' ? item.metadata.title : null,
         contentLength: content.length,
@@ -2415,7 +2425,7 @@ export class DiscordAgentToolExecutorService {
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         throw new ServiceUnavailableException(
-          `Web fetch timed out after 15s for URL: ${parsedUrl.toString()}`,
+          `Web fetch timed out after 20s for URL: ${parsedUrl.toString()}`,
         );
       }
       throw new BadRequestException(
@@ -2453,41 +2463,109 @@ export class DiscordAgentToolExecutorService {
         headers,
       });
 
+      let searxWarning: string | undefined;
+      let results: Array<{
+        title: string;
+        url: string;
+        snippet: string;
+        sourceEngine?: string;
+        publishedDate?: string;
+      }> = [];
+
       if (!res.ok) {
+        searxWarning = `Search request returned HTTP ${res.status}`;
+      } else {
+        const data: any = await res.json();
+        const rawResults = Array.isArray(data?.results) ? data.results : [];
+        results = rawResults
+          .filter(
+            (r: any) =>
+              r &&
+              typeof r.url === 'string' &&
+              /^https?:\/\//i.test(r.url.trim()) &&
+              typeof r.title === 'string' &&
+              r.title.trim(),
+          )
+          .slice(0, limit)
+          .map((r: any) => ({
+            title: this.stripHtmlAndEntities(String(r.title)),
+            url: String(r.url).trim(),
+            snippet: this.stripHtmlAndEntities(String(r.content ?? r.snippet ?? '')),
+            ...(r.engine ? { sourceEngine: String(r.engine) } : {}),
+            ...(r.publishedDate ? { publishedDate: String(r.publishedDate) } : {}),
+          }));
+      }
+
+      if (results.length > 0) {
         return {
           engine: 'searxng',
           query: trimmedQuery,
-          count: 0,
-          results: [],
-          warning: `Search request returned HTTP ${res.status}`,
+          count: results.length,
+          results,
         };
       }
 
-      const data: any = await res.json();
-      const rawResults = Array.isArray(data?.results) ? data.results : [];
-      const results = rawResults
-        .filter(
-          (r: any) =>
-            r &&
-            typeof r.url === 'string' &&
-            /^https?:\/\//i.test(r.url.trim()) &&
-            typeof r.title === 'string' &&
-            r.title.trim(),
-        )
-        .slice(0, limit)
-        .map((r: any) => ({
-          title: this.stripHtmlAndEntities(String(r.title)),
-          url: String(r.url).trim(),
-          snippet: this.stripHtmlAndEntities(String(r.content ?? r.snippet ?? '')),
-          ...(r.engine ? { sourceEngine: String(r.engine) } : {}),
-          ...(r.publishedDate ? { publishedDate: String(r.publishedDate) } : {}),
-        }));
+      const firecrawlEnvUrl = process.env.FIRECRAWL_URL?.trim();
+      if (firecrawlEnvUrl) {
+        const firecrawlBaseUrl = firecrawlEnvUrl.replace(/\/+$/, '');
+        const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
+        const fcHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        };
+        if (firecrawlApiKey) {
+          fcHeaders.Authorization = `Bearer ${firecrawlApiKey}`;
+        }
+
+        const fcRes = await fetch(`${firecrawlBaseUrl}/v1/search`, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: fcHeaders,
+          body: JSON.stringify({
+            query: trimmedQuery,
+            limit,
+          }),
+        }).catch(() => null);
+
+        if (fcRes?.ok) {
+          const fcData: any = await fcRes.json().catch(() => null);
+          const fcItems = Array.isArray(fcData?.data) ? fcData.data : [];
+          const fcResults = fcItems
+            .filter(
+              (r: any) =>
+                r &&
+                typeof r.url === 'string' &&
+                /^https?:\/\//i.test(r.url.trim()) &&
+                typeof (r.title ?? r.metadata?.title) === 'string' &&
+                String(r.title ?? r.metadata?.title).trim(),
+            )
+            .slice(0, limit)
+            .map((r: any) => ({
+              title: this.stripHtmlAndEntities(String(r.title ?? r.metadata?.title)),
+              url: String(r.url).trim(),
+              snippet: this.stripHtmlAndEntities(
+                String(r.description ?? r.snippet ?? r.markdown ?? ''),
+              ).slice(0, 500),
+              sourceEngine: 'firecrawl',
+            }));
+
+          if (fcResults.length > 0) {
+            return {
+              engine: 'firecrawl',
+              query: trimmedQuery,
+              count: fcResults.length,
+              results: fcResults,
+            };
+          }
+        }
+      }
 
       return {
         engine: 'searxng',
         query: trimmedQuery,
-        count: results.length,
-        results,
+        count: 0,
+        results: [],
+        ...(searxWarning ? { warning: searxWarning } : {}),
       };
     } catch (err: any) {
       if (err?.name === 'AbortError') {

@@ -58,14 +58,14 @@ export class AgentToolPolicyService {
   }
 
   async resolveCall(context: AgentToolContext, providerName: string, args: unknown): Promise<AgentToolEntry> {
-    const entry = (await this.entries(context)).find((candidate) => candidate.definition.name === providerName);
+    const entry = (await this.candidates(context)).find((candidate) => candidate.definition.name === providerName);
     if (!entry) throw new ForbiddenException('Tool is not available for this profile.');
     await this.authorizeRead(context, entry, args);
     return entry;
   }
 
   async assertAllowed(context: AgentToolContext, toolId: string, args: unknown): Promise<void> {
-    const entry = (await this.entries(context)).find((candidate) => candidate.id === toolId);
+    const entry = (await this.candidates(context)).find((candidate) => candidate.id === toolId);
     if (!entry) throw new ForbiddenException('Tool is not available for this profile.');
     await this.authorizeRead(context, entry, args);
   }
@@ -117,6 +117,18 @@ export class AgentToolPolicyService {
   }
 
   async entries(context: AgentToolContext): Promise<AgentToolEntry[]> {
+    const candidates = await this.candidates(context);
+    if (candidates.length === 0) return [];
+    const lookup: { member?: Promise<any>; channels: Map<string, Promise<any>> } = { channels: new Map() };
+    const available: AgentToolEntry[] = [];
+    for (const entry of candidates) {
+      try { await this.authorizeRead(context, entry, {}, lookup); available.push(entry); }
+      catch (error) { if (!(error instanceof ForbiddenException)) throw error; }
+    }
+    return available;
+  }
+
+  private async candidates(context: AgentToolContext): Promise<AgentToolEntry[]> {
     parseAgentProfile(context.profile);
     if (!context.userId || context.requestedById !== context.userId) throw new ForbiddenException('Tool requester mismatch.');
     const decision = await this.access.resolve(context, 'CHAT');
@@ -151,23 +163,29 @@ export class AgentToolPolicyService {
       names.add(entry.definition.name);
       ids.add(entry.id);
     }
-    const available: AgentToolEntry[] = [];
-    for (const entry of candidates) {
-      try { await this.authorizeRead(context, entry, {}); available.push(entry); }
-      catch (error) { if (!(error instanceof ForbiddenException)) throw error; }
-    }
-    return available;
+    return candidates;
   }
 
   private providerName(id: string) {
     return id.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 64);
   }
 
-  private async authorizeRead(context: AgentToolContext, entry: AgentToolEntry, args: unknown) {
+  private async authorizeRead(
+    context: AgentToolContext,
+    entry: AgentToolEntry,
+    args: unknown,
+    lookup: { member?: Promise<any>; channels: Map<string, Promise<any>> } = { channels: new Map() },
+  ) {
     try {
       const guild = this.client?.guilds.cache.get(context.guildId);
       if (!guild) throw new ForbiddenException('Guild unavailable.');
-      const member = await guild.members.fetch({ user: context.userId, force: true });
+      if (!lookup.member) {
+        const cachedMember = guild.members?.cache?.get?.(context.userId);
+        lookup.member = cachedMember
+          ? Promise.resolve(cachedMember)
+          : guild.members.fetch({ user: context.userId });
+      }
+      const member = await lookup.member;
       if (member.guild.id !== context.guildId) throw new ForbiddenException('Member unavailable.');
       const manager = guild.ownerId === context.userId || member.permissions.has(PermissionFlagsBits.ManageGuild)
         || member.permissions.has(PermissionFlagsBits.Administrator);
@@ -188,7 +206,15 @@ export class AgentToolPolicyService {
         }
       }
       for (const id of channelIds) {
-        const channel = await guild.channels.fetch(id, { force: true });
+        let channelPromise = lookup.channels.get(id);
+        if (!channelPromise) {
+          const cachedChannel = guild.channels?.cache?.get?.(id);
+          channelPromise = cachedChannel
+            ? Promise.resolve(cachedChannel)
+            : guild.channels.fetch(id);
+          lookup.channels.set(id, channelPromise);
+        }
+        const channel = await channelPromise;
         if (!channel || channel.guildId !== context.guildId || !channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)) {
           throw new ForbiddenException('Source channel is not visible.');
         }

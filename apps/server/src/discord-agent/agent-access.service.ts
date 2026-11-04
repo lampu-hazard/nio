@@ -14,8 +14,12 @@ export type AdmissionDecision =
 @Injectable()
 export class AgentAccessService {
   private client?: Client;
+  private readonly memberRefreshAt = new Map<string, number>();
   constructor(private readonly prisma: PrismaService) {}
-  setClient(client: Client) { this.client = client; }
+  setClient(client: Client) {
+    this.client = client;
+    this.memberRefreshAt.clear();
+  }
 
   private allowance(profile: AgentProfile, rules: AgentRoleRule[], roleIds: string[], userId: string, userTokenRules: unknown): EffectiveAllowance {
     const allowance = evaluateRolePolicy(profile, rules, roleIds);
@@ -60,8 +64,9 @@ export class AgentAccessService {
     const guild = this.client?.guilds.cache.get(guildId);
     if (!guild) return { allowed: false, code: 'MEMBERSHIP_UNAVAILABLE' };
     let channel;
-    try { channel = await guild.channels.fetch(channelId, { force: true }); }
-    catch { return { allowed: false, code: 'CHANNEL_UNAVAILABLE' }; }
+    try {
+      channel = guild.channels?.cache?.get?.(channelId) ?? await guild.channels.fetch(channelId, { force: true });
+    } catch { return { allowed: false, code: 'CHANNEL_UNAVAILABLE' }; }
     if (!channel || channel.guildId !== guildId || !channel.isTextBased()) return { allowed: false, code: 'CHANNEL_UNAVAILABLE' };
     const parentId = channel.isThread() ? channel.parentId : null;
     if (parentId && excluded(parentId)) return { allowed: false, code: 'CHANNEL_EXCLUDED' };
@@ -71,16 +76,22 @@ export class AgentAccessService {
       return { allowed: false, code: 'CHANNEL_DENIED' };
     }
     try {
-      const member = await guild.members.fetch({ user: userId, force: true });
+      const memberKey = `${guildId}:${userId}`;
+      const cachedMember = guild.members?.cache?.get?.(userId);
+      const lastRefreshed = this.memberRefreshAt.get(memberKey) ?? 0;
+      const member = cachedMember && Date.now() - lastRefreshed < 5000
+        ? cachedMember
+        : await guild.members.fetch({ user: userId, force: true });
+      this.memberRefreshAt.set(memberKey, Date.now());
       if (member.guild.id !== guildId) return { allowed: false, code: 'MEMBERSHIP_UNAVAILABLE' };
-      const bot = await guild.members.fetchMe({ force: true });
+      const bot = guild.members?.me ?? await guild.members.fetchMe({ force: true });
       const sendPermission = channel.isThread() ? PermissionFlagsBits.SendMessagesInThreads : PermissionFlagsBits.SendMessages;
       for (const actor of [member, bot]) {
         const permissions = channel.permissionsFor(actor);
         if (!permissions?.has(PermissionFlagsBits.ViewChannel) || !permissions.has(sendPermission)) return { allowed: false, code: 'CHANNEL_PERMISSIONS' };
       }
       if (channel.isThread() && (channel.archived || channel.locked)) return { allowed: false, code: 'CHANNEL_UNAVAILABLE' };
-      const currentRoles = await guild.roles.fetch();
+      const currentRoles = (guild.roles?.cache?.size ? guild.roles.cache : null) ?? await guild.roles.fetch();
       const roleIds = [...member.roles.cache.keys(), guildId].filter((id) => currentRoles.has(id));
       const allowance = this.allowance(profile, settings.roleRules, roleIds, userId, settings.userTokenRules);
       if (!(capability === 'CHAT' ? allowance.chatAllowed : allowance.imageAllowed)) return { allowed: false, code: 'ROLE_DENIED' };

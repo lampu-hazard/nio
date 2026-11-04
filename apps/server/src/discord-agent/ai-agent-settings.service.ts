@@ -68,8 +68,12 @@ export class AiAgentSettingsService {
       || (dto.maxRunTokens !== undefined && dto.maxRunTokens !== null))) throw new BadRequestException('ADMIN token quotas are not applicable.');
     const writable = new Set([...Object.keys(DEFAULTS), 'roleRules', 'apiKey', 'clearApiKey', 'imageApiKey', 'clearImageApiKey']);
     if (Object.keys(dto).some((key) => !writable.has(key))) throw new BadRequestException('Unknown AI settings field.');
-    const guild = this.client?.guilds.cache.get(guildId);
-    const roles = dto.roleRules === undefined ? null : await guild?.roles.fetch().catch(() => null);
+    for (const ids of [dto.allowedUserIds, dto.allowedChannelIds, dto.excludedChannelIds]) {
+      if (ids !== undefined && (!Array.isArray(ids) || ids.length > 500 || ids.some((id) => typeof id !== 'string' || (id !== '*' && !/^\d{5,25}$/.test(id))))) {
+        throw new BadRequestException('Discord ID list is invalid.');
+      }
+    }
+    const discordContext = await this.resolveDiscordValidationContext(guildId, dto);
     // Serializable protects the complete effective snapshot, including omitted fields.
     const save = () => this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${guildId}, 0))::text`;
@@ -78,18 +82,16 @@ export class AiAgentSettingsService {
       const { apiKey, clearApiKey, imageApiKey, clearImageApiKey, roleRules, userTokenRules, ...fields } = dto;
       const update = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
       const defaults = profileDefaults(profile);
-      const effective = { ...defaults, ...existing, ...update, profile };
+      const adminOverrides = profile === 'ADMIN'
+        ? { tokenQuotaMode: 'UNLIMITED', dailyGuildTokenLimit: null, maxRunTokens: null }
+        : {};
+      const effective = { ...defaults, ...existing, ...update, ...adminOverrides, profile };
       this.validateEffective(effective);
       if (dto.allowedUserIds !== undefined || (dto.accessMode !== undefined && dto.accessMode !== 'ROLE_QUOTAS')) {
         throw new BadRequestException('Legacy user grants are read-only migration data.');
       }
-      for (const ids of [dto.allowedUserIds, dto.allowedChannelIds, dto.excludedChannelIds]) {
-        if (ids !== undefined && (!Array.isArray(ids) || ids.length > 500 || ids.some((id) => typeof id !== 'string' || (id !== '*' && !/^\d{5,25}$/.test(id))))) {
-          throw new BadRequestException('Discord ID list is invalid.');
-        }
-      }
-      if (roleRules !== undefined) this.validateRoleRules(profile, roleRules, existing?.roleRules ?? [], roles ?? null);
-      await this.validateChannels(guildId, effective, roleRules ?? existing?.roleRules ?? []);
+      if (roleRules !== undefined) this.validateRoleRules(profile, roleRules, existing?.roleRules ?? [], discordContext.roles);
+      await this.validateChannels(guildId, effective, roleRules ?? existing?.roleRules ?? [], discordContext);
       const encrypted: { encryptedApiKey?: string | null; encryptedImageApiKey?: string | null } = {};
       for (const [key, clear, field] of [
         [apiKey, clearApiKey, 'encryptedApiKey'],
@@ -117,7 +119,7 @@ export class AiAgentSettingsService {
           ids.add(rule.userId);
         }
       }
-      const baseData = { ...update, ...encrypted,
+      const baseData = { ...update, ...adminOverrides, ...encrypted,
         ...(userTokenRules === undefined ? {} : { userTokenRules: userTokenRules.map(({ userId, dailyTokenLimit }) => ({ userId, dailyTokenLimit })) }) };
       const row = await tx.discordAgentSettings.upsert({
         where: { guildId_profile: { guildId, profile } },
@@ -136,7 +138,7 @@ export class AiAgentSettingsService {
         include: { roleRules: true },
       });
       return this.redact(profile, row);
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000, maxWait: 10000 });
     for (let attempt = 0; ; attempt++) {
       try { return await save(); }
       catch (error) {
@@ -297,39 +299,89 @@ export class AiAgentSettingsService {
     }
   }
 
-  private async validateChannels(guildId: string, effective: Record<string, any>, rules: AgentRoleRule[]) {
+  private collectGuildTextChannels(guildId: string, source: any, target: Map<string, GuildBasedChannel>) {
+    const entries: any[] = source && typeof source.values === 'function'
+      ? Array.from(source.values())
+      : source && typeof source.isTextBased === 'function'
+        ? [source]
+        : [];
+    for (const channel of entries) {
+      if (channel && channel.guildId === guildId && channel.isTextBased()) {
+        target.set(channel.id ?? '*', channel);
+      }
+    }
+  }
+
+  private async resolveDiscordValidationContext(guildId: string, dto: UpdateAiAgentSettingsDto) {
+    const guild = this.client?.guilds.cache.get(guildId);
+    const shouldCheckActive = dto.enabled !== false;
+    const roles = (dto.roleRules !== undefined || shouldCheckActive)
+      ? (await guild?.roles.fetch().catch(() => (guild?.roles as any)?.cache ?? null)) ?? null
+      : null;
+    const bot = shouldCheckActive
+      ? ((guild?.members as any)?.me ?? await guild?.members?.fetchMe?.().catch(() => null)) ?? null
+      : null;
+    const channels = new Map<string, GuildBasedChannel>();
+    if (shouldCheckActive && guild) {
+      this.collectGuildTextChannels(guildId, guild.channels?.cache, channels);
+      if (dto.allowedChannelIds?.includes('*') && channels.size === 0) {
+        const fetched = await guild.channels?.fetch?.().catch(() => guild.channels?.cache);
+        this.collectGuildTextChannels(guildId, fetched ?? guild.channels?.cache, channels);
+      } else if (Array.isArray(dto.allowedChannelIds) && !dto.allowedChannelIds.includes('*')) {
+        const missingIds = [...new Set(dto.allowedChannelIds)].filter((id) => id !== '*' && !channels.has(id));
+        if (missingIds.length > 1 && guild.channels?.cache && channels.size === 0) {
+          const fetched = await guild.channels?.fetch?.().catch(() => guild.channels?.cache);
+          this.collectGuildTextChannels(guildId, fetched ?? guild.channels?.cache, channels);
+        }
+        await Promise.all(
+          missingIds
+            .filter((id) => !channels.has(id))
+            .map(async (id) => {
+              try {
+                const channel = await guild.channels?.fetch?.(id);
+                if (channel && (channel as any).guildId === guildId && (channel as any).isTextBased?.()) {
+                  channels.set(id, channel as GuildBasedChannel);
+                }
+              } catch { /* Unavailable channels cannot activate a profile. */ }
+            }),
+        );
+      }
+    }
+    return { guild, roles, bot, channels };
+  }
+
+  private async validateChannels(
+    guildId: string,
+    effective: Record<string, any>,
+    rules: AgentRoleRule[],
+    discordContext?: { guild: any; roles: { has(id: string): boolean } | null; bot: any; channels: Map<string, GuildBasedChannel> },
+  ) {
     const ids = effective.allowedChannelIds as string[];
     const allowAll = ids.includes('*');
     if (effective.enabled && (!ids.length || !rules.some((rule) => rule.chatEnabled || rule.imageEnabled))) {
       throw new BadRequestException('Enabled profiles require explicit channels and roles.');
     }
     if (!effective.enabled) return;
-    const guild = this.client?.guilds.cache.get(guildId);
-    const roles = await guild?.roles.fetch().catch(() => null);
+    const guild = discordContext?.guild ?? this.client?.guilds.cache.get(guildId);
+    const roles = discordContext?.roles ?? await guild?.roles.fetch().catch(() => null);
     if (!rules.some((rule) => roles?.has(rule.roleId) && (rule.chatEnabled || (effective.imageEnabled && rule.imageEnabled)))) {
       throw new BadRequestException('Select an available role with an enabled capability.');
     }
-    const bot = await guild?.members.fetchMe({ force: true }).catch(() => null);
+    const bot = discordContext ? discordContext.bot : await guild?.members.fetchMe().catch(() => null);
     if (!bot || effective.excludedChannelIds.includes('*')) {
       throw new BadRequestException('Select an available, non-excluded channel where the bot can view and send messages.');
     }
-    const channels = new Map<string, GuildBasedChannel>();
+    const channels = new Map<string, GuildBasedChannel>(discordContext?.channels ?? []);
     if (allowAll) {
-      const fetched: any = await guild?.channels.fetch().catch(() => guild?.channels.cache);
-      const entries: any[] = fetched && typeof fetched.values === 'function'
-        ? Array.from(fetched.values())
-        : fetched && typeof fetched.isTextBased === 'function'
-          ? [fetched]
-          : Array.from(guild?.channels.cache?.values?.() ?? []);
-      for (const channel of entries) {
-        if (channel && channel.guildId === guildId && channel.isTextBased()) {
-          channels.set(channel.id ?? '*', channel);
-        }
+      if (channels.size === 0) {
+        const fetched: any = await guild?.channels.fetch().catch(() => guild?.channels.cache);
+        this.collectGuildTextChannels(guildId, fetched ?? guild?.channels?.cache, channels);
       }
     } else {
       for (const id of new Set(ids)) {
+        if (channels.has(id)) continue;
         try {
-          const channel = await guild?.channels.fetch(id, { force: true });
+          const channel = guild?.channels?.cache?.get?.(id) ?? await guild?.channels.fetch(id);
           if (channel && channel.guildId === guildId && channel.isTextBased()) channels.set(id, channel);
         } catch { /* Unavailable channels cannot activate a profile. */ }
       }

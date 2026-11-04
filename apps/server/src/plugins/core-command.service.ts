@@ -62,16 +62,25 @@ export class CoreCommandService {
           sessionDuration,
           avatarUrl,
         }).catch(() => null);
+        if (card) {
+          await interaction.editReply({
+            files: [{
+              attachment: card,
+              name: 'voice-stats.png',
+              description: `Voice stats ${user.username}: Level ${level}, ${xpSummary}, total ${totalDuration}, sesi ${sessionDuration}.`,
+            }],
+            allowedMentions: { parse: [] },
+          });
+          return;
+        }
         const embed = new EmbedBuilder().setColor(0x5145ee).setTitle(`Voice Stats — ${user.username}`).addFields(
           { name: 'Total waktu tercatat', value: totalDuration, inline: true },
           { name: 'Sesi berjalan (channel ini)', value: sessionDuration, inline: true },
           { name: 'Level', value: String(level), inline: true },
           { name: 'XP', value: xpSummary, inline: true },
         );
-        if (card) embed.setImage('attachment://voice-stats.png');
         await interaction.editReply({
           embeds: [embed],
-          ...(card ? { files: [{ attachment: card, name: 'voice-stats.png', description: `Voice stats ${user.username}: Level ${level}, ${xpSummary}, total ${totalDuration}.` }] } : {}),
           allowedMentions: { parse: [] },
         });
       } catch {

@@ -32,8 +32,12 @@ describe('/voice', () => {
 
   afterEach(() => { jest.useRealTimers(); });
 
-  function embed() {
-    return interaction.editReply.mock.calls[0][0].embeds[0].toJSON();
+  function fileDescription() {
+    const payload = interaction.editReply.mock.calls[0][0];
+    expect(payload.embeds).toBeUndefined();
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files[0]).toMatchObject({ name: 'voice-stats.png', attachment: expect.any(Buffer) });
+    return payload.files[0].description as string;
   }
 
   it('registers a guild-only command with an optional user', () => {
@@ -44,25 +48,10 @@ describe('/voice', () => {
     });
   });
 
-  it('shows duration, level, and XP with a rendered voice stats card attachment', async () => {
+  it('sends only the rendered voice stats card image without an embed', async () => {
     await service.execute('voice', interaction);
     expect(interaction.deferReply).toHaveBeenCalledWith();
-    const replyPayload = interaction.editReply.mock.calls[0][0];
-    expect(replyPayload.files).toEqual([
-      expect.objectContaining({
-        name: 'voice-stats.png',
-        attachment: expect.any(Buffer),
-        description: expect.stringContaining('2.750 / 3.600 XP'),
-      }),
-    ]);
-    expect(embed()).toMatchObject({ title: 'Voice Stats — Othinus', fields: [
-      { name: 'Total waktu tercatat', value: '3 jam 12 menit', inline: true },
-      { name: 'Sesi berjalan (channel ini)', value: '1 jam 12 menit', inline: true },
-      { name: 'Level', value: '5', inline: true },
-      { name: 'XP', value: '2.750 / 3.600 XP', inline: true },
-    ] });
-    expect(embed().image).toEqual({ url: 'attachment://voice-stats.png' });
-    expect(embed().footer).toBeUndefined();
+    expect(fileDescription()).toBe('Voice stats Othinus: Level 5, 2.750 / 3.600 XP, total 3 jam 12 menit, sesi 1 jam 12 menit.');
     expect(prisma.voiceSession.aggregate).toHaveBeenCalledWith({ where: { guildId: 'guild', userId: 'self', leftAt: { not: null } }, _sum: { duration: true } });
     expect(prisma.voiceSession.findFirst).toHaveBeenCalledWith({ where: { guildId: 'guild', userId: 'self', channelId: 'voice-channel', leftAt: null }, orderBy: { joinedAt: 'desc' }, select: { joinedAt: true } });
   });
@@ -70,7 +59,7 @@ describe('/voice', () => {
   it('scopes selected-user data to this guild rather than the caller', async () => {
     interaction.options.getUser.mockReturnValue({ id: 'other', username: 'Someone' });
     await service.execute('voice', interaction);
-    expect(embed().title).toBe('Voice Stats — Someone');
+    expect(fileDescription()).toContain('Voice stats Someone:');
     expect(prisma.voiceXpBalance.findUnique).toHaveBeenCalledWith({ where: { guildId_userId: { guildId: 'guild', userId: 'other' } } });
     expect(prisma.voiceSession.aggregate.mock.calls[0][0].where.userId).toBe('other');
     expect(prisma.voiceSession.findFirst).not.toHaveBeenCalled();
@@ -81,29 +70,26 @@ describe('/voice', () => {
     prisma.voiceXpBalance.findUnique.mockResolvedValue(null);
     prisma.voiceSession.findFirst.mockResolvedValue(null);
     await service.execute('voice', interaction);
-    expect(embed().fields.map((field: any) => field.value)).toEqual(['0 jam 0 menit', 'Belum tercatat', '0', '0 / 100 XP']);
+    expect(fileDescription()).toBe('Voice stats Othinus: Level 0, 0 / 100 XP, total 0 jam 0 menit, sesi Belum tercatat.');
   });
 
   it('does not count stale open rows when the member is not connected', async () => {
     interaction.guild.voiceStates.cache.clear();
     await service.execute('voice', interaction);
-    expect(embed().fields[0].value).toBe('2 jam 0 menit');
-    expect(embed().fields[1].value).toBe('Tidak sedang di voice');
+    expect(fileDescription()).toBe('Voice stats Othinus: Level 5, 2.750 / 3.600 XP, total 2 jam 0 menit, sesi Tidak sedang di voice.');
     expect(prisma.voiceSession.findFirst).not.toHaveBeenCalled();
   });
 
   it('does not count unobserved time before the current bot connection', async () => {
     interaction.client.readyTimestamp = new Date('2026-11-01T11:30:00Z').getTime();
     await service.execute('voice', interaction);
-    expect(embed().fields[0].value).toBe('2 jam 30 menit');
-    expect(embed().fields[1].value).toBe('0 jam 30 menit');
+    expect(fileDescription()).toBe('Voice stats Othinus: Level 5, 2.750 / 3.600 XP, total 2 jam 30 menit, sesi 0 jam 30 menit.');
   });
 
   it('clamps future session timestamps instead of showing negative time', async () => {
     prisma.voiceSession.findFirst.mockResolvedValue({ joinedAt: new Date('2026-11-01T13:00:00Z') });
     await service.execute('voice', interaction);
-    expect(embed().fields[0].value).toBe('2 jam 0 menit');
-    expect(embed().fields[1].value).toBe('0 jam 0 menit');
+    expect(fileDescription()).toBe('Voice stats Othinus: Level 5, 2.750 / 3.600 XP, total 2 jam 0 menit, sesi 0 jam 0 menit.');
   });
 
   it('reports unavailable data without leaking database errors or showing fake zeros', async () => {

@@ -756,7 +756,7 @@ const RAW_AGENT_TOOLS = [
   },
   {
     name: 'web_fetch',
-    description: 'Fetch and extract readable markdown content from a public web URL using Crawl4AI with automatic SSRF defense against internal networks. Read-only; executed immediately.',
+    description: 'Fetch and extract readable markdown content from a public web URL using self-hosted Firecrawl with automatic SSRF defense against internal networks. Read-only; executed immediately.',
     parameters: {
       type: 'object',
       properties: {
@@ -768,7 +768,7 @@ const RAW_AGENT_TOOLS = [
   },
   {
     name: 'web_search',
-    description: 'Search the live public web using SearXNG for real-time news, current events, documentation, or technical references. Read-only; executed immediately. Use this whenever the user asks about current events, recent news, or external knowledge.',
+    description: 'Search the live public web using SearXNG and self-hosted Firecrawl for real-time news, current events, documentation, or technical references. Read-only; executed immediately. Use this whenever the user asks about current events, recent news, or external knowledge.',
     parameters: {
       type: 'object',
       properties: {

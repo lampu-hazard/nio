@@ -187,12 +187,6 @@ export function validateSettings(settings: AiSettings, otherProfileChannelIds: s
     return { section: 'access', message: 'Enter valid whole-number server daily limits.' };
   }
 
-  if (settings.allowedChannelIds.includes('*')) {
-    return { section: 'access', message: 'Select explicit channels for this profile.' };
-  }
-  if (otherProfileChannelIds.some((id) => settings.allowedChannelIds.includes(id))) {
-    return { section: 'access', message: 'A channel cannot be assigned to both PUBLIC and ADMIN profiles.' };
-  }
   if (settings.profile && settings.enabled) {
     const activeChannels = settings.allowedChannelIds.filter(
       (id) => !settings.excludedChannelIds.includes('*') && !settings.excludedChannelIds.includes(id),

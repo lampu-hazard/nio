@@ -330,21 +330,49 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     const isMentioningBot = message.mentions.has(this.client.user);
     if (!isMentioningBot && !referencedBotMessageId) return;
 
-    let profile: 'PUBLIC' | 'ADMIN' = 'PUBLIC';
+    let referencedProvenance: any = null;
+    let preferredProfile: 'PUBLIC' | 'ADMIN' | undefined;
+    if (referencedBotMessageId && typeof (this.conversationMemory as any)?.getProvenance === 'function') {
+      referencedProvenance = await this.conversationMemory.getProvenance(referencedBotMessageId).catch(() => null);
+      if (
+        referencedProvenance &&
+        referencedProvenance.guildId === message.guild.id &&
+        referencedProvenance.channelId === message.channel.id &&
+        referencedProvenance.userId === message.author.id &&
+        (referencedProvenance.profile === 'PUBLIC' || referencedProvenance.profile === 'ADMIN')
+      ) {
+        preferredProfile = referencedProvenance.profile;
+      }
+    }
+
+    let profile: 'PUBLIC' | 'ADMIN' = preferredProfile ?? 'PUBLIC';
     if (this.profileRouter) {
-      const routedProfile = await this.profileRouter.resolve(message.guild.id, message.channel.id);
+      let routedProfile = await this.profileRouter.resolve(
+        message.guild.id,
+        message.channel.id,
+        preferredProfile,
+        message.author.id,
+      );
+      if (!routedProfile && preferredProfile && isMentioningBot) {
+        referencedBotMessageId = undefined;
+        routedProfile = await this.profileRouter.resolve(
+          message.guild.id,
+          message.channel.id,
+          undefined,
+          message.author.id,
+        );
+      }
       if (!routedProfile) return;
       profile = routedProfile;
     }
 
     if (referencedBotMessageId && typeof (this.conversationMemory as any)?.getProvenance === 'function') {
-      const provenance = await this.conversationMemory.getProvenance(referencedBotMessageId).catch(() => null);
       const matchesScope =
-        provenance &&
-        provenance.guildId === message.guild.id &&
-        provenance.profile === profile &&
-        provenance.channelId === message.channel.id &&
-        provenance.userId === message.author.id;
+        referencedProvenance &&
+        referencedProvenance.guildId === message.guild.id &&
+        referencedProvenance.profile === profile &&
+        referencedProvenance.channelId === message.channel.id &&
+        referencedProvenance.userId === message.author.id;
       if (!matchesScope) {
         if (!isMentioningBot) return;
         referencedBotMessageId = undefined;

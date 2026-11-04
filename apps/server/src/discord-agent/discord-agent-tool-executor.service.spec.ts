@@ -997,9 +997,8 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('fetches valid public web content via self-hosted Firecrawl /v1/scrape and extracts markdown', async () => {
-      process.env.FIRECRAWL_URL = 'http://firecrawl.internal:3002';
-      process.env.FIRECRAWL_API_KEY = 'fc-local-secret';
+    it('fetches valid public web content via Firecrawl Cloud /v1/scrape using FIRECRAWL_API_KEY and default https://api.firecrawl.dev URL', async () => {
+      process.env.FIRECRAWL_API_KEY = 'fc-cloud-secret';
 
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '93.184.216.34', family: 4 },
@@ -1032,12 +1031,12 @@ describe('DiscordAgentToolExecutorService', () => {
       );
 
       expect(fetchSpy).toHaveBeenCalledWith(
-        'http://firecrawl.internal:3002/v1/scrape',
+        'https://api.firecrawl.dev/v1/scrape',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            Authorization: 'Bearer fc-local-secret',
+            Authorization: 'Bearer fc-cloud-secret',
           }),
           body: JSON.stringify({
             url: 'https://example.com/info',
@@ -1090,9 +1089,9 @@ describe('DiscordAgentToolExecutorService', () => {
       );
     });
 
-    it('falls back to Firecrawl /v1/search when SearXNG returns empty or error and FIRECRAWL_URL is configured', async () => {
+    it('falls back to Firecrawl Cloud /v1/search when SearXNG returns empty or error and FIRECRAWL_API_KEY is configured', async () => {
       process.env.SEARXNG_URL = 'http://searxng.internal:8080';
-      process.env.FIRECRAWL_URL = 'http://firecrawl.internal:3002';
+      process.env.FIRECRAWL_API_KEY = 'fc-cloud-secret';
 
       const fetchSpy = jest
         .spyOn(global, 'fetch')
@@ -1131,9 +1130,12 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(2);
       expect(fetchSpy).toHaveBeenNthCalledWith(
         2,
-        'http://firecrawl.internal:3002/v1/search',
+        'https://api.firecrawl.dev/v1/search',
         expect.objectContaining({
           method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer fc-cloud-secret',
+          }),
           body: JSON.stringify({
             query: 'us midterm elections',
             limit: 5,

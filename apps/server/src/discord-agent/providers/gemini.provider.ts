@@ -11,6 +11,8 @@ import {
 } from '../interfaces/ai-provider.interface';
 import { parseProviderJson, readProviderBody, readProviderChunk } from './provider-json';
 import { prepareChatBody, ProviderCallError } from './chat-request-budget';
+import { countGeminiTokens } from './chat-token-counter';
+import { AgentProfile } from '../agent-profile.types';
 
 @Injectable()
 export class GeminiProvider implements AiProvider {
@@ -20,27 +22,44 @@ export class GeminiProvider implements AiProvider {
   ) {}
 
   async generate(request: AiGenerateRequest): Promise<AiGenerateResult> {
-    return this.generatePrepared(this.prepare(request), request.signal, request.onTextDelta);
+    return this.generatePrepared(await this.prepare(request, { profile: 'ADMIN' }), request.signal, request.onTextDelta);
   }
 
-  prepare(request: AiGenerateRequest): PreparedChatCall {
+  async prepare(request: AiGenerateRequest, options?: { profile?: AgentProfile }): Promise<PreparedChatCall> {
     if (!this.apiKey) throw new Error('Gemini API key is not configured.');
     if (!request.messages.length) throw new Error('Gemini request requires at least one message.');
 
     if (!['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'].includes(this.model)) {
       throw new ProviderCallError('BUDGET_UNSUPPORTED', false);
     }
+    const cap = request.maxOutputTokens ?? 2048;
+    const contents = request.messages.map((message) => this.toGeminiMessage(message));
+    const systemInstruction = { parts: [{ text: request.systemPrompt }] };
+    const tools = request.tools.length
+      ? [{ functionDeclarations: request.tools.map((tool) => this.toGeminiTool(tool)) }]
+      : [];
     const payload: Record<string, unknown> = {
-      contents: request.messages.map((message) => this.toGeminiMessage(message)),
-      systemInstruction: { parts: [{ text: request.systemPrompt }] },
-      generationConfig: { maxOutputTokens: request.maxOutputTokens ?? 2048,
+      contents,
+      systemInstruction,
+      generationConfig: { maxOutputTokens: cap,
         ...(this.model.startsWith('gemini-2.5-') ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
     };
-    if (request.tools.length) {
-      payload.tools = [{ functionDeclarations: request.tools.map((tool) => this.toGeminiTool(tool)) }];
+    if (tools.length) {
+      payload.tools = tools;
     }
 
-    const call = prepareChatBody(payload, request.messages.length + 1, request.tools.length, request.maxOutputTokens ?? 2048);
+    const serializedBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+    const estimate = await countGeminiTokens({
+      apiKey: this.apiKey,
+      model: this.model,
+      contents,
+      systemInstruction,
+      tools: request.tools,
+      serializedBytes,
+      profile: options?.profile ?? 'PUBLIC',
+      signal: request.signal,
+    });
+    const call = prepareChatBody(payload, cap, estimate);
     this.prepared.set(call, typeof request.onTextDelta === 'function');
     return call;
   }

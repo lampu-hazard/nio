@@ -10,7 +10,7 @@ describe('PostgreSQL quota atomicity', () => {
   let services: AgentQuotaService[];
   const guildId = 'quota-test-guild';
   const input = (lease: Lease, tokens: number, overrides: Partial<ReserveInput> = {}): ReserveInput => ({
-    attemptId: randomUUID(), lease, capability: 'CHAT', policyRevision: 1n,
+    attemptId: randomUUID(), lease, profile: 'PUBLIC', capability: 'CHAT', policyRevision: 1n,
     memberLimit: 100, guildLimit: 100, tokens, images: 0, runTokensUsed: 0, runTokenLimit: 1000, ...overrides,
   });
 
@@ -24,9 +24,10 @@ describe('PostgreSQL quota atomicity', () => {
     await client.agentQuotaAttempt.deleteMany();
     await client.agentQuotaBucket.deleteMany();
     await client.agentMemberLease.deleteMany();
-    await client.discordAgentSettings.upsert({ where: { guildId },
-      create: { guildId, enabled: true, accessMode: 'ROLE_QUOTAS', policyRevision: 1n },
-      update: { enabled: true, accessMode: 'ROLE_QUOTAS', policyRevision: 1n },
+    await client.discordAgentSettings.upsert({
+      where: { guildId_profile: { guildId, profile: 'PUBLIC' } },
+      create: { guildId, profile: 'PUBLIC', enabled: true, accessMode: 'ROLE_QUOTAS', tokenQuotaMode: 'LIMITED', policyRevision: 1n },
+      update: { enabled: true, accessMode: 'ROLE_QUOTAS', tokenQuotaMode: 'LIMITED', policyRevision: 1n },
     });
   });
 
@@ -119,7 +120,10 @@ describe('PostgreSQL quota atomicity', () => {
   it('does not erase usage on policy revision or mode change', async () => {
     const lease = await services[0].acquireLease(guildId, 'user', randomUUID());
     await services[0].reserve(input(lease, 70));
-    await db.clients[0].discordAgentSettings.update({ where: { guildId }, data: { policyRevision: 2n, accessMode: 'LEGACY_USERS' } });
+    await db.clients[0].discordAgentSettings.update({
+      where: { guildId_profile: { guildId, profile: 'PUBLIC' } },
+      data: { policyRevision: 2n, accessMode: 'LEGACY_USERS' },
+    });
     await expect(services[1].reserve(input(lease, 1))).rejects.toMatchObject({ code: 'POLICY_CHANGED' });
     expect((await db.clients[0].agentQuotaBucket.findFirstOrThrow({ where: { guildId, subject: 'GUILD' } })).reservedTokens).toBe(70n);
   });

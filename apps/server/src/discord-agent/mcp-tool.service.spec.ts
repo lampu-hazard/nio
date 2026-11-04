@@ -86,6 +86,19 @@ describe('McpToolService', () => {
     expect(nonMcpTool).toBeUndefined();
   });
 
+  it('resolves normalized provider names back to exact remote tool names', () => {
+    process.env.MCP_SERVERS_JSON = JSON.stringify([{ name: 'srv', transport: 'http', url: 'https://example.com/mcp', tools: { read: ['query.data'] } }]);
+    expect(service.resolve('mcp__srv__query_data')?.remoteName).toBe('query.data');
+  });
+
+  it('rejects normalized tool and duplicate server collisions before connecting', async () => {
+    const config = { name: 'srv', transport: 'http', url: 'https://example.com/mcp', tools: { read: ['query.data', 'query_data'] } };
+    process.env.MCP_SERVERS_JSON = JSON.stringify([config]);
+    expect(() => service.resolve('mcp__srv__query_data')).toThrow('collision');
+    process.env.MCP_SERVERS_JSON = JSON.stringify([{ ...config, tools: { read: [] } }, { ...config, tools: { read: [] } }]);
+    expect(() => service.resolve('mcp__srv__query_data')).toThrow('Duplicate MCP server');
+  });
+
   it('caps oversized output', async () => {
     process.env.MCP_SERVERS_JSON = JSON.stringify([
       {

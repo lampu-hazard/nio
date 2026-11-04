@@ -78,6 +78,32 @@ Apply the additive migration `20261104000000_agent_role_quotas_and_images` with 
 - **Safe rollback**: To disable role quotas or images without altering historical accounting, switch `accessMode` back to `LEGACY_USERS` or set `imageEnabled = false` in guild AI settings. Never delete or refund dispatched `AgentQuotaAttempt` or `AgentQuotaBucket` rows during rollback.
 - **Disposable PostgreSQL integration suite**: Run `AGENT_QUOTA_TEST_DATABASE_URL=postgresql://... bun run test:quota-integration` against a dedicated disposable PostgreSQL instance (never the application `DATABASE_URL`).
 
+### Public and Admin AI Agent Profiles
+
+Migration `20261104020000_public_admin_agent_profiles` separates the AI agent into two per-guild profiles (`PUBLIC` and `ADMIN`) with independent settings, credentials, channels, roles, tools, usage ledgers, and conversation history:
+
+- **Migration behavior (`20261104020000_public_admin_agent_profiles`)**:
+  - Existing guild configurations are converted to `profile = 'ADMIN'` with `enabled = false`, `tokenQuotaMode = 'UNLIMITED'`, `dailyGuildTokenLimit = null`, `maxRunTokens = null`, `userTokenRules = []`, and role `dailyTokenLimit = null`.
+  - A fresh disabled `profile = 'PUBLIC'` row is seeded for each migrated guild with `tokenQuotaMode = 'LIMITED'`, empty `allowedChannelIds`, empty `allowedToolIds`, no role rules, and **no copied API key or image key** (`encryptedApiKey = null`, `encryptedImageApiKey = null`).
+  - Both profiles remain disabled after migration until an administrator reviews channels, roles, tools, and credentials and explicitly enables each profile.
+- **Routing and explicit commands**:
+  - Automatic mention routing requires the channel (or thread parent channel) to be listed in that profile's `allowedChannelIds` and not in `excludedChannelIds`. Channels assigned to both profiles fail closed.
+  - `/ai` routes exclusively to `PUBLIC`; `/admin-ai` routes exclusively to `ADMIN` with ephemeral responses. Neither command falls back to the other profile.
+  - Legacy endpoints `/guilds/:guildId/ai-agent/{settings,quotas,usage,tools}` remain as compatibility aliases for `ADMIN`. Updating `ADMIN` settings (`PATCH`) additionally enforces `AgentProfileManagerGuard` against fresh Discord guild ownership, `Administrator`, or `ManageGuild` permission.
+- **Unlimited `ADMIN` tokens and honest source accounting**:
+  - `ADMIN` uses `tokenQuotaMode = 'UNLIMITED'` (no NIO daily guild, role, personal, or per-run token quota). Upstream provider billing still applies, and finite `maxOutputTokens`, finite daily image limits (`dailyGuildImageLimit`, role `dailyImageLimit`), transport deadlines, concurrency leases, and proposal confirmation gates remain enforced.
+  - Quota and usage responses separate committed tokens by count source (`usageSources` and `usageSourceAmounts`): `REPORTED` (provider-reported usage), `ESTIMATED` (model-aware tokenizer or baseline character fallback when provider usage is missing/invalid), and `UNCERTAIN` (ambiguous post-dispatch timeout/network failure), alongside live `reserved` holds. `ESTIMATED` and `UNCERTAIN` charges are never labeled as provider-reported usage.
+- **Public web tools (`web_search` and `web_fetch`)**:
+  - `web_search` uses SearXNG (`SEARXNG_BASE_URL`) and `web_fetch` uses Crawl4AI (`CRAWL4AI_BASE_URL`, optional `CRAWL4AI_API_TOKEN`). All user/result URLs are validated with `assertSafePublicWebUrl` (HTTPS/HTTP on public unicast IPs only; loopback, RFC1918, CGNAT, link-local, metadata, and non-unicast targets are blocked before dispatch).
+- **Operator Rollout and Rollback Sequence**:
+  1. Drain/stop old bot and API workers so pre-migration workers cannot write unscoped rows.
+  2. Back up PostgreSQL (`pg_dump`).
+  3. Apply `bun run prisma:deploy` (with explicit operator authorization).
+  4. Start updated server and client workers.
+  5. Review `ADMIN` and `PUBLIC` channels, roles, tools, and API keys in the dashboard, then enable each profile as desired.
+  6. Run separately authorized Discord slash command registration when ready to expose `/ai` and `/admin-ai`.
+  - **Rollback**: To disable either profile immediately, set `enabled = false` in dashboard settings without deleting data. If rolling back after post-migration traffic has occurred, preserve both `PUBLIC` and `ADMIN` rows in `DiscordAgentSettings`, `AgentQuotaBucket`, `AgentQuotaAttempt`, `AiInteractionLog`, and `AgentActionProposal` so usage and audit histories are not lost.
+
 ## Technology Stack
 
 - **Runtime**: Bun

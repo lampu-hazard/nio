@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AgentProfile, AgentRequestScope, parseAgentProfile } from './agent-profile.types';
 
 export type AgentRunStatus =
   | 'PLANNING'
@@ -33,12 +34,31 @@ const MAX_METADATA_LENGTH = 4000;
 export class AgentRunService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async start(guildId: string, channelId: string, userId: string, retentionDays = 30) {
+  async start(
+    scopeOrGuildId: AgentRequestScope | string,
+    channelIdOrRetention?: string | number,
+    userId?: string,
+    retentionDays = 30,
+    maybeProfile?: AgentProfile,
+  ) {
+    const isScope = typeof scopeOrGuildId === 'object' && scopeOrGuildId !== null;
+    const guildId = isScope ? scopeOrGuildId.guildId : scopeOrGuildId;
+    const profile = isScope
+      ? parseAgentProfile(scopeOrGuildId.profile)
+      : parseAgentProfile(maybeProfile ?? 'PUBLIC');
+    const channelId = isScope ? scopeOrGuildId.channelId : String(channelIdOrRetention);
+    const resolvedUserId = isScope ? scopeOrGuildId.userId : String(userId);
+    const resolvedRetention = isScope
+      ? typeof channelIdOrRetention === 'number'
+        ? channelIdOrRetention
+        : 30
+      : retentionDays;
+
     const run = await this.prisma.agentRun.create({
-      data: { guildId, channelId, userId, status: 'PLANNING' },
+      data: { guildId, profile, channelId, userId: resolvedUserId, status: 'PLANNING' },
     });
     await this.addEvent(run.id, 'STAGE', 'PLANNING', 'Permintaan diterima; menyiapkan pemeriksaan.');
-    await this.cleanup(guildId, retentionDays).catch(() => undefined);
+    await this.cleanup(guildId, profile, resolvedRetention).catch(() => undefined);
     return run;
   }
 
@@ -97,9 +117,9 @@ export class AgentRunService {
     });
   }
 
-  private async cleanup(guildId: string, retentionDays: number) {
+  private async cleanup(guildId: string, profile: AgentProfile, retentionDays: number) {
     if (!Number.isFinite(retentionDays) || retentionDays <= 0) return;
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-    await this.prisma.agentRun.deleteMany({ where: { guildId, startedAt: { lt: cutoff } } });
+    await this.prisma.agentRun.deleteMany({ where: { guildId, profile, startedAt: { lt: cutoff } } });
   }
 }

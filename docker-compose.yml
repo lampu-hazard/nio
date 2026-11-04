@@ -33,6 +33,25 @@ services:
     networks:
       - private
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: nio-searxng
+    restart: unless-stopped
+    volumes:
+      - ./services/searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    networks:
+      - private
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: nio-crawl4ai
+    restart: unless-stopped
+    shm_size: 1g
+    networks:
+      - private
+
   nio-migrate:
     image: ${GHCR_NAMESPACE:-ghcr.io/lampu-hazard}/nio-server:${IMAGE_TAG:-latest}
     build:
@@ -74,6 +93,8 @@ services:
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://nio:nio-server@db:5432/nio-db}
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - CRAWL4AI_URL=${CRAWL4AI_URL:-http://crawl4ai:11235}
     networks:
       - private
 

@@ -22,8 +22,12 @@ export class OwnerController {
   }
 
   @Get('guilds/:guildId')
-  guild(@Param('guildId') guildId: string, @Query('days') days?: string) {
-    return this.owner.getGuild(guildId, this.parseDays(days));
+  guild(
+    @Param('guildId') guildId: string,
+    @Query('days') days?: string,
+    @Query('profile') profile?: string,
+  ) {
+    return this.owner.getGuild(guildId, this.parseDays(days), profile);
   }
 
   @Patch('guilds/:guildId/settings')
@@ -32,8 +36,12 @@ export class OwnerController {
   }
 
   @Patch('guilds/:guildId/ai-agent')
-  updateAiSettings(@Param('guildId') guildId: string, @Body() dto: UpdateAiAgentSettingsDto) {
-    return this.owner.updateAiSettings(guildId, dto);
+  updateAiSettings(
+    @Param('guildId') guildId: string,
+    @Body() dto: UpdateAiAgentSettingsDto,
+    @Query('profile') profile?: string,
+  ) {
+    return this.owner.updateAiSettings(guildId, dto, profile);
   }
 
   @Post('guilds/:guildId/leave')

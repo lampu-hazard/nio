@@ -16,6 +16,11 @@ import { AgentRunService } from './agent-run.service';
 import { AiAgentSettingsController } from './ai-agent-settings.controller';
 import { AiAgentSettingsService } from './ai-agent-settings.service';
 import { AgentAccessService } from './agent-access.service';
+import { AgentProfileRouterService } from './agent-profile-router.service';
+import { AgentProfileManagerGuard } from './agent-profile-manager.guard';
+import { AgentToolPolicyService } from './agent-tool-policy.service';
+import { AgentRequestService } from './agent-request.service';
+import { AgentCommandService } from './agent-command.service';
 import { AgentQuotaService } from './quota/agent-quota.service';
 import { AgentQuotaQueryService } from './quota/agent-quota-query.service';
 import { AgentQuotaRecoveryService } from './quota/agent-quota-recovery.service';
@@ -47,6 +52,11 @@ import { PluginsModule } from '../plugins/plugins.module';
     AgentRunService,
     AiAgentSettingsService,
     AgentAccessService,
+    AgentProfileRouterService,
+    AgentProfileManagerGuard,
+    AgentToolPolicyService,
+    AgentRequestService,
+    AgentCommandService,
     AgentQuotaService,
     AgentQuotaQueryService,
     AgentQuotaRecoveryService,
@@ -67,6 +77,11 @@ import { PluginsModule } from '../plugins/plugins.module';
     AgentRunService,
     AiAgentSettingsService,
     AgentAccessService,
+    AgentProfileRouterService,
+    AgentProfileManagerGuard,
+    AgentToolPolicyService,
+    AgentRequestService,
+    AgentCommandService,
     AgentImageService,
   ],
 })

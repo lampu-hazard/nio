@@ -36,6 +36,7 @@
     "express-session": "latest",
     "ioredis": "^5.11.1",
     "ipaddr.js": "2.2.0",
+    "js-tiktoken": "1.0.21",
     "nest-winston": "latest",
     "pg": "^8.22.0",
     "prisma": "^6.19.0",

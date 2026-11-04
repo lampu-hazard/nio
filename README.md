@@ -119,7 +119,18 @@ DISCORD_AGENT_MODEL=gemini-2.5-flash # or 'gpt-4o-mini', 'llama-3.3-70b-versatil
 GEMINI_API_KEY=
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
+SEARXNG_BASE_URL=                    # Optional SearXNG instance for web_search
+CRAWL4AI_BASE_URL=                   # Optional Crawl4AI instance for web_fetch
+CRAWL4AI_API_TOKEN=                  # Optional Crawl4AI bearer token
 ```
+
+**Public (`PUBLIC`) and Admin (`ADMIN`) Profile Separation**:
+- NIO separates the guild AI agent into two fixed profiles inside the same bot:
+  - **`PUBLIC` (Agent Umum)**: Member-facing conversational assistant (`/ai` and explicitly assigned member channels). Speaks naturally, uses English tool schemas/queries while preserving exact identifiers/URLs, and is strictly limited to safe public read tools (`get_server_rules`, `search_public_faq`, `web_search`, `web_fetch`).
+  - **`ADMIN` (Agent Admin)**: Staff assistant for server administration and moderation (`/admin-ai`, ephemeral slash responses, and explicitly assigned staff channels).
+- There is **no cross-profile fallback**: `/ai` never falls back to `ADMIN`, `/admin-ai` never falls back to `PUBLIC`, and unassigned or overlapping channels fail closed.
+- **`ADMIN` Token Policy**: `ADMIN` uses `tokenQuotaMode = 'UNLIMITED'` (no NIO daily guild, role, personal, or per-run token caps) while continuing to track usage (`REPORTED`, `ESTIMATED`, `UNCERTAIN`) and enforcing finite `maxOutputTokens`, finite daily image quotas, concurrency leases, permissions, and human confirmation for mutations. Unlimited NIO token mode does not waive upstream AI provider billing.
+- See [`apps/server/README.md`](apps/server/README.md#public-and-admin-ai-agent-profiles) for the migration and rollout runbook (`20261104020000_public_admin_agent_profiles`).
 
 **Approval Semantics**:
 - Read-only tools (`get_*`, `search_*`, `check_*`, etc.) execute autonomously to gather evidence.

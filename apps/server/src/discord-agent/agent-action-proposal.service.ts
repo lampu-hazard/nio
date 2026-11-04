@@ -5,6 +5,8 @@ import { ModerationService } from '../moderation/moderation.service';
 import { StickersService } from '../stickers/stickers.service';
 import { CreateAgentActionProposalInput, AgentActionType, AgentSettingsUpdate } from './agent-action.types';
 import { McpToolService } from './mcp-tool.service';
+import { AgentProfile, parseAgentProfile } from './agent-profile.types';
+import { AgentToolPolicyService } from './agent-tool-policy.service';
 
 const PROPOSAL_TTL_MS = 10 * 60 * 1000;
 const MAX_TIMEOUT_MINUTES = 1440;
@@ -66,6 +68,7 @@ export class AgentActionProposalService {
     @Optional()
     @Inject(forwardRef(() => McpToolService))
     private readonly mcpToolService?: McpToolService,
+    @Optional() private readonly toolPolicy?: AgentToolPolicyService,
   ) {}
 
   setClient(client: Client) {
@@ -85,6 +88,7 @@ export class AgentActionProposalService {
   }
 
   async createProposal(input: CreateAgentActionProposalInput) {
+    if (parseAgentProfile(input.profile) !== 'ADMIN' || !input.originToolId) throw new ForbiddenException('Administrative tool origin required.');
     const reason = input.recommendation.reason.trim().slice(0, 512) || 'AI recommended moderation action.';
     const payload: any = { reason };
 
@@ -199,9 +203,12 @@ export class AgentActionProposalService {
       Object.assign(payload, this.normalizeDiscordOperationPayload(input.recommendation, input.channelId));
     }
 
+    this.assertOrigin(input.recommendation.type, input.originToolId, payload);
     return this.prisma.agentActionProposal.create({
       data: {
         guildId: input.guildId,
+        profile: input.profile,
+        originToolId: input.originToolId,
         channelId: input.channelId,
         requestedById: input.requestedById,
         targetUserId: input.targetUserId || null,
@@ -214,18 +221,23 @@ export class AgentActionProposalService {
   }
 
   async createBatchProposal(input: {
+    profile: AgentProfile;
+    originToolId: string;
     guildId: string;
     channelId: string;
     requestedById: string;
     proposalIds: string[];
     reason?: string;
   }) {
+    if (parseAgentProfile(input.profile) !== 'ADMIN' || !input.originToolId) throw new ForbiddenException('Administrative tool origin required.');
     if (!input.proposalIds || input.proposalIds.length === 0) {
       throw new BadRequestException('Batch proposal must include at least one proposal ID.');
     }
     return this.prisma.agentActionProposal.create({
       data: {
         guildId: input.guildId,
+        profile: input.profile,
+        originToolId: input.originToolId,
         channelId: input.channelId,
         requestedById: input.requestedById,
         actionType: 'BATCH',
@@ -267,7 +279,7 @@ export class AgentActionProposalService {
     return { ok: true, message: 'Proposal cancelled.' };
   }
 
-  async approveAndExecute(proposalId: string, userId: string) {
+  async approveAndExecute(proposalId: string, userId: string, guildId: string) {
     if (!this.client) throw new ServiceUnavailableException('Discord client is not ready yet.');
 
     const proposal = await this.prisma.agentActionProposal.findUnique({ where: { id: proposalId } });
@@ -278,8 +290,14 @@ export class AgentActionProposalService {
       throw new BadRequestException('Proposal has expired.');
     }
 
+    if (!guildId || proposal.guildId !== guildId || proposal.profile !== 'ADMIN' || !proposal.originToolId || !this.toolPolicy) {
+      throw new ForbiddenException('Proposal profile, origin or guild is not authorized.');
+    }
     const actionType = proposal.actionType as AgentActionType;
     const payload = proposal.payload as any;
+    this.assertOrigin(actionType, proposal.originToolId, payload);
+    const scope = { guildId, profile: 'ADMIN' as const, channelId: proposal.channelId, userId: proposal.requestedById, requestedById: proposal.requestedById };
+    await this.toolPolicy.assertAllowed(scope, proposal.originToolId, actionType === 'MCP_TOOL_CALL' ? payload.mcpArguments : payload);
 
     if (actionType === 'BATCH') {
       const subProposalIds = Array.isArray(payload.proposalIds) ? payload.proposalIds : [];
@@ -290,7 +308,12 @@ export class AgentActionProposalService {
       const executionResults: { id: string; ok: boolean; message: string }[] = [];
       for (const subId of subProposalIds) {
         try {
-          const res = await this.approveAndExecute(subId, userId);
+          const child = await this.prisma.agentActionProposal.findUnique({ where: { id: subId } });
+          if (!child || child.guildId !== proposal.guildId || child.profile !== proposal.profile
+            || child.channelId !== proposal.channelId || child.requestedById !== proposal.requestedById || child.actionType === 'BATCH') {
+            throw new ForbiddenException('Batch child scope mismatch.');
+          }
+          const res = await this.approveAndExecute(subId, userId, guildId);
           executionResults.push({ id: subId, ok: true, message: res.message });
         } catch (err: any) {
           executionResults.push({ id: subId, ok: false, message: err?.message || String(err) });
@@ -334,18 +357,28 @@ export class AgentActionProposalService {
       }
     }
 
-    const guild = await this.client.guilds.fetch(proposal.guildId);
-    const approver = await guild.members.fetch(userId);
+    const guild = await this.client.guilds.fetch({ guild: proposal.guildId, force: true });
+    const approver = await guild.members.fetch({ user: userId, force: true });
+    const requester = await guild.members.fetch({ user: proposal.requestedById, force: true });
     const targetRequired = ['WARN', 'TIMEOUT', 'KICK', 'ADD_ROLE', 'REMOVE_ROLE', 'REMOVE_TIMEOUT', 'SNAPSHOT_MEMBER_ROLES', 'RESTORE_MEMBER_ROLES', 'QUARANTINE_MEMBER', 'MOVE_MEMBER_VOICE', 'DISCONNECT_MEMBER_VOICE'].includes(actionType);
-    const target = proposal.targetUserId ? await guild.members.fetch(proposal.targetUserId).catch(() => null) : null;
+    const target = proposal.targetUserId ? await guild.members.fetch({ user: proposal.targetUserId, force: true }).catch(() => null) : null;
 
     if (targetRequired && !target) {
       throw new BadRequestException('Target member is not available in this server.');
     }
 
+    this.assertApproverCanExecute(actionType, requester, payload.channelId || proposal.channelId);
     this.assertApproverCanExecute(actionType, approver, payload.channelId || proposal.channelId);
 
-    const me = guild.members.me ?? await guild.members.fetchMe();
+    const me = await guild.members.fetchMe({ force: true });
+    if (target && ['TIMEOUT', 'REMOVE_TIMEOUT', 'KICK', 'BAN', 'ADD_ROLE', 'REMOVE_ROLE', 'RESTORE_MEMBER_ROLES', 'QUARANTINE_MEMBER'].includes(actionType)) {
+      for (const actor of [requester, approver, me]) {
+        if (target.id === guild.ownerId || target.id === actor.id || (actor.id !== guild.ownerId
+          && actor.roles.highest.comparePositionTo(target.roles.highest) <= 0)) {
+          throw new ForbiddenException('Current role hierarchy does not permit this action.');
+        }
+      }
+    }
     this.assertBotCanExecute(actionType, me, target, payload.channelId || proposal.channelId);
 
     await this.prisma.agentActionProposal.update({ where: { id: proposalId }, data: { status: 'APPROVED' } });
@@ -941,6 +974,21 @@ export class AgentActionProposalService {
     const member = await guild.members.fetch(this.requireString(targetUserId, 'targetUserId')).catch(() => null);
     if (!member) throw new BadRequestException('Target member is not available in this server.');
     return member as any;
+  }
+
+  private assertOrigin(actionType: AgentActionType, origin: string, payload: any) {
+    if (actionType === 'BATCH') return; // Each child retains and validates its own origin.
+    const special: Partial<Record<AgentActionType, string>> = {
+      WARN: 'warn_user', TIMEOUT: 'timeout_user', KICK: 'kick_user', BAN: 'ban_user', PURGE: 'purge_channel_messages',
+      ADD_ROLE: 'add_role_to_user', REMOVE_ROLE: 'remove_role_from_user', REMOVE_TIMEOUT: 'remove_timeout_user',
+      REVOKE_WARNING: 'revoke_warning', UPDATE_SETTINGS: 'update_server_settings', LOCKDOWN: 'lockdown_channel',
+      UNLOCK: 'unlock_channel', SET_SLOWMODE: 'set_channel_slowmode', SEND_ANNOUNCEMENT: 'send_channel_announcement',
+      PURGE_USER_MESSAGES: 'purge_user_messages', MASS_TIMEOUT: 'mass_moderation_action', MASS_KICK: 'mass_moderation_action',
+      MASS_BAN: 'mass_moderation_action', MANAGE_STICKER: 'manage_server_sticker',
+    };
+    const expected = actionType === 'MCP_TOOL_CALL' ? `mcp:${payload.mcpServer}:${payload.mcpTool}`
+      : special[actionType] ?? (DISCORD_OP_ACTIONS.has(actionType) ? actionType.toLowerCase() : null);
+    if (!expected || origin !== expected) throw new ForbiddenException('Proposal action does not match its tool origin.');
   }
 
   private assertApproverCanExecute(actionType: AgentActionType, approver: any, channelId?: string) {

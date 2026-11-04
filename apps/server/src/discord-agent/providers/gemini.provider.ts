@@ -5,10 +5,12 @@ import {
   AiMessage,
   AiPart,
   AiProvider,
+  PreparedChatCall,
   AiTextPart,
   AiToolDefinition,
 } from '../interfaces/ai-provider.interface';
-import { parseProviderJson, readProviderBody } from './provider-json';
+import { parseProviderJson, readProviderBody, readProviderChunk } from './provider-json';
+import { prepareChatBody, ProviderCallError } from './chat-request-budget';
 
 @Injectable()
 export class GeminiProvider implements AiProvider {
@@ -18,20 +20,49 @@ export class GeminiProvider implements AiProvider {
   ) {}
 
   async generate(request: AiGenerateRequest): Promise<AiGenerateResult> {
+    return this.generatePrepared(this.prepare(request), request.signal, request.onTextDelta);
+  }
+
+  prepare(request: AiGenerateRequest): PreparedChatCall {
     if (!this.apiKey) throw new Error('Gemini API key is not configured.');
     if (!request.messages.length) throw new Error('Gemini request requires at least one message.');
 
-    const isStreaming = typeof request.onTextDelta === 'function';
-    const action = isStreaming ? 'streamGenerateContent?alt=sse' : 'generateContent';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:${action}`;
+    if (!['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'].includes(this.model)) {
+      throw new ProviderCallError('BUDGET_UNSUPPORTED', false);
+    }
     const payload: Record<string, unknown> = {
       contents: request.messages.map((message) => this.toGeminiMessage(message)),
       systemInstruction: { parts: [{ text: request.systemPrompt }] },
+      generationConfig: { maxOutputTokens: request.maxOutputTokens ?? 2048,
+        ...(this.model.startsWith('gemini-2.5-') ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
     };
     if (request.tools.length) {
       payload.tools = [{ functionDeclarations: request.tools.map((tool) => this.toGeminiTool(tool)) }];
     }
 
+    const call = prepareChatBody(payload, request.messages.length + 1, request.tools.length, request.maxOutputTokens ?? 2048);
+    this.prepared.set(call, typeof request.onTextDelta === 'function');
+    return call;
+  }
+
+  private readonly prepared = new WeakMap<PreparedChatCall, boolean>();
+
+  async generatePrepared(call: PreparedChatCall, signal?: AbortSignal, onTextDelta?: AiGenerateRequest['onTextDelta']): Promise<AiGenerateResult> {
+    if (!this.prepared.has(call)) throw new ProviderCallError('INVALID_PREPARED_CALL', false);
+    if (signal?.aborted) throw new ProviderCallError('PROVIDER_ABORTED', false);
+    try {
+      return await this.sendPrepared(call, signal, onTextDelta);
+    } catch (error) {
+      if (error instanceof ProviderCallError) throw error;
+      const code = error instanceof Error && /^[A-Z][A-Z0-9_]+:/.test(error.message) ? error.message.split(':')[0] : 'PROVIDER_NETWORK_ERROR';
+      throw new ProviderCallError(signal?.aborted ? 'PROVIDER_ABORTED' : code, true);
+    }
+  }
+
+  private async sendPrepared(call: PreparedChatCall, signal?: AbortSignal, onTextDelta?: AiGenerateRequest['onTextDelta']): Promise<AiGenerateResult> {
+    const isStreaming = this.prepared.get(call);
+    const action = isStreaming ? 'streamGenerateContent?alt=sse' : 'generateContent';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:${action}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-goog-api-key': this.apiKey,
@@ -43,18 +74,21 @@ export class GeminiProvider implements AiProvider {
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
+      body: call.body,
+      signal,
     });
     if (!response.ok) {
-      throw new Error(`GEMINI_HTTP_${response.status}: Provider request failed.`);
+      void response.body?.cancel().catch(() => {});
+      const rejected = [400, 401, 403, 404, 413, 422, 429].includes(response.status);
+      throw new ProviderCallError([400, 422].includes(response.status) ? 'BUDGET_UNSUPPORTED' : `GEMINI_HTTP_${response.status}`, true, rejected);
     }
 
     const contentType = response.headers?.get('content-type') || '';
     if (contentType.includes('text/event-stream') && response.body) {
-      return this.readEventStream(response, request);
+      return this.readEventStream(response, { onTextDelta, signal });
     }
 
-    const body = await readProviderBody(response);
+    const body = await readProviderBody(response, signal);
 
     const data = parseProviderJson(body, 'Gemini');
     if (!Array.isArray(data?.candidates) || !data.candidates.length) {
@@ -82,13 +116,14 @@ export class GeminiProvider implements AiProvider {
     };
   }
 
-  private async readEventStream(response: Response, request: AiGenerateRequest): Promise<AiGenerateResult> {
+  private async readEventStream(response: Response, request: Pick<AiGenerateRequest, 'onTextDelta' | 'signal'>): Promise<AiGenerateResult> {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     const parts: AiPart[] = [];
     let finishReason: string | undefined;
     let usage: any;
+    let receivedBytes = 0;
 
     const processEvent = async (event: string) => {
       const dataLines = event
@@ -134,8 +169,10 @@ export class GeminiProvider implements AiProvider {
 
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await readProviderChunk(reader, request.signal);
         if (done) break;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > 8388608) throw new ProviderCallError('PROVIDER_RESPONSE_TOO_LARGE', true);
         buffer += decoder.decode(value, { stream: true });
         let separator: number;
         while ((separator = buffer.search(/\r?\n\r?\n/)) !== -1) {
@@ -148,6 +185,7 @@ export class GeminiProvider implements AiProvider {
       buffer += decoder.decode();
       if (buffer.trim()) await processEvent(buffer);
     } finally {
+      void reader.cancel().catch(() => {});
       reader.releaseLock();
     }
 

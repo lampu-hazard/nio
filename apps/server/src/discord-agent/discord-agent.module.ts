@@ -15,6 +15,14 @@ import { McpToolService } from './mcp-tool.service';
 import { AgentRunService } from './agent-run.service';
 import { AiAgentSettingsController } from './ai-agent-settings.controller';
 import { AiAgentSettingsService } from './ai-agent-settings.service';
+import { AgentAccessService } from './agent-access.service';
+import { AgentQuotaService } from './quota/agent-quota.service';
+import { AgentQuotaQueryService } from './quota/agent-quota-query.service';
+import { AgentQuotaRecoveryService } from './quota/agent-quota-recovery.service';
+import { BudgetedChatService } from './quota/budgeted-chat.service';
+import { PublicImageHttpService } from './images/public-image-http.service';
+import { OpenAiImageProvider } from './images/openai-image.provider';
+import { AgentImageService } from './images/agent-image.service';
 import { PluginsModule } from '../plugins/plugins.module';
 
 @Module({
@@ -38,6 +46,14 @@ import { PluginsModule } from '../plugins/plugins.module';
     McpToolService,
     AgentRunService,
     AiAgentSettingsService,
+    AgentAccessService,
+    AgentQuotaService,
+    AgentQuotaQueryService,
+    AgentQuotaRecoveryService,
+    BudgetedChatService,
+    PublicImageHttpService,
+    OpenAiImageProvider,
+    AgentImageService,
   ],
   exports: [
     DiscordAgentService,
@@ -50,6 +66,8 @@ import { PluginsModule } from '../plugins/plugins.module';
     McpToolService,
     AgentRunService,
     AiAgentSettingsService,
+    AgentAccessService,
+    AgentImageService,
   ],
 })
 export class DiscordAgentModule {}

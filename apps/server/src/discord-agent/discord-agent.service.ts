@@ -23,6 +23,10 @@ import { ConversationMemoryService, ConversationTurn } from './conversation-memo
 import { McpToolService } from './mcp-tool.service';
 import { AgentRunService } from './agent-run.service';
 import { AiAgentSettingsService } from './ai-agent-settings.service';
+import { randomUUID } from 'node:crypto';
+import { AgentAccessService } from './agent-access.service';
+import { BudgetedChatService, BoundedAiProvider } from './quota/budgeted-chat.service';
+import { AgentQuotaError } from './quota/agent-quota.types';
 
 // ponytail: no wall-clock limit (Hermes-style); the turn cap and repeated-call guard are what stop runaway loops.
 const MAX_AGENT_TURNS = 200;
@@ -214,10 +218,19 @@ export class DiscordAgentService {
     @Optional() private readonly mcpTools?: McpToolService,
     @Optional() private readonly runs?: AgentRunService,
     @Optional() private readonly aiSettings?: AiAgentSettingsService,
+    @Optional() private readonly access?: AgentAccessService,
+    @Optional() private readonly budgetedChat?: BudgetedChatService,
   ) {}
 
   async getAccessDecision(guildId: string, channelId: string, authorId: string) {
+    if (this.access) {
+      const decision = await this.access.resolve(guildId, channelId, authorId, 'CHAT');
+      return decision.allowed
+        ? { allowed: true, reason: 'allowed', settings: decision.settings } as const
+        : { allowed: false, reason: decision.code.toLowerCase().replace(/_/g, '-'), settings: null } as const;
+    }
     const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
+    if (settings?.accessMode === 'ROLE_QUOTAS') return { allowed: false, reason: 'membership-unavailable', settings } as const;
     const isEnabled = settings?.enabled ?? process.env.DISCORD_AGENT_ENABLED === 'true';
     if (!isEnabled) return { allowed: false, reason: 'disabled', settings } as const;
 
@@ -270,9 +283,32 @@ export class DiscordAgentService {
 - Requesting Discord user ID: ${authorId}
 - Bot owner authorization: ${isBotOwner ? 'granted' : 'not granted'}`;
 
-    const apiKey = this.aiSettings?.decryptApiKey(settings?.encryptedApiKey);
-    const provider = this.getProvider(providerName, modelName, apiKey, settings?.baseUrl);
+    if (settings?.accessMode === 'ROLE_QUOTAS' && !this.budgetedChat) {
+      return { content: '⚠️ Pencatatan kuota AI tidak tersedia. Coba lagi nanti.' };
+    }
     const run = await this.runs?.start(guildId, channelId, authorId, settings?.messageRetentionDays ?? 30);
+    let chatRun: Awaited<ReturnType<BudgetedChatService['beginRun']>> | undefined;
+    try {
+      chatRun = await this.budgetedChat?.beginRun({
+        guildId, channelId, userId: authorId, requestId: randomUUID(), runId: run?.id,
+        provider: (current) => this.getProvider(
+          current?.provider || process.env.DISCORD_AGENT_PROVIDER || 'gemini',
+          current?.model || process.env.DISCORD_AGENT_MODEL || 'gemini-2.5-flash',
+          this.aiSettings?.decryptApiKey(current?.encryptedApiKey), current?.baseUrl,
+        ),
+      });
+    } catch (err) {
+      const explained = this.explainChatError(err);
+      if (run && this.runs) await this.runs.finish(run.id, 'FAILED', explained.code).catch(() => undefined);
+      return { content: explained.message };
+    }
+    try {
+    // Only legacy callers without the metering dependency use the compatibility adapter.
+    const provider = chatRun ? undefined : this.getProvider(providerName, modelName,
+      this.aiSettings?.decryptApiKey(settings?.encryptedApiKey), settings?.baseUrl);
+    const generate = (request: Parameters<AiProvider['generate']>[0]) => chatRun
+      ? chatRun.generate(request)
+      : this.generateWithRetry(providerName, () => provider!.generate({ ...request, maxOutputTokens: settings?.maxOutputTokens ?? 2048 }));
     const reportStage = async (stage: 'PLANNING' | 'INVESTIGATING' | 'SYNTHESIZING' | 'AWAITING_APPROVAL', message: string) => {
       if (run && this.runs) await this.runs.stage(run.id, stage, message).catch(() => undefined);
       await onProgress?.(message);
@@ -346,9 +382,7 @@ ${prompt || '(analisis pesan di atas)'}`;
       let response: AiGenerateResult;
       let streamedText = '';
       try {
-        response = await this.generateWithRetry(providerName, () => {
-          streamedText = '';
-          return provider.generate({
+        response = await generate({
           systemPrompt: effectiveSystemPrompt,
           messages: compactHistoryMessages([...messages]),
           tools: availableTools,
@@ -358,17 +392,11 @@ ${prompt || '(analisis pesan di atas)'}`;
             const safeText = sanitizeSensitiveInfo(neutralizeMentions(cleanModelText(streamedText)));
             if (safeText) await onProgress(`[draft] ${safeText.slice(-1000)}`);
           },
-          });
         });
       } catch (err: any) {
-        const rawMessage = String(err?.message || err || 'Unknown provider error');
-        const safeCode = rawMessage.match(/\b(?:OPENAI|GEMINI)_[A-Z0-9_]+\b/)?.[0] || 'AI_PROVIDER_ERROR';
-        this.logger.warn(`AI provider request failed provider=${providerName} code=${safeCode}`);
-        if (/HTTP_429\b/.test(rawMessage)) {
-          finalContent = '⚠️ Batas kuota AI terlampaui (Rate Limit / Quota Exceeded). Mohon tunggu beberapa saat sebelum mencoba kembali.';
-        } else {
-          finalContent = `⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI. Kode: ${safeCode}.`;
-        }
+        const explained = this.explainChatError(err);
+        this.logger.warn(`AI provider request failed provider=${providerName} code=${explained.code}`);
+        finalContent = explained.message;
         break;
       }
 
@@ -607,7 +635,7 @@ ${prompt || '(analisis pesan di atas)'}`;
     if (!finalContent && messages.some((m) => m.role === 'user' && m.parts?.some((p) => p.type === 'tool_result'))) {
       try {
         await reportStage('SYNTHESIZING', '🧾 *Menyusun laporan akhir...*');
-        const synthesisRes = await this.generateWithRetry(providerName, () => provider.generate({
+        const synthesisRes = await generate({
           systemPrompt: effectiveSystemPrompt,
           messages: [
             ...compactHistoryMessages(messages),
@@ -617,7 +645,10 @@ ${prompt || '(analisis pesan di atas)'}`;
             },
           ],
           tools: [],
-        }));
+        });
+        promptTokens += synthesisRes.usage?.promptTokens || 0;
+        completionTokens += synthesisRes.usage?.completionTokens || 0;
+        totalTokens += synthesisRes.usage?.totalTokens || 0;
         const synthText = synthesisRes?.message?.parts
           ?.filter((p): p is AiTextPart => p.type === 'text')
           ?.map((p) => p.text)
@@ -627,6 +658,9 @@ ${prompt || '(analisis pesan di atas)'}`;
         }
       } catch (synthErr) {
         this.logger.warn(`Failed to synthesize final response after turn exhaustion: ${synthErr}`);
+        if (!lastEmittedText && synthErr instanceof AgentQuotaError) {
+          finalContent = this.explainChatError(synthErr).message;
+        }
       }
     }
 
@@ -678,6 +712,7 @@ ${prompt || '(analisis pesan di atas)'}`;
       }
     }
 
+    if (chatRun) totalTokens = chatRun.spentTokens;
     await this.prisma.agentInteractionLog.create({
       data: {
         guildId,
@@ -706,6 +741,27 @@ ${prompt || '(analisis pesan di atas)'}`;
       ...(components ? { components } : {}),
       ...(conversationTurns ? { conversationTurns } : {}),
     };
+    } finally {
+      await chatRun?.close();
+    }
+  }
+
+  private explainChatError(err: unknown): { code: string; message: string } {
+    if (err instanceof AgentQuotaError) {
+      if (err.code === 'QUOTA_EXHAUSTED') return { code: err.code, message: '⚠️ Kuota token AI harian member atau server habis. Kuota direset pukul 00:00 UTC.' };
+      if (err.code === 'RUN_BUDGET_EXHAUSTED') return { code: err.code, message: '⚠️ Permintaan melewati batas token per-run atau sisa kuota harian yang tersedia.' };
+      if (err.code === 'BUSY') return { code: err.code, message: '⚠️ Permintaan AI kamu sebelumnya masih berjalan. Tunggu sampai selesai.' };
+      if (err.code === 'ROLE_DENIED' || err.code === 'USER_DENIED') return { code: err.code, message: '⚠️ Role kamu tidak memiliki izin menggunakan chat AI.' };
+      if (err.code === 'LEASE_LOST' || err.code === 'POLICY_CHANGED') return { code: err.code, message: '⚠️ Sesi kuota atau kebijakan akses berubah saat permintaan berjalan. Silakan coba lagi.' };
+      if (err.code === 'GEMINI_BUDGET_UNSUPPORTED' || err.code === 'OPENAI_BUDGET_UNSUPPORTED') return { code: err.code, message: '⚠️ Provider AI yang dipilih belum mendukung pembatasan kuota token per panggilan.' };
+      return { code: err.code, message: `⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI. Kode: ${err.code}.` };
+    }
+    const rawMessage = String((err as any)?.message || err || 'Unknown provider error');
+    const safeCode = rawMessage.match(/\b(?:OPENAI|GEMINI)_[A-Z0-9_]+\b/)?.[0] || 'AI_PROVIDER_ERROR';
+    if (/HTTP_429\b/.test(rawMessage)) {
+      return { code: safeCode, message: '⚠️ Batas kuota AI terlampaui (Rate Limit / Quota Exceeded). Mohon tunggu beberapa saat sebelum mencoba kembali.' };
+    }
+    return { code: safeCode, message: `⚠️ Maaf, terjadi kesalahan saat memproses permintaan AI. Kode: ${safeCode}.` };
   }
 
   // Transient provider errors (5xx, 429, network, truncated stream) are retried with backoff; 4xx config errors fail fast.
@@ -724,7 +780,7 @@ ${prompt || '(analisis pesan di atas)'}`;
     }
   }
 
-  private getProvider(provider: string, model: string, configuredApiKey?: string, configuredBaseUrl?: string | null): AiProvider {
+  private getProvider(provider: string, model: string, configuredApiKey?: string, configuredBaseUrl?: string | null): BoundedAiProvider {
     const normalized = (provider || '').toLowerCase();
     if (normalized === 'gemini') {
       const apiKey = configuredApiKey || process.env.GEMINI_API_KEY || '';

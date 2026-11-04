@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { loadImage } from '@napi-rs/canvas';
-import { renderVoiceLevelCard } from './voice-level-card';
+import { renderVoiceLevelCard, renderVoiceStatsCard } from './voice-level-card';
 
 const input = { name: 'Othinus', previousLevel: 1, level: 2, xp: 400n, avatarUrl: null };
+const statsInput = {
+  name: 'Othinus',
+  level: 5,
+  xp: 2750n,
+  totalDuration: '3 jam 12 menit',
+  sessionDuration: '1 jam 12 menit',
+  avatarUrl: null,
+};
 
 describe('voice level card', () => {
   afterEach(() => { jest.restoreAllMocks(); });
@@ -65,5 +73,21 @@ describe('voice level card', () => {
     jest.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(body, { headers: { 'content-type': 'image/png' } }));
     await renderVoiceLevelCard({ ...input, avatarUrl: 'https://cdn.discordapp.com/avatars/123/hash.png?size=128' });
     expect(cancel).toHaveBeenCalled();
+  });
+
+  it('renders a voice stats PNG card with XP progress bar and voice durations', async () => {
+    const png = await renderVoiceStatsCard(statsInput);
+    expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const image = await loadImage(png);
+    expect([image.width, image.height]).toEqual([900, 340]);
+    for (const change of [
+      { name: 'Other Member' },
+      { level: 6 },
+      { xp: 3400n },
+      { totalDuration: '10 jam 0 menit' },
+      { sessionDuration: 'Tidak sedang di voice' },
+    ]) {
+      expect((await renderVoiceStatsCard({ ...statsInput, ...change })).equals(png)).toBe(false);
+    }
   });
 });

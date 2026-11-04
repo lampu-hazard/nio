@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { isIP } from 'node:net';
+import * as ipaddr from 'ipaddr.js';
 import { Client } from 'discord.js';
+import { Prisma } from '@prisma/client';
+import { AgentRoleRule } from './agent-policy.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CredentialEncryptionService } from '../plugins/credential-encryption.service';
 import { UpdateAiAgentSettingsDto } from './dto/update-ai-agent-settings.dto';
@@ -12,6 +16,15 @@ const DEFAULTS = {
   allowedUserIds: [] as string[],
   allowedChannelIds: [] as string[],
   excludedChannelIds: [] as string[],
+  accessMode: 'ROLE_QUOTAS',
+  dailyGuildTokenLimit: 1000000,
+  dailyGuildImageLimit: 100,
+  maxOutputTokens: 2048,
+  maxRunTokens: 32768,
+  imageEnabled: false,
+  imageBaseUrl: null as string | null,
+  imageModel: null as string | null,
+  imageCredentialSource: 'SEPARATE',
 };
 
 @Injectable()
@@ -25,41 +38,59 @@ export class AiAgentSettingsService {
   }
 
   async getSettings(guildId: string) {
-    const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId } });
-    const { encryptedApiKey, ...safeSettings } = settings || {};
-    return { ...DEFAULTS, ...safeSettings, baseUrl: settings?.baseUrl || null, hasCredential: Boolean(encryptedApiKey) };
+    const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId }, include: { roleRules: true } });
+    return this.redact(settings);
   }
 
   async updateSettings(guildId: string, dto: UpdateAiAgentSettingsDto) {
-    if (dto.provider && !['gemini', 'openai-compatible'].includes(dto.provider)) throw new BadRequestException('Unsupported AI provider.');
-    const effectiveProvider = dto.provider || (await this.prisma.discordAgentSettings.findUnique({ where: { guildId } }))?.provider || DEFAULTS.provider;
-    if (effectiveProvider === 'gemini' && dto.baseUrl) throw new BadRequestException('Gemini does not use a custom base URL.');
-    if (effectiveProvider === 'openai-compatible' && dto.baseUrl) this.validateBaseUrl(dto.baseUrl);
-    for (const ids of [dto.allowedUserIds, dto.allowedChannelIds, dto.excludedChannelIds]) {
-      if (ids && (ids.length > 500 || ids.some((id) => id !== '*' && !/^\d{5,25}$/.test(id)))) throw new BadRequestException('Discord ID list is invalid.');
-    }
-    if (dto.apiKey !== undefined && (!dto.apiKey.trim() || dto.apiKey.length > 512)) throw new BadRequestException('API key is invalid.');
-    if (dto.apiKey && dto.clearApiKey) throw new BadRequestException('Choose either a new API key or clear the existing key.');
-
-    const { apiKey, clearApiKey, ...fields } = dto;
-    const update: Record<string, unknown> = { ...fields };
-    if (apiKey) {
-      try {
-        update.encryptedApiKey = this.encryption.encrypt(apiKey.trim());
-      } catch {
-        throw new BadRequestException(
-          'Gagal mengenkripsi API Key: PLUGIN_CREDENTIALS_ENCRYPTION_KEY belum dikonfigurasi di file .env server (minimal 32 karakter).',
-        );
+    const writable = new Set([...Object.keys(DEFAULTS), 'roleRules', 'apiKey', 'clearApiKey', 'imageApiKey', 'clearImageApiKey']);
+    if (Object.keys(dto).some((key) => !writable.has(key))) throw new BadRequestException('Unknown AI settings field.');
+    const guild = this.client?.guilds.cache.get(guildId);
+    const roles = dto.roleRules === undefined ? null : await guild?.roles.fetch().catch(() => null);
+    // Serializable protects the complete effective snapshot, including omitted fields.
+    const save = () => this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "guildId" FROM "DiscordAgentSettings" WHERE "guildId" = ${guildId} FOR UPDATE`;
+      const existing = await tx.discordAgentSettings.findUnique({ where: { guildId }, include: { roleRules: true } });
+      const { apiKey, clearApiKey, imageApiKey, clearImageApiKey, roleRules, ...fields } = dto;
+      const update = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+      const effective = { ...DEFAULTS, ...existing, ...update };
+      this.validateEffective(effective);
+      for (const ids of [dto.allowedUserIds, dto.allowedChannelIds, dto.excludedChannelIds]) {
+        if (ids !== undefined && (!Array.isArray(ids) || ids.length > 500 || ids.some((id) => typeof id !== 'string' || (id !== '*' && !/^\d{5,25}$/.test(id))))) {
+          throw new BadRequestException('Discord ID list is invalid.');
+        }
+      }
+      if (roleRules !== undefined) this.validateRoleRules(roleRules, existing?.roleRules ?? [], roles ?? null);
+      const encrypted: { encryptedApiKey?: string | null; encryptedImageApiKey?: string | null } = {};
+      for (const [key, clear, field] of [
+        [apiKey, clearApiKey, 'encryptedApiKey'],
+        [imageApiKey, clearImageApiKey, 'encryptedImageApiKey'],
+      ] as const) {
+        if (key !== undefined && (typeof key !== 'string' || !key.trim() || key.length > 512)) throw new BadRequestException('API key is invalid.');
+        if (key !== undefined && clear) throw new BadRequestException('Choose either a new API key or clear the existing key.');
+        if (clear) encrypted[field] = null;
+        if (key) {
+          try { encrypted[field] = this.encryption.encrypt(key.trim()); }
+          catch { throw new BadRequestException('Gagal mengenkripsi API Key: PLUGIN_CREDENTIALS_ENCRYPTION_KEY belum dikonfigurasi di file .env server (minimal 32 karakter).'); }
+        }
+      }
+      const data = { ...update, ...encrypted, ...(roleRules === undefined ? {} : {
+        roleRules: { deleteMany: {}, create: roleRules.map(({ roleId, chatEnabled, imageEnabled, dailyTokenLimit, dailyImageLimit }) => ({ roleId, chatEnabled, imageEnabled, dailyTokenLimit, dailyImageLimit })) },
+      }) };
+      const row = await tx.discordAgentSettings.upsert({
+        where: { guildId },
+        create: { guildId, ...DEFAULTS, ...data, policyRevision: 1n },
+        update: { ...data, policyRevision: { increment: 1n } },
+        include: { roleRules: true },
+      });
+      return this.redact(row);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    for (let attempt = 0; ; attempt++) {
+      try { return await save(); }
+      catch (error) {
+        if (attempt >= 2 || !error || typeof error !== 'object' || !('code' in error) || error.code !== 'P2034') throw error;
       }
     }
-    if (clearApiKey) update.encryptedApiKey = null;
-    const row = await this.prisma.discordAgentSettings.upsert({
-      where: { guildId },
-      create: { guildId, ...DEFAULTS, ...update },
-      update,
-    });
-    const { encryptedApiKey, ...safeRow } = row;
-    return { ...DEFAULTS, ...safeRow, baseUrl: row.baseUrl || null, hasCredential: Boolean(encryptedApiKey) };
   }
 
   async getUsage(guildId: string, days = 30) {
@@ -161,6 +192,66 @@ export class AiAgentSettingsService {
     };
   }
 
+  private redact(row: (Prisma.DiscordAgentSettingsGetPayload<{ include: { roleRules: true } }>) | null) {
+    const { encryptedApiKey, encryptedImageApiKey, policyRevision, roleRules, ...safe } = row ?? {};
+    return { ...DEFAULTS, ...safe, roleRules: roleRules ?? [], policyRevision: String(policyRevision ?? 0n),
+      baseUrl: row?.baseUrl || null, hasCredential: Boolean(encryptedApiKey), hasImageCredential: Boolean(encryptedImageApiKey) };
+  }
+
+  private validateEffective(settings: Record<string, unknown>) {
+    const invalid = () => { throw new BadRequestException('AI settings are invalid.'); };
+    if (!['gemini', 'openai-compatible'].includes(String(settings.provider))) invalid();
+    if (!['LEGACY_USERS', 'ROLE_QUOTAS'].includes(String(settings.accessMode))) invalid();
+    if (!['SEPARATE', 'CHAT'].includes(String(settings.imageCredentialSource))) invalid();
+    for (const [name, min, max] of [
+      ['dailyGuildTokenLimit', 1, 1000000000], ['dailyGuildImageLimit', 0, 10000],
+      ['maxOutputTokens', 128, 8192], ['maxRunTokens', 1024, 262144],
+    ] as const) {
+      const value = settings[name];
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) invalid();
+    }
+    if (Number(settings.maxRunTokens) <= Number(settings.maxOutputTokens)) invalid();
+    if (typeof settings.model !== 'string' || !settings.model.trim() || settings.model.length > 120) invalid();
+    if (settings.provider === 'gemini' && settings.baseUrl) throw new BadRequestException('Gemini does not use a custom base URL.');
+    if (settings.baseUrl) this.validateBaseUrl(String(settings.baseUrl));
+    if (settings.imageBaseUrl) {
+      const url = this.validateBaseUrl(String(settings.imageBaseUrl));
+      const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      let publicHost = host !== 'localhost' && !host.endsWith('.localhost') && !host.endsWith('.local');
+      if (publicHost && isIP(host)) {
+        try { publicHost = ipaddr.parse(host).range() === 'unicast'; } catch { publicHost = false; }
+      }
+      if (url.protocol !== 'https:' || (url.port && url.port !== '443') || !publicHost || /\/(?:chat\/completions|images\/generations)\/?$/.test(url.pathname)) invalid();
+    }
+    if (settings.imageEnabled && (settings.accessMode !== 'ROLE_QUOTAS' || !settings.imageBaseUrl
+      || typeof settings.imageModel !== 'string' || !settings.imageModel.trim() || settings.imageModel.length > 120)) invalid();
+    if (settings.imageCredentialSource === 'CHAT') {
+      if (settings.provider !== 'openai-compatible' || !settings.imageBaseUrl) invalid();
+      const chat = this.validateBaseUrl(String(settings.baseUrl || 'https://api.openai.com/v1'));
+      const image = this.validateBaseUrl(String(settings.imageBaseUrl));
+      if (chat.origin !== image.origin) throw new BadRequestException('Shared image credentials require the same chat and image origin.');
+    }
+  }
+
+  private validateRoleRules(rules: AgentRoleRule[], previous: AgentRoleRule[], roles: { has(id: string): boolean } | null) {
+    if (!Array.isArray(rules) || rules.length > 100) throw new BadRequestException('At most 100 role rules are allowed.');
+    const ids = new Set<string>();
+    for (const rule of rules) {
+      if (!rule || typeof rule.roleId !== 'string' || !/^\d{5,25}$/.test(rule.roleId) || ids.has(rule.roleId)
+        || typeof rule.chatEnabled !== 'boolean' || typeof rule.imageEnabled !== 'boolean'
+        || !Number.isSafeInteger(rule.dailyTokenLimit) || rule.dailyTokenLimit < 0 || rule.dailyTokenLimit > 100000000
+        || !Number.isSafeInteger(rule.dailyImageLimit) || rule.dailyImageLimit < 0 || rule.dailyImageLimit > 1000
+        || (rule.chatEnabled && !rule.dailyTokenLimit) || (rule.imageEnabled && !rule.dailyImageLimit)) {
+        throw new BadRequestException('Role policy is invalid.');
+      }
+      ids.add(rule.roleId);
+      const old = previous.find((entry) => entry.roleId === rule.roleId);
+      const unchanged = old && old.chatEnabled === rule.chatEnabled && old.imageEnabled === rule.imageEnabled
+        && old.dailyTokenLimit === rule.dailyTokenLimit && old.dailyImageLimit === rule.dailyImageLimit;
+      if (!unchanged && !roles?.has(rule.roleId)) throw new BadRequestException('Select an available role in this server.');
+    }
+  }
+
   decryptApiKey(encryptedApiKey: string | null | undefined) {
     return encryptedApiKey ? this.encryption.decrypt(encryptedApiKey) : '';
   }
@@ -172,5 +263,6 @@ export class AiAgentSettingsService {
       throw new BadRequestException('Base URL must use HTTP or HTTPS.');
     }
     if (url.username || url.password || url.search || url.hash) throw new BadRequestException('Base URL cannot include credentials, query, or fragment.');
+    return url;
   }
 }

@@ -4,7 +4,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { AiSettings, QuotaPage, settingsPayload, validateSettings } from '@/lib/ai-agent';
-import { AgentRoleQuotas, AgentImages, AgentQuotaUsage, NumberField } from '@/components/ai-agent/AgentSections';
+import { AgentRoleQuotas, AgentImages, AgentQuotaUsage, AgentMemberTokens, NumberField } from '@/components/ai-agent/AgentSections';
 
 type Channel = { id: string; name: string };
 type Member = { id: string; displayName: string; username: string; avatarUrl: string };
@@ -153,12 +153,16 @@ function AgentSettings({ guildId }: { guildId: string }) {
       </section> : tab === 'images' ? <AgentImages settings={settings} onChange={setSettings} imageApiKey={imageApiKey} clearImageApiKey={clearImageKey} onKey={value => { setImageApiKey(value); if (value) setClearImageKey(false); }} onClear={value => { setClearImageKey(value); if (value) setImageApiKey(''); }} /> : <div className="space-y-6">
         <AgentRoleQuotas settings={settings} roles={roles} onChange={setSettings} />
         <div className="dashboard-grid">
-          {settings.accessMode === 'LEGACY_USERS' && <section className="dashboard-section"><h2>Legacy member allowlist</h2>
-            <label className="dashboard-toggle"><span>Allow all members</span><input type="checkbox" checked={settings.allowedUserIds.includes('*')} onChange={event => setSettings({ ...settings, allowedUserIds: event.target.checked ? ['*'] : [] })} /></label>
+          <section className="dashboard-section"><h2>{settings.accessMode === 'LEGACY_USERS' ? 'Legacy member allowlist' : 'Personal token quotas'}</h2>
+            <p className="mb-3 text-[var(--muted)]">{settings.accessMode === 'LEGACY_USERS' ? 'Selected members can use AI chat without daily quota limits.' : 'Choose Follow role, a custom daily token limit, or Unlimited per member. Personal settings override role token quotas. Server and per-run caps still apply; image access still follows roles.'}</p>
+            {settings.accessMode === 'LEGACY_USERS' && <label className="dashboard-toggle"><span>Allow all members</span><input type="checkbox" checked={settings.allowedUserIds.includes('*')} onChange={event => setSettings({ ...settings, allowedUserIds: event.target.checked ? ['*'] : [] })} /></label>}
             <label className="dashboard-field mt-4"><span>Search members</span><input className="input" type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
-            <div className="max-h-72 overflow-y-auto">{members.filter(member => `${member.displayName} ${member.username} ${member.id}`.toLowerCase().includes(query.toLowerCase())).map(member => <label key={member.id} className="dashboard-toggle"><span>{member.displayName} (@{member.username})</span><input type="checkbox" checked={settings.allowedUserIds.includes('*') || settings.allowedUserIds.includes(member.id)} onChange={() => toggleMember(member.id)} /></label>)}</div>
-            {settings.allowedUserIds.filter(id => id !== '*' && !members.some(member => member.id === id)).map(id => <label key={id} className="dashboard-toggle"><span className="break-all">Unavailable member ({id})</span><input type="checkbox" checked onChange={() => toggleMember(id)} /></label>)}
-          </section>}
+            <div className="max-h-96 overflow-y-auto">{members.filter(member => `${member.displayName} ${member.username} ${member.id}`.toLowerCase().includes(query.toLowerCase())).map(member => settings.accessMode === 'ROLE_QUOTAS'
+              ? <AgentMemberTokens key={member.id} settings={settings} onChange={setSettings} userId={member.id} name={`${member.displayName} (@${member.username})`} />
+              : <label key={member.id} className="dashboard-toggle"><span>{member.displayName} (@{member.username})</span><input type="checkbox" checked={settings.allowedUserIds.includes('*') || settings.allowedUserIds.includes(member.id)} onChange={() => toggleMember(member.id)} /></label>)}</div>
+            {settings.accessMode === 'ROLE_QUOTAS' && (settings.userTokenRules ?? []).filter(rule => !members.some(member => member.id === rule.userId)).map(rule => <AgentMemberTokens key={rule.userId} settings={settings} onChange={setSettings} userId={rule.userId} name={`Unavailable member (${rule.userId})`} />)}
+            {settings.accessMode === 'LEGACY_USERS' && settings.allowedUserIds.filter(id => id !== '*' && !members.some(member => member.id === id)).map(id => <label key={id} className="dashboard-toggle"><span className="break-all">Unavailable member ({id})</span><input type="checkbox" checked onChange={() => toggleMember(id)} /></label>)}
+          </section>
           <section className="dashboard-section"><h2>Excluded channels</h2><p className="mb-4 text-[var(--muted)]">The agent will not respond in selected channels.</p>
             <label className="dashboard-toggle"><span>Exclude all channels</span><input type="checkbox" checked={settings.excludedChannelIds.includes('*')} onChange={event => setSettings({ ...settings, excludedChannelIds: event.target.checked ? ['*'] : [] })} /></label>
             {[...channels, ...settings.excludedChannelIds.filter(id => id !== '*' && !channels.some(channel => channel.id === id)).map(id => ({ id, name: `Unavailable channel (${id})` }))].map(channel => <label key={channel.id} className="dashboard-toggle"><span className="break-all">{channel.name}</span><input type="checkbox" checked={settings.excludedChannelIds.includes('*') || settings.excludedChannelIds.includes(channel.id)} onChange={() => toggleChannel(channel.id)} /></label>)}

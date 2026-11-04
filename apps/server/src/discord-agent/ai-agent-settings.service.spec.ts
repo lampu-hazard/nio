@@ -64,7 +64,7 @@ describe('AiAgentSettingsService', () => {
     { dailyGuildImageLimit: -1 }, { dailyGuildImageLimit: 10001 },
     { maxOutputTokens: 127 }, { maxOutputTokens: 8193 },
     { maxRunTokens: 1023 }, { maxRunTokens: 262145 },
-    { maxOutputTokens: 2048, maxRunTokens: 2048 },
+    { maxOutputTokens: 2048, maxRunTokens: 1024 },
     { imageEnabled: true, accessMode: 'LEGACY_USERS' },
     { imageBaseUrl: 'https://localhost/v1' },
     { imageBaseUrl: 'https://127.0.0.1/v1' },
@@ -77,6 +77,29 @@ describe('AiAgentSettingsService', () => {
   ])('rejects invalid effective settings %j', async (dto) => {
     await expect(service.updateSettings('guild-1', dto as any)).rejects.toThrow();
     expect(prisma.discordAgentSettings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('saves personal custom and unlimited token rules without changing role policy', async () => {
+    const userTokenRules = [{ userId: '40000', dailyTokenLimit: 50 }, { userId: '50000', dailyTokenLimit: null }];
+    const result = await service.updateSettings('guild-1', { userTokenRules } as any);
+    expect(result).toMatchObject({ userTokenRules });
+  });
+
+  it.each([
+    null, [{ userId: '*', dailyTokenLimit: null }], [{ userId: 40000, dailyTokenLimit: null }], [{ userId: '40000' }],
+    [{ userId: '40000', dailyTokenLimit: 0 }], [{ userId: '40000', dailyTokenLimit: 1.5 }],
+    [{ userId: '40000', dailyTokenLimit: 100000001 }],
+    [{ userId: '40000', dailyTokenLimit: null }, { userId: '40000', dailyTokenLimit: 50 }],
+  ])('rejects invalid personal rules %j', async (userTokenRules) => {
+    await expect(service.updateSettings('guild-1', { userTokenRules } as any)).rejects.toThrow();
+    expect(prisma.discordAgentSettings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('allows maxRunTokens equal to maxOutputTokens (e.g. 2048 and 2048)', async () => {
+    await expect(service.updateSettings('guild-1', { maxOutputTokens: 2048, maxRunTokens: 2048 })).resolves.toMatchObject({
+      maxOutputTokens: 2048,
+      maxRunTokens: 2048,
+    });
   });
 
   it('redacts both keys and serializes policy revision for JSON', async () => {
@@ -117,13 +140,14 @@ describe('AiAgentSettingsService', () => {
     await expect(service.updateSettings('guild-1', { roleRules: [{ roleId: '20000', chatEnabled: true, imageEnabled: false, dailyTokenLimit: 10, dailyImageLimit: 0 }] })).rejects.toThrow('available role');
   });
 
-  it('preserves an unchanged unavailable role on unrelated or full-form saves', async () => {
+  it('preserves an unchanged unavailable role on unrelated or full-form saves without passing deleteMany into upsert.create', async () => {
     const rule = { roleId: '20000', chatEnabled: true, imageEnabled: false, dailyTokenLimit: 10, dailyImageLimit: 0 };
     prisma.discordAgentSettings.findUnique.mockResolvedValueOnce({ ...row, roleRules: [rule] });
     await service.updateSettings('guild-1', { roleRules: [rule], model: 'replacement' });
-    expect(prisma.discordAgentSettings.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ model: 'replacement', policyRevision: { increment: 1n } }),
-    }));
+    const call = prisma.discordAgentSettings.upsert.mock.calls[0][0] as any;
+    expect(call.create.roleRules).toEqual({ create: [rule] });
+    expect(call.update.roleRules).toEqual({ deleteMany: {}, create: [rule] });
+    expect(call.update).toMatchObject({ model: 'replacement', policyRevision: { increment: 1n } });
   });
 
   it('clears only the separate image key and preserves omitted chat key', async () => {

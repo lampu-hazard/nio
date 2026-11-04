@@ -9,19 +9,36 @@ export function AgentRoleQuotas({ settings, roles, onChange }: Edit & { roles: {
     <p className="mb-4 text-[var(--muted)]">Each member receives the highest matching allowance for each capability, never the sum. Daily quotas reset at 00:00 UTC. Owners and administrators have no automatic bypass.</p>
     <div className="dashboard-grid"><NumberField label="Server tokens / day" value={settings.dailyGuildTokenLimit} min={1} max={1000000000} onChange={value => onChange({ ...settings, dailyGuildTokenLimit: value })} /><NumberField label="Server images / day" value={settings.dailyGuildImageLimit} min={0} max={10000} onChange={value => onChange({ ...settings, dailyGuildImageLimit: value })} /></div>
     {settings.roleRules.map((rule, index) => <fieldset key={rule.roleId} className="mt-5 border border-[var(--border)] p-4"><legend>{roles.find(role => role.id === rule.roleId)?.name || `Unavailable role (${rule.roleId})`}</legend>
-      <label className="dashboard-toggle"><span>Allow chat</span><input type="checkbox" checked={rule.chatEnabled} onChange={e => update(index, { chatEnabled: e.target.checked })} /></label>
+      <label className="dashboard-toggle"><span>Allow chat</span><input type="checkbox" checked={rule.chatEnabled} onChange={e => update(index, { chatEnabled: e.target.checked, ...(e.target.checked && !rule.dailyTokenLimit ? { dailyTokenLimit: 10000 } : {}) })} /></label>
+      <label className="dashboard-toggle"><span>Use maximum role allowance (100,000,000 tokens / day)</span><input type="checkbox" disabled={!rule.chatEnabled} checked={rule.chatEnabled && rule.dailyTokenLimit === 100000000} onChange={e => update(index, { dailyTokenLimit: e.target.checked ? 100000000 : 10000 })} /></label>
       <NumberField label="Member tokens / day" value={rule.dailyTokenLimit} min={rule.chatEnabled ? 1 : 0} max={100000000} onChange={value => update(index, { dailyTokenLimit: value })} />
-      <label className="dashboard-toggle"><span>Allow images</span><input type="checkbox" checked={rule.imageEnabled} onChange={e => update(index, { imageEnabled: e.target.checked })} /></label>
+      <label className="dashboard-toggle"><span>Allow images</span><input type="checkbox" checked={rule.imageEnabled} onChange={e => update(index, { imageEnabled: e.target.checked, ...(e.target.checked && !rule.dailyImageLimit ? { dailyImageLimit: 5 } : {}) })} /></label>
+      <label className="dashboard-toggle"><span>Use maximum role allowance (1,000 images / day)</span><input type="checkbox" disabled={!rule.imageEnabled} checked={rule.imageEnabled && rule.dailyImageLimit === 1000} onChange={e => update(index, { dailyImageLimit: e.target.checked ? 1000 : 5 })} /></label>
       <NumberField label="Member images / day" value={rule.dailyImageLimit} min={rule.imageEnabled ? 1 : 0} max={1000} onChange={value => update(index, { dailyImageLimit: value })} />
       <button type="button" className="btn mt-3" onClick={() => onChange({ ...settings, roleRules: settings.roleRules.filter((_, i) => i !== index) })}>Remove rule</button>
     </fieldset>)}
-    {!settings.roleRules.length && <p className="my-4">No roles granted. Members cannot use AI until a rule is added.</p>}
+    {!settings.roleRules.length && <p className="my-4">No roles granted. Add a role rule or a personal token rule to grant chat access. Images require a role rule.</p>}
     <label className="dashboard-field mt-4"><span>Add role rule ({settings.roleRules.length}/100)</span><select className="input" value="" disabled={settings.roleRules.length >= 100} onChange={e => { if (e.target.value) onChange({ ...settings, roleRules: [...settings.roleRules, { roleId: e.target.value, chatEnabled: true, imageEnabled: false, dailyTokenLimit: 10000, dailyImageLimit: 0 }] }); }}><option value="">Choose a role</option>{roles.filter(role => !settings.roleRules.some(rule => rule.roleId === role.id)).map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
     </>}
   </section>;
 }
+export function AgentMemberTokens({ settings, onChange, userId, name }: Edit & { userId: string; name: string }) {
+  const rules = settings.userTokenRules ?? [];
+  const rule = rules.find(rule => rule.userId === userId);
+  const mode = !rule ? 'role' : rule.dailyTokenLimit === null ? 'unlimited' : 'custom';
+  const setLimit = (dailyTokenLimit: number | null | undefined) => onChange({ ...settings,
+    userTokenRules: [...rules.filter(rule => rule.userId !== userId), ...(dailyTokenLimit === undefined ? [] : [{ userId, dailyTokenLimit }])],
+  });
+  return <div className="my-3 border-b border-[var(--border)] pb-3">
+    <label className="dashboard-field"><span>{name}</span><select className="input" aria-label={`Token policy for ${name}`} value={mode} disabled={!rule && rules.length >= 500}
+      onChange={event => setLimit(event.target.value === 'role' ? undefined : event.target.value === 'unlimited' ? null : 10000)}>
+      <option value="role">Follow role</option><option value="custom">Custom daily limit</option><option value="unlimited">Unlimited</option>
+    </select></label>
+    {mode === 'custom' && <NumberField label={`Tokens / day for ${name}`} value={rule!.dailyTokenLimit!} min={1} max={100000000} onChange={setLimit} />}
+  </div>;
+}
 export function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
-  return <label className="dashboard-field"><span>{label}</span><input className="input" type="number" required step={1} min={min} max={max} value={value} onChange={e => onChange(Number(e.target.value))} /></label>;
+  return <label className="dashboard-field"><span>{label}</span><input className="input" type="number" required step={1} min={min} max={max} value={Number.isNaN(value) ? '' : value} onChange={e => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value))} /></label>;
 }
 export function AgentImages({ settings, onChange, imageApiKey, clearImageApiKey, onKey, onClear }: Edit & { imageApiKey: string; clearImageApiKey: boolean; onKey: (value: string) => void; onClear: (value: boolean) => void }) {
   return <section className="dashboard-section max-w-3xl"><h2>Image generation</h2><p>Use an explicit command for one 1024 × 1024 image. Images use a separate daily count, not chat tokens.</p>

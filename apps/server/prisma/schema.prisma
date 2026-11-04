@@ -373,6 +373,7 @@ model DiscordAgentSettings {
   imageModel           String?
   imageCredentialSource String  @default("SEPARATE")
   encryptedImageApiKey String?
+  userTokenRules       Json     @default("[]")
   roleRules            AgentRoleRule[]
   allowedUserIds       String[] @default([])
   allowedChannelIds    String[] @default([])

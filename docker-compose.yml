@@ -49,6 +49,10 @@ services:
     container_name: nio-crawl4ai
     restart: unless-stopped
     shm_size: 1g
+    environment:
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-nio-crawl4ai-internal-token}
+      - SECRET_KEY=${CRAWL4AI_SECRET_KEY:-nio-crawl4ai-internal-secret-key-32chars}
+      - REDIS_PASSWORD=${CRAWL4AI_REDIS_PASSWORD:-nio-crawl4ai-internal-redis-password}
     networks:
       - private
 
@@ -95,6 +99,7 @@ services:
       - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://nio:nio-server@db:5432/nio-db}
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
       - CRAWL4AI_URL=${CRAWL4AI_URL:-http://crawl4ai:11235}
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-nio-crawl4ai-internal-token}
     networks:
       - private
 

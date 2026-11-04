@@ -50,6 +50,10 @@ export class AiAgentSettingsService {
     this.client = client;
   }
 
+  getClient(): Client | undefined {
+    return this.client;
+  }
+
   async getSettings(scope: AgentScope) {
     const profile = parseAgentProfile(scope.profile);
     const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId_profile: { guildId: scope.guildId, profile } }, include: { roleRules: true } });

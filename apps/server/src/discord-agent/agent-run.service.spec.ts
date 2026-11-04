@@ -24,6 +24,16 @@ describe('AgentRunService', () => {
     service = new AgentRunService(mockPrisma as any);
   });
 
+  it('starts a run scoped to the requested profile and cleans up only that profile', async () => {
+    await service.start({ guildId: 'guild', profile: 'ADMIN', channelId: 'channel', userId: 'user' }, 15);
+    expect(mockPrisma.agentRun.create).toHaveBeenCalledWith({
+      data: { guildId: 'guild', profile: 'ADMIN', channelId: 'channel', userId: 'user', status: 'PLANNING' },
+    });
+    expect(mockPrisma.agentRun.deleteMany).toHaveBeenCalledWith({
+      where: { guildId: 'guild', profile: 'ADMIN', startedAt: { lt: expect.any(Date) } },
+    });
+  });
+
   it('persists bounded evidence with sensitive values redacted and mass mentions neutralized', async () => {
     await service.evidence('run-1', 'lookup', 'SUCCESS', `token=abcdefghijk @everyone ${'x'.repeat(1200)}`);
     expect(events[0].summary).not.toContain('abcdefghijk');

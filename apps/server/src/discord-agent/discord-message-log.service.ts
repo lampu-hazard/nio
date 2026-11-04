@@ -16,10 +16,10 @@ export class DiscordMessageLogService {
     createdAt: Date;
   }) {
     const [settings, guildSettings] = await Promise.all([
-      this.prisma.discordAgentSettings.findUnique({ where: { guildId: msg.guildId } }),
+      this.prisma.discordAgentSettings.findUnique({ where: { guildId_profile: { guildId: msg.guildId, profile: 'ADMIN' } } }),
       this.prisma.guildSettings.findUnique({ where: { guildId: msg.guildId } }),
     ]);
-    const isEnabled = Boolean(settings?.enabled || process.env.DISCORD_AGENT_ENABLED === 'true' || guildSettings?.messageDeleteLogChannelId);
+    const isEnabled = Boolean(settings?.enabled || guildSettings?.messageDeleteLogChannelId);
     if (!isEnabled || settings?.excludedChannelIds?.includes(msg.channelId)) return;
 
     await this.prisma.discordMessageLog.upsert({

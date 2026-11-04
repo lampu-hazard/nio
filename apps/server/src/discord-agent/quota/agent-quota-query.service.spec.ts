@@ -17,8 +17,24 @@ describe('current quota pages', () => {
     access = { getAllowances: jest.fn<any>(async () => new Map([['member', { dailyTokenLimit: 100, dailyImageLimit: 5 }]])) };
     service = new AgentQuotaQueryService(prisma, access);
   });
+  it('shows explicit unlimited ADMIN tokens and binds cursors to a profile', async () => {
+    prisma.discordAgentSettings.findUnique.mockResolvedValue({ profile: 'ADMIN', tokenQuotaMode: 'UNLIMITED', accessMode: 'ROLE_QUOTAS', dailyGuildTokenLimit: null, dailyGuildImageLimit: 10, roleRules: [] });
+    prisma.agentQuotaAttempt.groupBy.mockResolvedValue([
+      { userId: 'member', usageSource: 'REPORTED', overrun: false, _count: { _all: 2 }, _sum: { chargedTokens: 120n, chargedImages: 1n } },
+      { userId: 'member', usageSource: 'ESTIMATED', overrun: false, _count: { _all: 1 }, _sum: { chargedTokens: 45n, chargedImages: 0n } },
+    ]);
+    const adminLedger = (await service.getToday({ guildId: 'guild', profile: 'ADMIN' })).guild;
+    expect(adminLedger.tokens).toMatchObject({ limit: null, remaining: null, unlimited: true });
+    expect(adminLedger.usageSourceAmounts).toEqual({
+      REPORTED: { tokens: '120', images: '1' },
+      ESTIMATED: { tokens: '45', images: '0' },
+    });
+    prisma.agentQuotaBucket.findMany.mockResolvedValue([{ ...bucket, subject: 'USER:a' }, { ...bucket, subject: 'USER:b' }]);
+    const first = await service.getToday({ guildId: 'guild', profile: 'ADMIN' }, undefined, '1');
+    await expect(service.getToday({ guildId: 'guild', profile: 'PUBLIC' }, first.nextCursor!, '1')).rejects.toThrow('cursor');
+  });
   it('serializes counters and subtracts both committed and reserved from current allowance', async () => {
-    const result = await service.getToday('guild');
+    const result = await service.getToday({ guildId: 'guild', profile: 'PUBLIC' });
     expect(result.members[0]).toMatchObject({ userId: 'member', allowanceStatus: 'KNOWN',
       tokens: { committed: '30', reserved: '20', limit: 100, remaining: 50 },
       images: { committed: '2', reserved: '1', limit: 5, remaining: 2 }, usageSources: { REPORTED: 1 } });
@@ -26,32 +42,32 @@ describe('current quota pages', () => {
   });
   it('distinguishes a known unlimited token allowance from unavailable policy', async () => {
     access.getAllowances.mockResolvedValue(new Map([['member', { dailyTokenLimit: null, dailyImageLimit: 0 }]]));
-    expect((await service.getToday('guild')).members[0]).toMatchObject({ allowanceStatus: 'KNOWN',
+    expect((await service.getToday({ guildId: 'guild', profile: 'PUBLIC' })).members[0]).toMatchObject({ allowanceStatus: 'KNOWN',
       tokens: { unlimited: true, limit: null, remaining: null }, images: { limit: 0 } });
   });
   it('preserves recorded usage with null allowance when Discord is unavailable', async () => {
     access.getAllowances.mockResolvedValue(new Map([['member', null]]));
-    const result = await service.getToday('guild');
+    const result = await service.getToday({ guildId: 'guild', profile: 'PUBLIC' });
     expect(result.members[0]).toMatchObject({ allowanceStatus: 'UNAVAILABLE', tokens: { committed: '30', reserved: '20', limit: null, remaining: null } });
   });
   it('does not label legacy mode as quota protected', async () => {
     prisma.discordAgentSettings.findUnique.mockResolvedValue({ accessMode: 'LEGACY_USERS' });
-    expect(await service.getToday('guild')).toMatchObject({ accessMode: 'LEGACY_USERS', guild: { allowanceStatus: 'UNAVAILABLE' } });
+    expect(await service.getToday({ guildId: 'guild', profile: 'PUBLIC' })).toMatchObject({ accessMode: 'LEGACY_USERS', guild: { allowanceStatus: 'UNAVAILABLE' } });
   });
   it('paginates using a cursor scoped to guild and UTC day', async () => {
     prisma.agentQuotaBucket.findMany.mockResolvedValue([{ ...bucket, subject: 'USER:a' }, { ...bucket, subject: 'USER:b' }]);
-    const first = await service.getToday('guild', undefined, '1');
+    const first = await service.getToday({ guildId: 'guild', profile: 'PUBLIC' }, undefined, '1');
     expect(first.members).toHaveLength(1);
     expect(first.nextCursor).toEqual(expect.any(String));
-    await expect(service.getToday('other', first.nextCursor!, '1')).rejects.toThrow('cursor');
-    await expect(service.getToday('guild', Buffer.from(JSON.stringify({ guildId: 'guild', periodStart: '2000-01-01T00:00:00.000Z', subject: 'USER:a' })).toString('base64url'), '1')).rejects.toThrow('cursor');
+    await expect(service.getToday({ guildId: 'other', profile: 'PUBLIC' }, first.nextCursor!, '1')).rejects.toThrow('cursor');
+    await expect(service.getToday({ guildId: 'guild', profile: 'PUBLIC' }, Buffer.from(JSON.stringify({ guildId: 'guild', periodStart: '2000-01-01T00:00:00.000Z', subject: 'USER:a' })).toString('base64url'), '1')).rejects.toThrow('cursor');
   });
   it.each(['0', '101', '-1', '1.5', 'NaN'])('rejects invalid page size %s', async (size) => {
-    await expect(service.getToday('guild', undefined, size)).rejects.toThrow('page size');
+    await expect(service.getToday({ guildId: 'guild', profile: 'PUBLIC' }, undefined, size)).rejects.toThrow('page size');
   });
   it('rejects malformed or oversized cursors before querying persistence', async () => {
-    await expect(service.getToday('guild', '!')).rejects.toThrow('cursor');
-    await expect(service.getToday('guild', 'a'.repeat(2049))).rejects.toThrow('cursor');
+    await expect(service.getToday({ guildId: 'guild', profile: 'PUBLIC' }, '!')).rejects.toThrow('cursor');
+    await expect(service.getToday({ guildId: 'guild', profile: 'PUBLIC' }, 'a'.repeat(2049))).rejects.toThrow('cursor');
     expect(prisma.agentQuotaBucket.findMany).not.toHaveBeenCalled();
   });
 });

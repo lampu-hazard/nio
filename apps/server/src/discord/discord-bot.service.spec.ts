@@ -135,4 +135,78 @@ describe('DiscordBotService deleted message logs', () => {
     }));
     await expect(fs.readFile(cachePath)).rejects.toThrow();
   });
+
+  it('ignores unrouted channels and cross-profile bot replies when profileRouter is configured', async () => {
+    const { service } = makeService();
+    (service.client as any).user = { id: 'bot-1' };
+    const profileRouter = {
+      resolve: jest.fn<any>(async () => null),
+      setClient: jest.fn(),
+    };
+    (service as any).profileRouter = profileRouter;
+    const handleMention = jest.fn<any>();
+    (service as any).agent = {
+      getAccessDecision: jest.fn<any>(),
+      handleMention,
+    };
+
+    const unroutedMsg: any = {
+      id: 'msg-unrouted',
+      guild: { id: 'guild-1' },
+      channel: { id: 'channel-1', isThread: () => false },
+      author: { id: 'user-1' },
+      content: '<@bot-1> halo',
+      createdAt: new Date(),
+      attachments: new Map(),
+      embeds: [],
+      mentions: { has: () => true },
+      reference: null,
+      reply: jest.fn(),
+    };
+
+    await (service as any).handleAgentMessage(unroutedMsg);
+    expect(handleMention).not.toHaveBeenCalled();
+
+    // Now test reply to a bot message whose provenance belongs to ADMIN while channel is PUBLIC
+    profileRouter.resolve.mockResolvedValueOnce('PUBLIC');
+    (service as any).conversationMemory = {
+      getProvenance: jest.fn<any>(async () => ({
+        guildId: 'guild-1',
+        profile: 'ADMIN',
+        channelId: 'channel-admin',
+        userId: 'user-1',
+      })),
+      saveConversation: jest.fn<any>(),
+    };
+
+    const replyOnlyMsg: any = {
+      id: 'msg-reply-cross',
+      guild: { id: 'guild-1' },
+      channel: {
+        id: 'channel-public',
+        isThread: () => false,
+        messages: {
+          fetch: jest.fn(async () => ({
+            id: 'bot-msg-admin',
+            author: { id: 'bot-1' },
+            channel: { id: 'channel-public' },
+            content: 'admin response',
+            createdAt: new Date(),
+            attachments: new Map(),
+          })),
+        },
+      },
+      author: { id: 'user-1' },
+      content: 'lanjutkan',
+      createdAt: new Date(),
+      attachments: new Map(),
+      embeds: [],
+      mentions: { has: () => false },
+      reference: { messageId: 'bot-msg-admin' },
+      reply: jest.fn(),
+    };
+
+    await (service as any).handleAgentMessage(replyOnlyMsg);
+    expect(handleMention).not.toHaveBeenCalled();
+  });
 });

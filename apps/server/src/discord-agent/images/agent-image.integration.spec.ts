@@ -32,11 +32,12 @@ describe('PostgreSQL cross-layer image routing, quota, and attachment delivery',
     await client.agentMemberLease.deleteMany();
     await client.agentRoleRule.deleteMany({ where: { guildId } });
     await client.discordAgentSettings.upsert({
-      where: { guildId },
+      where: { guildId_profile: { guildId, profile: 'PUBLIC' } },
       create: {
-        guildId, enabled: true, provider: 'openai-compatible', model: 'chat',
+        guildId, profile: 'PUBLIC', enabled: true, provider: 'openai-compatible', model: 'chat',
         baseUrl: 'https://api.example.com/v1', encryptedApiKey: 'enc:chat-key',
-        accessMode: 'ROLE_QUOTAS', policyRevision: 1n,
+        allowedChannelIds: ['c1'],
+        accessMode: 'ROLE_QUOTAS', tokenQuotaMode: 'LIMITED', policyRevision: 1n,
         dailyGuildTokenLimit: 10000, dailyGuildImageLimit: 5,
         maxOutputTokens: 512, maxRunTokens: 2048,
         imageEnabled: true, imageBaseUrl: 'https://api.example.com/v1',
@@ -46,7 +47,8 @@ describe('PostgreSQL cross-layer image routing, quota, and attachment delivery',
       update: {
         enabled: true, provider: 'openai-compatible', model: 'chat',
         baseUrl: 'https://api.example.com/v1', encryptedApiKey: 'enc:chat-key',
-        accessMode: 'ROLE_QUOTAS', policyRevision: 1n,
+        allowedChannelIds: ['c1'],
+        accessMode: 'ROLE_QUOTAS', tokenQuotaMode: 'LIMITED', policyRevision: 1n,
         dailyGuildTokenLimit: 10000, dailyGuildImageLimit: 5,
         maxOutputTokens: 512, maxRunTokens: 2048,
         imageEnabled: true, imageBaseUrl: 'https://api.example.com/v1',
@@ -95,7 +97,7 @@ describe('PostgreSQL cross-layer image routing, quota, and attachment delivery',
     expect(cmd).toEqual({ prompt: 'pemandangan gunung' });
     if (!cmd) throw new Error('expected generate');
 
-    const res = await first.service.handle({ guildId, channelId: 'c1', userId: 'u1', messageId: 'm-dup', prompt: cmd.prompt, attachmentLimit: 8388608, canAttach: true });
+    const res = await first.service.handle({ guildId, profile: 'PUBLIC', channelId: 'c1', userId: 'u1', messageId: 'm-dup', prompt: cmd.prompt, attachmentLimit: 8388608, canAttach: true });
     expect(res.files).toHaveLength(1);
     const edits: any[] = [];
     const delivery = await deliverAgentReply({
@@ -106,7 +108,7 @@ describe('PostgreSQL cross-layer image routing, quota, and attachment delivery',
     expect(delivery).toEqual({ delivered: true, messageId: 'l1' });
     expect(edits[0].files[0]).toMatchObject({ name: 'nio-generated.png' });
 
-    const dup = await second.service.handle({ guildId, channelId: 'c1', userId: 'u1', messageId: 'm-dup', prompt: cmd.prompt, attachmentLimit: 8388608, canAttach: true });
+    const dup = await second.service.handle({ guildId, profile: 'PUBLIC', channelId: 'c1', userId: 'u1', messageId: 'm-dup', prompt: cmd.prompt, attachmentLimit: 8388608, canAttach: true });
     expect(dup.content).toContain('sudah diproses');
     expect(providerCalls).toBe(1);
     const buckets = await db.clients[0].agentQuotaBucket.findMany({ where: { guildId } });
@@ -118,21 +120,21 @@ describe('PostgreSQL cross-layer image routing, quota, and attachment delivery',
     const deniedStack = createStack(0, async () => {
       throw new ImageHttpError('IMAGE_DESTINATION_DENIED');
     });
-    const denied = await deniedStack.service.handle({ guildId, channelId: 'c1', userId: 'u1', messageId: 'm-pre', prompt: 'kucing', attachmentLimit: 8388608, canAttach: true });
+    const denied = await deniedStack.service.handle({ guildId, profile: 'PUBLIC', channelId: 'c1', userId: 'u1', messageId: 'm-pre', prompt: 'kucing', attachmentLimit: 8388608, canAttach: true });
     expect(denied.files).toBeUndefined();
     let buckets = await db.clients[0].agentQuotaBucket.findMany({ where: { guildId } });
     expect(buckets.every((b) => b.committedImages === 0n && b.reservedImages === 0n)).toBe(true);
 
     const loweredStack = createStack(0, async (req) => {
       await db.clients[1].discordAgentSettings.update({
-        where: { guildId },
+        where: { guildId_profile: { guildId, profile: 'PUBLIC' } },
         data: { policyRevision: { increment: 1n }, dailyGuildImageLimit: 0 },
       });
       await req.beforeSend?.();
       dispatchedSockets++;
       return { status: 200, contentType: 'application/json', body: Buffer.from('{}') };
     });
-    const lowered = await loweredStack.service.handle({ guildId, channelId: 'c1', userId: 'u1', messageId: 'm-low', prompt: 'kucing', attachmentLimit: 8388608, canAttach: true });
+    const lowered = await loweredStack.service.handle({ guildId, profile: 'PUBLIC', channelId: 'c1', userId: 'u1', messageId: 'm-low', prompt: 'kucing', attachmentLimit: 8388608, canAttach: true });
     expect(lowered.content).toContain('Kuota gambar harian');
     expect(dispatchedSockets).toBe(0);
     buckets = await db.clients[0].agentQuotaBucket.findMany({ where: { guildId } });

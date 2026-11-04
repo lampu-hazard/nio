@@ -18,6 +18,10 @@ import { AgentActionProposalService } from '../discord-agent/agent-action-propos
 import { DiscordAgentToolExecutorService } from '../discord-agent/discord-agent-tool-executor.service';
 import { ConversationMemoryService } from '../discord-agent/conversation-memory.service';
 import { AiAgentSettingsService } from '../discord-agent/ai-agent-settings.service';
+import { AgentAccessService } from '../discord-agent/agent-access.service';
+import { AgentImageService } from '../discord-agent/images/agent-image.service';
+import { isUnsupportedImageIntent, parseImageCommand } from '../discord-agent/images/image-command';
+import { deliverAgentReply } from './agent-reply';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 import { HallOfFameService } from './hall-of-fame.service';
 import { VoiceActivityService } from './voice-activity.service';
@@ -63,6 +67,8 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     private readonly hallOfFame: HallOfFameService,
     @Optional() private readonly aiAgentSettings?: AiAgentSettingsService,
     @Optional() private readonly voiceActivity?: VoiceActivityService,
+    @Optional() private readonly agentAccess?: AgentAccessService,
+    @Optional() private readonly images?: AgentImageService,
   ) {}
 
   async onModuleInit() {
@@ -83,6 +89,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     this.hallOfFame.setClient(this.client);
     this.voiceActivity?.setClient(this.client);
     this.aiAgentSettings?.setClient(this.client);
+    this.agentAccess?.setClient(this.client);
 
     const token = process.env.DISCORD_BOT_TOKEN;
     const clientId = process.env.DISCORD_CLIENT_ID;
@@ -314,6 +321,38 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     const isMentioningBot = message.mentions.has(this.client.user);
     if (!isMentioningBot && !referencedBotMessageId) return;
 
+    let imageCommand: { prompt: string } | null;
+    try { imageCommand = parseImageCommand(message.content, this.client.user.id); }
+    catch {
+      await message.reply({ content: '⚠️ Gunakan @nio gambar <prompt> dengan prompt 1–4.000 karakter.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => null);
+      return;
+    }
+    if (imageCommand) {
+      const permissions = 'permissionsFor' in message.channel && message.guild.members.me
+        ? message.channel.permissionsFor(message.guild.members.me) : null;
+      const required = message.channel.isThread()
+        ? ['ViewChannel', 'SendMessagesInThreads', 'AttachFiles'] as const
+        : ['ViewChannel', 'SendMessages', 'AttachFiles'] as const;
+      const canAttach = Boolean(permissions && required.every((permission) => permissions.has(permission)));
+      const guildMax = typeof (message.guild as any).maximumAttachmentSize === 'number' && (message.guild as any).maximumAttachmentSize > 0
+        ? (message.guild as any).maximumAttachmentSize : 8388608;
+      const attachmentLimit = Math.min(8388608, guildMax);
+      const loading = await message.reply({ content: '*Membuat gambar...*', allowedMentions: { parse: [], repliedUser: false } }).catch(() => null);
+      const response = this.images ? await this.images.handle({
+        guildId: message.guild.id, channelId: message.channel.id, userId: message.author.id, messageId: message.id,
+        prompt: imageCommand.prompt, canAttach, attachmentLimit,
+      }) : { content: '⚠️ Layanan gambar belum tersedia.' };
+      await deliverAgentReply({ message, loadingMessage: loading, response });
+      return;
+    }
+    if (isUnsupportedImageIntent(message.content, this.client.user.id)) {
+      await message.reply({
+        content: 'ℹ️ Untuk membuat gambar, gunakan perintah eksplisit di awal pesan: `@nio gambar <prompt>`, `@nio buat gambar <prompt>`, atau `@nio generate image <prompt>`.',
+        allowedMentions: { parse: [], repliedUser: false },
+      }).catch(() => null);
+      return;
+    }
+
     const decision = await this.agent.getAccessDecision(message.guild.id, message.channel.id, message.author.id);
     if (!decision.allowed) {
       this.logger.log(`AI agent denied reason=${decision.reason} guild=${message.guild.id} channel=${message.channel.id} user=${message.author.id}`, 'DiscordBot');
@@ -405,6 +444,9 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
         }).catch(() => null);
       }
       return;
+    } finally {
+      if (progressTimer) clearTimeout(progressTimer);
+      pendingProgress = null;
     }
 
     if (!response) {
@@ -412,29 +454,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    if (progressTimer) clearTimeout(progressTimer);
-
-    const replyPayload = {
-      content: response.content,
-      embeds: response.embeds,
-      components: response.components,
-      allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
-    };
-
-    let responseMessageId: string | undefined;
-
-    if (loadingMessage) {
-      const edited = await loadingMessage.edit(replyPayload).catch(() => null);
-      if (edited) {
-        responseMessageId = edited.id;
-      } else {
-        const fallback = await message.reply(replyPayload).catch(() => null);
-        responseMessageId = fallback?.id;
-      }
-    } else {
-      const sent = await message.reply(replyPayload).catch(() => null);
-      responseMessageId = sent?.id;
-    }
+    const { messageId: responseMessageId } = await deliverAgentReply({ message, loadingMessage, response });
 
     if (responseMessageId && response.conversationTurns?.length) {
       await this.conversationMemory.saveConversation(

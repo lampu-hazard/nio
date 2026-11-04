@@ -44,14 +44,24 @@ describe('/voice', () => {
     });
   });
 
-  it('shows duration and level without the XP field or explanatory footer', async () => {
+  it('shows duration, level, and XP with a rendered voice stats card attachment', async () => {
     await service.execute('voice', interaction);
     expect(interaction.deferReply).toHaveBeenCalledWith();
+    const replyPayload = interaction.editReply.mock.calls[0][0];
+    expect(replyPayload.files).toEqual([
+      expect.objectContaining({
+        name: 'voice-stats.png',
+        attachment: expect.any(Buffer),
+        description: expect.stringContaining('2.750 / 3.600 XP'),
+      }),
+    ]);
     expect(embed()).toMatchObject({ title: 'Voice Stats — Othinus', fields: [
       { name: 'Total waktu tercatat', value: '3 jam 12 menit', inline: true },
       { name: 'Sesi berjalan (channel ini)', value: '1 jam 12 menit', inline: true },
       { name: 'Level', value: '5', inline: true },
+      { name: 'XP', value: '2.750 / 3.600 XP', inline: true },
     ] });
+    expect(embed().image).toEqual({ url: 'attachment://voice-stats.png' });
     expect(embed().footer).toBeUndefined();
     expect(prisma.voiceSession.aggregate).toHaveBeenCalledWith({ where: { guildId: 'guild', userId: 'self', leftAt: { not: null } }, _sum: { duration: true } });
     expect(prisma.voiceSession.findFirst).toHaveBeenCalledWith({ where: { guildId: 'guild', userId: 'self', channelId: 'voice-channel', leftAt: null }, orderBy: { joinedAt: 'desc' }, select: { joinedAt: true } });
@@ -71,7 +81,7 @@ describe('/voice', () => {
     prisma.voiceXpBalance.findUnique.mockResolvedValue(null);
     prisma.voiceSession.findFirst.mockResolvedValue(null);
     await service.execute('voice', interaction);
-    expect(embed().fields.map((field: any) => field.value)).toEqual(['0 jam 0 menit', 'Belum tercatat', '0']);
+    expect(embed().fields.map((field: any) => field.value)).toEqual(['0 jam 0 menit', 'Belum tercatat', '0', '0 / 100 XP']);
   });
 
   it('does not count stale open rows when the member is not connected', async () => {

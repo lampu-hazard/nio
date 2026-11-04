@@ -362,6 +362,18 @@ model DiscordAgentSettings {
   model                String   @default("gemini-2.5-flash")
   baseUrl              String?
   encryptedApiKey      String?
+  accessMode           String   @default("LEGACY_USERS")
+  policyRevision       BigInt   @default(0)
+  dailyGuildTokenLimit Int      @default(1000000)
+  dailyGuildImageLimit Int      @default(100)
+  maxOutputTokens      Int      @default(2048)
+  maxRunTokens         Int      @default(32768)
+  imageEnabled         Boolean  @default(false)
+  imageBaseUrl         String?
+  imageModel           String?
+  imageCredentialSource String  @default("SEPARATE")
+  encryptedImageApiKey String?
+  roleRules            AgentRoleRule[]
   allowedUserIds       String[] @default([])
   allowedChannelIds    String[] @default([])
   excludedChannelIds   String[] @default([])
@@ -369,6 +381,71 @@ model DiscordAgentSettings {
   messageRetentionDays Int      @default(30)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+model AgentRoleRule {
+  guildId         String
+  roleId          String
+  chatEnabled     Boolean @default(false)
+  imageEnabled    Boolean @default(false)
+  dailyTokenLimit Int     @default(0)
+  dailyImageLimit Int     @default(0)
+  settings        DiscordAgentSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@id([guildId, roleId])
+}
+
+model AgentQuotaBucket {
+  guildId         String
+  periodStart     DateTime @db.Timestamptz(3)
+  subject         String
+  committedTokens BigInt @default(0)
+  reservedTokens  BigInt @default(0)
+  committedImages BigInt @default(0)
+  reservedImages  BigInt @default(0)
+
+  @@id([guildId, periodStart, subject])
+  @@index([periodStart])
+}
+
+model AgentQuotaAttempt {
+  id              String @id
+  requestKey      String? @unique
+  guildId         String
+  userId          String
+  requestId       String
+  runId           String?
+  capability      String
+  policyRevision  BigInt
+  fence           BigInt
+  periodStart     DateTime @db.Timestamptz(3)
+  reservedTokens  BigInt @default(0)
+  reservedImages  BigInt @default(0)
+  chargedTokens   BigInt @default(0)
+  chargedImages   BigInt @default(0)
+  state           String @default("RESERVED")
+  usageSource     String?
+  outcomeCode     String?
+  overrun         Boolean @default(false)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt       DateTime @db.Timestamptz(3)
+  dispatchedAt    DateTime? @db.Timestamptz(3)
+  finalizedAt     DateTime? @db.Timestamptz(3)
+
+  @@index([state, expiresAt])
+  @@index([guildId, periodStart, userId])
+  @@index([finalizedAt])
+}
+
+model AgentMemberLease {
+  guildId   String
+  userId    String
+  requestId String
+  fence     BigInt @default(1)
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@index([expiresAt])
 }
 
 model AgentRun {

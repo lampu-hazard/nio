@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { AgentRoleQuotas, AgentImages, AgentQuotaUsage } from '../components/ai-agent/AgentSections';
+const settings: any = { accessMode: 'ROLE_QUOTAS', roleRules: [{ roleId: 'missing', chatEnabled: false, imageEnabled: true, dailyTokenLimit: 0, dailyImageLimit: 2 }], dailyGuildTokenLimit: 100, dailyGuildImageLimit: 10, imageEnabled: false, imageCredentialSource: 'SEPARATE' };
+const roles = renderToStaticMarkup(<AgentRoleQuotas settings={settings} roles={[]} onChange={() => {}} />);
+assert.ok(roles.includes('Unavailable role (missing)'));
+assert.ok(roles.includes('highest') && roles.includes('00:00 UTC'));
+assert.ok(roles.includes('Allow chat') && roles.includes('Allow images'));
+const images = renderToStaticMarkup(<AgentImages settings={{ ...settings, accessMode: 'LEGACY_USERS' }} onChange={() => {}} imageApiKey="" clearImageApiKey={false} onKey={() => {}} onClear={() => {}} />);
+assert.ok(images.includes('Role quotas') && images.includes('@nio gambar') && images.includes('@nio buat gambar') && images.includes('@nio generate image'));
+assert.ok(images.includes('type="password"'));
+const counter = { committed: '30', reserved: '20', limit: 100, remaining: 50 };
+const usage = renderToStaticMarkup(<AgentQuotaUsage page={{ accessMode: 'ROLE_QUOTAS', periodStart: '2026-11-04T00:00:00Z', resetAt: '2026-11-05T00:00:00Z', guild: { tokens: counter, images: counter, allowanceStatus: 'KNOWN', usageSources: { UNCERTAIN: 1 }, overruns: 1 }, members: [], nextCursor: 'next' }} onNext={() => {}} onRefresh={() => {}} />);
+assert.ok(usage.includes('50 remaining') && usage.includes('UNCERTAIN') && usage.includes('Overruns: 1') && usage.includes('Next page'));
+console.log('AI settings sections static markup checks passed; not browser interaction acceptance.');

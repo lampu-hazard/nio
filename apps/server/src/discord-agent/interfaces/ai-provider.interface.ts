@@ -53,7 +53,11 @@ export type AiGenerateRequest = {
   messages: AiMessage[];
   tools: AiToolDefinition[];
   onTextDelta?: (text: string) => void | Promise<void>;
+  maxOutputTokens?: number;
+  signal?: AbortSignal;
 };
+
+export type PreparedChatCall = Readonly<{ body: string; inputAllowance: number; maxOutputTokens: number }>;
 
 export type AiGenerateResult = {
   message: AiMessage;

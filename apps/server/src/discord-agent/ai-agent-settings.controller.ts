@@ -4,11 +4,17 @@ import { GuildAccessGuard } from '../guilds/guards/guild-access.guard';
 import { AiAgentSettingsService } from './ai-agent-settings.service';
 import { UpdateAiAgentSettingsDto } from './dto/update-ai-agent-settings.dto';
 import { Body } from '@nestjs/common';
+import { AgentQuotaQueryService } from './quota/agent-quota-query.service';
 
 @Controller('guilds/:guildId/ai-agent')
 @UseGuards(SessionAuthGuard, GuildAccessGuard)
 export class AiAgentSettingsController {
-  constructor(private readonly settings: AiAgentSettingsService) {}
+  constructor(private readonly settings: AiAgentSettingsService, private readonly quotas: AgentQuotaQueryService) {}
+
+  @Get('quotas')
+  async getQuotas(@Param('guildId') guildId: string, @Query('cursor') cursor?: string, @Query('size') size?: string) {
+    return { ok: true, quotas: await this.quotas.getToday(guildId, cursor, size) };
+  }
 
   @Get('settings')
   async getSettings(@Param('guildId') guildId: string) {

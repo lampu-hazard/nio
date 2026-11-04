@@ -44,23 +44,83 @@ services:
     networks:
       - private
 
-  crawl4ai:
-    image: unclecode/crawl4ai:latest
-    container_name: nio-crawl4ai
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    container_name: nio-firecrawl-playwright
     restart: unless-stopped
     shm_size: 1g
     environment:
-      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-nio-crawl4ai-internal-token}
-      - SECRET_KEY=${CRAWL4AI_SECRET_KEY:-nio-crawl4ai-internal-secret-key-32chars}
-      - REDIS_PASSWORD=${CRAWL4AI_REDIS_PASSWORD:-nio-crawl4ai-internal-redis-password}
-      - REDISCLI_AUTH=${CRAWL4AI_REDIS_PASSWORD:-nio-crawl4ai-internal-redis-password}
-      - GUNICORN_BIND=0.0.0.0:11235
+      - PORT=3000
+      - MAX_CONCURRENT_PAGES=${FIRECRAWL_MAX_CONCURRENT_PAGES:-5}
+    networks:
+      - private
+
+  nuq-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    container_name: nio-firecrawl-nuq-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${NUQ_POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${NUQ_POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${NUQ_POSTGRES_DB:-postgres}
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11235/health >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${NUQ_POSTGRES_USER:-postgres} -d ${NUQ_POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - private
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: nio-firecrawl-rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - private
+
+  firecrawl:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    container_name: nio-firecrawl
+    restart: unless-stopped
+    command: ["node", "dist/src/harness.js", "--start-docker"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
+      nuq-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3002
+      - INTERNAL_PORT=3002
+      - ENV=local
+      - USE_DB_AUTHENTICATION=false
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - NUQ_DATABASE_URL=postgresql://${NUQ_POSTGRES_USER:-postgres}:${NUQ_POSTGRES_PASSWORD:-postgres}@nuq-postgres:5432/${NUQ_POSTGRES_DB:-postgres}
+      - POSTGRES_USER=${NUQ_POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${NUQ_POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${NUQ_POSTGRES_DB:-postgres}
+      - POSTGRES_HOST=nuq-postgres
+      - POSTGRES_PORT=5432
+      - NUQ_RABBITMQ_URL=amqp://rabbitmq:5672
+      - BULL_AUTH_KEY=${FIRECRAWL_BULL_AUTH_KEY:-nio-firecrawl-bull-key}
+      - TEST_API_KEY=${FIRECRAWL_API_KEY:-}
+      - SEARXNG_ENDPOINT=http://searxng:8080
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     networks:
       - private
 
@@ -106,8 +166,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://nio:nio-server@db:5432/nio-db}
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
-      - CRAWL4AI_URL=${CRAWL4AI_URL:-http://crawl4ai:11235}
-      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-nio-crawl4ai-internal-token}
+      - FIRECRAWL_URL=${FIRECRAWL_URL:-http://firecrawl:3002}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
     networks:
       - private
 

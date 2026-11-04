@@ -916,13 +916,13 @@ describe('DiscordAgentToolExecutorService', () => {
     }));
   });
 
-  describe('web_fetch and web_search tools (Crawl4AI and SearXNG)', () => {
+  describe('web_fetch and web_search tools (Firecrawl and SearXNG)', () => {
     afterEach(() => {
       jest.restoreAllMocks();
       delete process.env.SEARXNG_URL;
       delete process.env.SEARXNG_API_KEY;
-      delete process.env.CRAWL4AI_URL;
-      delete process.env.CRAWL4AI_API_TOKEN;
+      delete process.env.FIRECRAWL_URL;
+      delete process.env.FIRECRAWL_API_KEY;
     });
 
     it('rejects invalid URL or unsupported protocols for web_fetch', async () => {
@@ -943,7 +943,7 @@ describe('DiscordAgentToolExecutorService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('blocks SSRF attempts to localhost, internal docker hostnames, cloud metadata, or private IPs before calling Crawl4AI', async () => {
+    it('blocks SSRF attempts to localhost, internal docker hostnames, cloud metadata, or private IPs before calling Firecrawl', async () => {
       const fetchSpy = jest.spyOn(global, 'fetch');
 
       await expect(
@@ -981,7 +981,7 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('blocks domains that resolve to private IP addresses via DNS before calling Crawl4AI', async () => {
+    it('blocks domains that resolve to private IP addresses via DNS before calling Firecrawl', async () => {
       const fetchSpy = jest.spyOn(global, 'fetch');
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '192.168.1.100', family: 4 },
@@ -997,9 +997,9 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('fetches valid public web content via Crawl4AI and extracts markdown', async () => {
-      process.env.CRAWL4AI_URL = 'http://crawl4ai.internal:11235';
-      process.env.CRAWL4AI_API_TOKEN = 'crawl-secret';
+    it('fetches valid public web content via self-hosted Firecrawl /v1/scrape and extracts markdown', async () => {
+      process.env.FIRECRAWL_URL = 'http://firecrawl.internal:3002';
+      process.env.FIRECRAWL_API_KEY = 'fc-local-secret';
 
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '93.184.216.34', family: 4 },
@@ -1011,18 +1011,14 @@ describe('DiscordAgentToolExecutorService', () => {
         statusText: 'OK',
         json: async () => ({
           success: true,
-          results: [
-            {
-              url: 'https://example.com/info',
-              status_code: 200,
-              success: true,
-              metadata: { title: 'Test Documentation' },
-              markdown: {
-                raw_markdown: '# Test Documentation\nWelcome to Nio documentation. Visit [our docs](https://example.com/docs).\n- Item 1\n- Item 2',
-                fit_markdown: '### Test Documentation\nWelcome to Nio documentation. Visit [our docs](https://example.com/docs).\n- Item 1\n- Item 2',
-              },
+          data: {
+            markdown: '### Test Documentation\nWelcome to Nio documentation. Visit [our docs](https://example.com/docs).\n- Item 1\n- Item 2',
+            metadata: {
+              title: 'Test Documentation',
+              statusCode: 200,
+              sourceURL: 'https://example.com/info',
             },
-          ],
+          },
         }),
       } as any);
 
@@ -1036,16 +1032,17 @@ describe('DiscordAgentToolExecutorService', () => {
       );
 
       expect(fetchSpy).toHaveBeenCalledWith(
-        'http://crawl4ai.internal:11235/crawl',
+        'http://firecrawl.internal:3002/v1/scrape',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            Authorization: 'Bearer crawl-secret',
+            Authorization: 'Bearer fc-local-secret',
           }),
           body: JSON.stringify({
-            urls: ['https://example.com/info'],
-            priority: 10,
+            url: 'https://example.com/info',
+            formats: ['markdown'],
+            onlyMainContent: true,
           }),
         }),
       );
@@ -1053,7 +1050,7 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(res).toEqual(
         expect.objectContaining({
           url: 'https://example.com/info',
-          engine: 'crawl4ai',
+          engine: 'firecrawl',
           status: 200,
           title: 'Test Documentation',
           truncated: false,
@@ -1065,7 +1062,7 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(res.content).toContain('- Item 1');
     });
 
-    it('handles Crawl4AI error responses gracefully', async () => {
+    it('handles Firecrawl error responses gracefully', async () => {
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '93.184.216.34', family: 4 },
       ]);
@@ -1086,11 +1083,76 @@ describe('DiscordAgentToolExecutorService', () => {
 
       expect(res).toEqual(
         expect.objectContaining({
-          engine: 'crawl4ai',
+          engine: 'firecrawl',
           success: false,
           status: 502,
         }),
       );
+    });
+
+    it('falls back to Firecrawl /v1/search when SearXNG returns empty or error and FIRECRAWL_URL is configured', async () => {
+      process.env.SEARXNG_URL = 'http://searxng.internal:8080';
+      process.env.FIRECRAWL_URL = 'http://firecrawl.internal:3002';
+
+      const fetchSpy = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            query: 'us midterm elections',
+            results: [],
+          }),
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: [
+              {
+                title: 'US Midterm Elections 2026 Overview',
+                url: 'https://apnews.com/hub/midterm-elections',
+                description: 'Latest updates on the 2026 US midterm elections.',
+              },
+            ],
+          }),
+        } as any);
+
+      const res = await service.execute(
+        'web_search',
+        {
+          query: 'us midterm elections',
+          limit: 5,
+        },
+        { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy).toHaveBeenNthCalledWith(
+        2,
+        'http://firecrawl.internal:3002/v1/search',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: 'us midterm elections',
+            limit: 5,
+          }),
+        }),
+      );
+      expect(res).toEqual({
+        engine: 'firecrawl',
+        query: 'us midterm elections',
+        count: 1,
+        results: [
+          {
+            title: 'US Midterm Elections 2026 Overview',
+            url: 'https://apnews.com/hub/midterm-elections',
+            snippet: 'Latest updates on the 2026 US midterm elections.',
+            sourceEngine: 'firecrawl',
+          },
+        ],
+      });
     });
 
     it('rejects empty query for web_search', async () => {

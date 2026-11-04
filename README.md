@@ -119,9 +119,9 @@ DISCORD_AGENT_MODEL=gemini-2.5-flash # or 'gpt-4o-mini', 'llama-3.3-70b-versatil
 GEMINI_API_KEY=
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
-SEARXNG_BASE_URL=                    # Optional SearXNG instance for web_search
-CRAWL4AI_BASE_URL=                   # Optional Crawl4AI instance for web_fetch
-CRAWL4AI_API_TOKEN=                  # Optional Crawl4AI bearer token
+SEARXNG_URL=                         # Optional SearXNG instance for web_search
+FIRECRAWL_URL=                       # Optional self-hosted Firecrawl instance for web_fetch (/v1/scrape) and web_search fallback (/v1/search)
+FIRECRAWL_API_KEY=                   # Optional Firecrawl bearer token
 ```
 
 **Public (`PUBLIC`) and Admin (`ADMIN`) Profile Separation**:

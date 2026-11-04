@@ -15,7 +15,7 @@ export class AgentProfileRouterService {
     const guild = this.client?.guilds.cache.get(guildId);
     if (!guild) return null;
     let channel;
-    try { channel = await guild.channels.fetch(channelId, { force: true }); }
+    try { channel = guild.channels?.cache?.get?.(channelId) ?? await guild.channels.fetch(channelId, { force: true }); }
     catch { return null; }
     if (!channel || channel.guildId !== guildId || !channel.isTextBased()) return null;
     const parentId = channel.isThread() ? channel.parentId : null;
@@ -40,11 +40,11 @@ export class AgentProfileRouterService {
     if (matches.length === 1) return parseAgentProfile(matches[0].profile);
 
     const adminSettings = matches.find((settings) => settings.profile === 'ADMIN');
-    if (adminSettings && userId && guild.members?.fetch) {
+    if (adminSettings && userId && (guild.members?.cache || guild.members?.fetch)) {
       try {
-        const member = await guild.members.fetch({ user: userId, force: true });
+        const member = guild.members?.cache?.get?.(userId) ?? await guild.members.fetch({ user: userId, force: true });
         if (member?.guild?.id === guildId) {
-          const currentRoles = await guild.roles?.fetch?.().catch(() => null);
+          const currentRoles = (guild.roles?.cache?.size ? guild.roles.cache : null) ?? await guild.roles?.fetch?.().catch(() => null);
           const memberRoleKeys = [...(member.roles?.cache?.keys?.() ?? []), guildId];
           const roleIds = currentRoles ? memberRoleKeys.filter((id) => currentRoles.has(id)) : memberRoleKeys;
           const allowance = evaluateRolePolicy('ADMIN', (adminSettings as any).roleRules ?? [], roleIds);

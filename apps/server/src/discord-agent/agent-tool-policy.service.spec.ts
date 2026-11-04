@@ -112,4 +112,55 @@ describe('profile tool policy', () => {
       expect.objectContaining({ id: 'plugin:tools:mutate', available: false, source: 'PLUGIN', mode: 'write' }),
     ]));
   });
+
+  it('fetches guild member and context channel at most once across multi-tool definitions and single-tool resolveCall', async () => {
+    const membersFetch = jest.fn<any>(async () => ({
+      guild: { id: 'guild' },
+      permissions: { has: (flag: bigint) => granted.has(flag) },
+    }));
+    const channelsFetch = jest.fn<any>(async (id: string) => ({
+      id,
+      guildId: 'guild',
+      permissionsFor: () => ({ has: () => visible }),
+    }));
+    service.setClient({
+      guilds: {
+        cache: new Map([
+          [
+            'guild',
+            {
+              id: 'guild',
+              ownerId: 'owner',
+              members: { fetch: membersFetch },
+              channels: { fetch: channelsFetch },
+            },
+          ],
+        ]),
+      },
+    } as any);
+
+    allowedToolIds = [
+      'web_search',
+      'web_fetch',
+      'get_user_warnings',
+      'get_channel_recent_messages',
+      'get_server_settings',
+      'kick_user',
+      'ban_user',
+      'timeout_user',
+    ];
+
+    const defs = await service.definitions(adminContext);
+    expect(defs.length).toBe(8);
+    expect(membersFetch).toHaveBeenCalledTimes(1);
+    expect(channelsFetch).toHaveBeenCalledTimes(1);
+
+    membersFetch.mockClear();
+    channelsFetch.mockClear();
+
+    const entry = await service.resolveCall(adminContext, 'web_search', { query: 'midterm election' });
+    expect(entry.id).toBe('web_search');
+    expect(membersFetch).toHaveBeenCalledTimes(1);
+    expect(channelsFetch).toHaveBeenCalledTimes(1);
+  });
 });

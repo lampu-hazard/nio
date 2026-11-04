@@ -197,6 +197,7 @@ const adminAccessMarkup = renderToStaticMarkup(
   />,
 );
 assert.ok(adminAccessMarkup.includes('Unlimited — usage tracked, no NIO token quota'));
+assert.ok(adminAccessMarkup.includes('Allow all channels'));
 assert.ok(adminAccessMarkup.includes('Server images / day'));
 assert.ok(adminAccessMarkup.includes('Member images / day'));
 assert.ok(!adminAccessMarkup.includes('Server tokens / day'));

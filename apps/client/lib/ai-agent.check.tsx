@@ -89,7 +89,9 @@ assert.equal(validateSettings({ ...adminValid, maxRunTokens: 4096 })?.section, '
 assert.equal(validateSettings({ ...adminValid, maxOutputTokens: 64 })?.section, 'config');
 assert.equal(validateSettings({ ...adminValid, dailyGuildImageLimit: -1 })?.section, 'access');
 assert.equal(validateSettings({ ...adminValid, userTokenRules: [{ userId: '40000', dailyTokenLimit: 100 }] })?.section, 'access');
-assert.equal(validateSettings(adminValid, ['222222'])?.section, 'access');
+assert.equal(validateSettings(adminValid, ['222222']), null);
+assert.equal(validateSettings({ ...adminValid, allowedChannelIds: ['*'] }, ['*']), null);
+assert.equal(validateSettings({ ...adminValid, enabled: true, allowedChannelIds: ['*'], excludedChannelIds: ['*'] })?.section, 'access');
 assert.equal(validateSettings({ ...adminValid, enabled: true, allowedChannelIds: [] })?.section, 'access');
 
 const adminPayload = settingsPayload(

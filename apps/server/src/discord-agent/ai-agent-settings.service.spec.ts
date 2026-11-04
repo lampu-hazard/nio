@@ -261,4 +261,79 @@ describe('AiAgentSettingsService', () => {
       avatarUrl: 'https://cdn.discordapp.com/avatars/user-1/avatar.png',
     });
   });
+
+  it('resolves Discord roles, bot member, and channels before opening the Prisma transaction and avoids per-channel forced REST fetches when cached', async () => {
+    let inTransaction = false;
+    let discordCallsInsideTx = 0;
+    const channelIds = Array.from({ length: 20 }, (_, i) => String(30000 + i));
+    const channelCache = new Map(
+      channelIds.map((id) => [
+        id,
+        {
+          id,
+          guildId: 'guild-1',
+          parentId: null,
+          isTextBased: () => true,
+          isThread: () => false,
+          permissionsFor: () => ({ has: () => true }),
+        },
+      ]),
+    );
+    const channelsFetch = jest.fn<any>(async (id?: string, opts?: { force?: boolean }) => {
+      if (inTransaction) discordCallsInsideTx++;
+      if (opts?.force) throw new Error('Should not force per-channel REST fetch');
+      return id ? channelCache.get(id) : channelCache;
+    });
+    const rolesFetch = jest.fn<any>(async () => {
+      if (inTransaction) discordCallsInsideTx++;
+      return new Map([['20000', {}]]);
+    });
+    const fetchMe = jest.fn<any>(async () => {
+      if (inTransaction) discordCallsInsideTx++;
+      return { id: 'bot' };
+    });
+
+    service.setClient({
+      guilds: {
+        cache: new Map([
+          [
+            'guild-1',
+            {
+              id: 'guild-1',
+              roles: { fetch: rolesFetch },
+              members: { fetchMe },
+              channels: { cache: channelCache, fetch: channelsFetch },
+            },
+          ],
+        ]),
+      },
+    } as any);
+
+    prisma.discordAgentSettings.findUnique.mockResolvedValueOnce(null);
+    prisma.$transaction.mockImplementationOnce(async (work: any) => {
+      inTransaction = true;
+      try {
+        return await work(prisma);
+      } finally {
+        inTransaction = false;
+      }
+    });
+
+    await expect(
+      service.updateSettings(
+        { guildId: 'guild-1', profile: 'ADMIN' },
+        {
+          enabled: true,
+          allowedChannelIds: channelIds,
+          roleRules: [{ roleId: '20000', chatEnabled: true, imageEnabled: false, dailyTokenLimit: null, dailyImageLimit: 0 }],
+        },
+      ),
+    ).resolves.toMatchObject({
+      profile: 'ADMIN',
+      enabled: true,
+      allowedChannelIds: channelIds,
+    });
+
+    expect(discordCallsInsideTx).toBe(0);
+  });
 });

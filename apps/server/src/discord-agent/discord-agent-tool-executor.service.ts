@@ -10,6 +10,7 @@ import { AgentActionRecommendation, AgentActionType, AgentSettingsUpdate } from 
 import { PluginToolRegistryService } from '../plugins/plugin-tool-registry.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { SentinelService } from '../sentinel/sentinel.service';
+import { AgentToolContext, AgentToolPolicyService } from './agent-tool-policy.service';
 
 const MAX_READ_LIMIT = 100;
 const MAX_BATCH_ITEMS = 25;
@@ -68,6 +69,7 @@ export class DiscordAgentToolExecutorService {
     private readonly leaderboard?: LeaderboardService,
     @Optional()
     private readonly sentinel?: SentinelService,
+    @Optional() private readonly toolPolicy?: AgentToolPolicyService,
   ) {}
 
   setClient(client: Client) {
@@ -77,15 +79,20 @@ export class DiscordAgentToolExecutorService {
   async execute(
     name: string,
     args: any,
-    context: { guildId: string; channelId: string; requestedById: string },
+    context: AgentToolContext,
   ): Promise<any> {
+    if (!this.toolPolicy) throw new ForbiddenException('Tool policy unavailable.');
+    const entry = await this.toolPolicy.resolveCall(context, name, args);
+    if (entry.source === 'MCP') throw new ForbiddenException('MCP calls require the proposal-aware dispatcher.');
+    if (entry.source === 'PLUGIN' && entry.definition.safety.mode === 'write') throw new ForbiddenException('Plugin writes require a supported confirmation flow.');
+    name = entry.dispatchName;
     if (this.pluginTools.has(name)) {
       return this.pluginTools.execute(name, args, context);
     }
 
     const discordActionType = DISCORD_ACTION_TOOLS[name];
     if (discordActionType) {
-      return this.createDiscordActionProposal(discordActionType, args, context);
+      return this.createDiscordActionProposal(discordActionType, args, context, entry.id);
     }
 
     switch (name) {
@@ -143,6 +150,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: { type: 'WARN', reason: this.requireString(args.reason, 'reason') },
         });
@@ -154,6 +163,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: {
             type: 'TIMEOUT',
@@ -169,6 +180,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: { type: 'KICK', reason: this.requireString(args.reason, 'reason') },
         });
@@ -180,6 +193,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: {
             type: 'BAN',
@@ -195,6 +210,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: args.targetUserId || null,
           recommendation: {
             type: 'PURGE',
@@ -212,6 +229,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: {
             type: 'ADD_ROLE',
@@ -227,6 +246,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: {
             type: 'REMOVE_ROLE',
@@ -242,6 +263,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: { type: 'REMOVE_TIMEOUT', reason: this.requireString(args.reason, 'reason') },
         });
@@ -253,6 +276,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'REVOKE_WARNING',
@@ -272,6 +297,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'UPDATE_SETTINGS',
@@ -287,6 +314,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'LOCKDOWN',
@@ -302,6 +331,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'UNLOCK',
@@ -317,6 +348,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'SET_SLOWMODE',
@@ -333,6 +366,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'SEND_ANNOUNCEMENT',
@@ -388,6 +423,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: this.requireString(args.targetUserId, 'targetUserId'),
           recommendation: {
             type: 'PURGE_USER_MESSAGES',
@@ -465,6 +502,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: recommendationType,
@@ -499,6 +538,8 @@ export class DiscordAgentToolExecutorService {
           guildId: context.guildId,
           channelId: context.channelId,
           requestedById: context.requestedById,
+          profile: context.profile,
+          originToolId: entry.id,
           targetUserId: null,
           recommendation: {
             type: 'MANAGE_STICKER',
@@ -818,7 +859,8 @@ export class DiscordAgentToolExecutorService {
   private async createDiscordActionProposal(
     type: AgentActionType,
     args: any,
-    context: { guildId: string; channelId: string; requestedById: string },
+    context: AgentToolContext,
+    originToolId: string,
   ) {
     const recommendation = this.buildDiscordRecommendation(type, args, context);
     if (type === 'BOT_JOIN_VOICE' && !recommendation.voiceChannelId) {
@@ -828,6 +870,8 @@ export class DiscordAgentToolExecutorService {
       guildId: context.guildId,
       channelId: context.channelId,
       requestedById: context.requestedById,
+      profile: context.profile,
+      originToolId,
       targetUserId: typeof args.targetUserId === 'string' && args.targetUserId.trim() ? args.targetUserId.trim() : null,
       recommendation,
     });
@@ -2129,8 +2173,9 @@ export class DiscordAgentToolExecutorService {
   }
 
   private isBlockedHostname(hostname: string): boolean {
-    const lower = hostname.toLowerCase().trim();
+    const lower = hostname.replace(/^\[|\]$/g, '').toLowerCase().trim();
     if (
+      !lower ||
       lower === 'localhost' ||
       lower.endsWith('.localhost') ||
       lower.endsWith('.local') ||
@@ -2138,7 +2183,8 @@ export class DiscordAgentToolExecutorService {
       lower.endsWith('.lan') ||
       lower.endsWith('.arpa') ||
       lower === 'metadata.google.internal' ||
-      lower === '169.254.169.254'
+      lower === '169.254.169.254' ||
+      (!lower.includes('.') && !lower.includes(':'))
     ) {
       return true;
     }
@@ -2146,7 +2192,7 @@ export class DiscordAgentToolExecutorService {
   }
 
   private isPrivateIp(ip: string): boolean {
-    const cleanIp = ip.trim().toLowerCase();
+    const cleanIp = ip.replace(/^\[|\]$/g, '').trim().toLowerCase();
 
     // IPv4 check
     if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanIp)) {
@@ -2283,24 +2329,35 @@ export class DiscordAgentToolExecutorService {
     }
 
     const limit = Math.max(500, Math.min(25000, Number(maxChars) || 10000));
+    const crawl4aiBaseUrl = (process.env.CRAWL4AI_URL || 'http://127.0.0.1:11235').replace(/\/+$/, '');
+    const crawl4aiToken = process.env.CRAWL4AI_API_TOKEN?.trim();
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const res = await fetch(parsedUrl.toString(), {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      };
+      if (crawl4aiToken) {
+        headers.Authorization = `Bearer ${crawl4aiToken}`;
+      }
+
+      const res = await fetch(`${crawl4aiBaseUrl}/crawl`, {
+        method: 'POST',
         signal: controller.signal,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 NioBot/2.0',
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
-        },
+        headers,
+        body: JSON.stringify({
+          urls: [parsedUrl.toString()],
+          priority: 10,
+        }),
       });
 
       if (!res.ok) {
         return {
           url: parsedUrl.toString(),
+          engine: 'crawl4ai',
           status: res.status,
           statusText: res.statusText,
           success: false,
@@ -2308,29 +2365,49 @@ export class DiscordAgentToolExecutorService {
         };
       }
 
-      const contentType = res.headers.get('content-type') || '';
-      const rawBody = await res.text();
+      const data: any = await res.json();
+      const item: any = Array.isArray(data?.results) ? data.results[0] : data?.result ?? data;
+      const statusCode = typeof item?.status_code === 'number' ? item.status_code : res.status;
 
-      let extractedContent: string;
-      if (
-        contentType.includes('text/html') ||
-        contentType.includes('application/xhtml+xml') ||
-        rawBody.includes('<html')
-      ) {
-        extractedContent = this.stripHtmlAndEntities(rawBody);
-      } else {
-        extractedContent = rawBody.trim();
+      if (item?.success === false || statusCode >= 400) {
+        return {
+          url: item?.url || parsedUrl.toString(),
+          engine: 'crawl4ai',
+          status: statusCode,
+          statusText: item?.error_message || res.statusText,
+          success: false,
+          error: item?.error_message || `HTTP error ${statusCode}`,
+        };
       }
 
+      const rawMarkdown =
+        typeof item?.markdown === 'string'
+          ? item.markdown
+          : typeof item?.markdown?.fit_markdown === 'string' && item.markdown.fit_markdown.trim()
+            ? item.markdown.fit_markdown
+            : typeof item?.markdown?.raw_markdown === 'string'
+              ? item.markdown.raw_markdown
+              : typeof item?.markdown_v2?.raw_markdown === 'string'
+                ? item.markdown_v2.raw_markdown
+                : typeof item?.extracted_content === 'string'
+                  ? item.extracted_content
+                  : typeof item?.cleaned_html === 'string'
+                    ? this.stripHtmlAndEntities(item.cleaned_html)
+                    : typeof item?.html === 'string'
+                      ? this.stripHtmlAndEntities(item.html)
+                      : '';
+
+      const extractedContent = rawMarkdown.trim();
       const isTruncated = extractedContent.length > limit;
       const content = isTruncated
         ? extractedContent.slice(0, limit) + '\n...[TRUNCATED]'
         : extractedContent;
 
       return {
-        url: parsedUrl.toString(),
-        status: res.status,
-        contentType,
+        url: item?.url || parsedUrl.toString(),
+        engine: 'crawl4ai',
+        status: statusCode,
+        title: typeof item?.metadata?.title === 'string' ? item.metadata.title : null,
         contentLength: content.length,
         truncated: isTruncated,
         content,
@@ -2338,7 +2415,7 @@ export class DiscordAgentToolExecutorService {
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         throw new ServiceUnavailableException(
-          `Web fetch timed out after 12s for URL: ${parsedUrl.toString()}`,
+          `Web fetch timed out after 15s for URL: ${parsedUrl.toString()}`,
         );
       }
       throw new BadRequestException(
@@ -2349,66 +2426,6 @@ export class DiscordAgentToolExecutorService {
     }
   }
 
-  private parseDuckDuckGoResults(html: string, limit: number) {
-    const results: Array<{ title: string; url: string; snippet: string }> = [];
-
-    const resultRegex =
-      /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>|<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>)/gi;
-
-    let match: RegExpExecArray | null;
-    while ((match = resultRegex.exec(html)) !== null && results.length < limit) {
-      const rawHref = match[1];
-      const rawTitle = match[2];
-      const rawSnippet = match[3] || match[4] || '';
-
-      let finalUrl = rawHref;
-      try {
-        if (rawHref.includes('uddg=')) {
-          const matchUddg = rawHref.match(/uddg=([^&]+)/);
-          if (matchUddg && matchUddg[1]) {
-            finalUrl = decodeURIComponent(matchUddg[1]);
-          }
-        }
-      } catch {
-        // keep rawHref if decodeURIComponent fails
-      }
-
-      const title = this.stripHtmlAndEntities(rawTitle);
-      const snippet = this.stripHtmlAndEntities(rawSnippet);
-
-      if (title && finalUrl && finalUrl.startsWith('http')) {
-        results.push({
-          title,
-          url: finalUrl,
-          snippet,
-        });
-      }
-    }
-
-    if (results.length === 0) {
-      const linkRegex = /<a[^>]+href="([^"]*(?:uddg=http)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-      let linkMatch: RegExpExecArray | null;
-      while ((linkMatch = linkRegex.exec(html)) !== null && results.length < limit) {
-        const rawHref = linkMatch[1];
-        const rawTitle = linkMatch[2];
-        try {
-          const matchUddg = rawHref.match(/uddg=([^&]+)/);
-          if (matchUddg && matchUddg[1]) {
-            const finalUrl = decodeURIComponent(matchUddg[1]);
-            const title = this.stripHtmlAndEntities(rawTitle);
-            if (title && !results.some((r) => r.url === finalUrl)) {
-              results.push({ title, url: finalUrl, snippet: '' });
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    return results;
-  }
-
   private async executeWebSearch(query: string, maxResults?: number) {
     const limit = Math.max(1, Math.min(10, Number(maxResults) || 5));
     const trimmedQuery = query.trim();
@@ -2416,84 +2433,29 @@ export class DiscordAgentToolExecutorService {
       throw new BadRequestException('Search query cannot be empty.');
     }
 
-    const braveApiKey = process.env.BRAVE_SEARCH_API_KEY;
-    const tavilyApiKey = process.env.TAVILY_API_KEY;
-
-    if (braveApiKey) {
-      try {
-        const braveUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(trimmedQuery)}&count=${limit}`;
-        const res = await fetch(braveUrl, {
-          headers: {
-            Accept: 'application/json',
-            'X-Subscription-Token': braveApiKey,
-          },
-        });
-        if (res.ok) {
-          const data: any = await res.json();
-          const results = (data?.web?.results || []).slice(0, limit).map((r: any) => ({
-            title: r.title,
-            url: r.url,
-            snippet: r.description || '',
-          }));
-          return {
-            engine: 'brave',
-            query: trimmedQuery,
-            count: results.length,
-            results,
-          };
-        }
-      } catch {
-        // Fallthrough
-      }
-    }
-
-    if (tavilyApiKey) {
-      try {
-        const res = await fetch('https://api.tavily.com/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            api_key: tavilyApiKey,
-            query: trimmedQuery,
-            max_results: limit,
-            search_depth: 'basic',
-          }),
-        });
-        if (res.ok) {
-          const data: any = await res.json();
-          const results = (data?.results || []).slice(0, limit).map((r: any) => ({
-            title: r.title,
-            url: r.url,
-            snippet: r.content || '',
-          }));
-          return {
-            engine: 'tavily',
-            query: trimmedQuery,
-            count: results.length,
-            results,
-          };
-        }
-      } catch {
-        // Fallthrough
-      }
-    }
+    const searxngBaseUrl = (process.env.SEARXNG_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+    const searxngApiKey = process.env.SEARXNG_API_KEY?.trim();
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
-      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(trimmedQuery)}`;
-      const res = await fetch(ddgUrl, {
+      const searchUrl = `${searxngBaseUrl}/search?q=${encodeURIComponent(trimmedQuery)}&format=json`;
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'User-Agent': 'NioBot/2.0',
+      };
+      if (searxngApiKey) {
+        headers.Authorization = `Bearer ${searxngApiKey}`;
+      }
+
+      const res = await fetch(searchUrl, {
         signal: controller.signal,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 NioBot/2.0',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
+        headers,
       });
 
       if (!res.ok) {
         return {
-          engine: 'duckduckgo',
+          engine: 'searxng',
           query: trimmedQuery,
           count: 0,
           results: [],
@@ -2501,11 +2463,28 @@ export class DiscordAgentToolExecutorService {
         };
       }
 
-      const html = await res.text();
-      const results = this.parseDuckDuckGoResults(html, limit);
+      const data: any = await res.json();
+      const rawResults = Array.isArray(data?.results) ? data.results : [];
+      const results = rawResults
+        .filter(
+          (r: any) =>
+            r &&
+            typeof r.url === 'string' &&
+            /^https?:\/\//i.test(r.url.trim()) &&
+            typeof r.title === 'string' &&
+            r.title.trim(),
+        )
+        .slice(0, limit)
+        .map((r: any) => ({
+          title: this.stripHtmlAndEntities(String(r.title)),
+          url: String(r.url).trim(),
+          snippet: this.stripHtmlAndEntities(String(r.content ?? r.snippet ?? '')),
+          ...(r.engine ? { sourceEngine: String(r.engine) } : {}),
+          ...(r.publishedDate ? { publishedDate: String(r.publishedDate) } : {}),
+        }));
 
       return {
-        engine: 'duckduckgo',
+        engine: 'searxng',
         query: trimmedQuery,
         count: results.length,
         results,

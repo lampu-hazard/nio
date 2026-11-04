@@ -2,7 +2,7 @@ export type AgentRoleRule = {
   roleId: string;
   chatEnabled: boolean;
   imageEnabled: boolean;
-  dailyTokenLimit: number;
+  dailyTokenLimit: number | null;
   dailyImageLimit: number;
 };
 

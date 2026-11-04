@@ -1,11 +1,14 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
+import { AgentRequestScope, parseAgentProfile } from './agent-profile.types';
 
 export interface ConversationTurn {
   userPrompt: string;
   aiResponse: string;
   timestamp: number;
 }
+
+export type ConversationScope = AgentRequestScope;
 
 export const MAX_TURNS = 20;
 export const TTL_SECONDS = 1800;
@@ -24,14 +27,58 @@ export class ConversationMemoryService implements OnModuleDestroy {
     this.redis.connect().catch(() => {});
   }
 
-  async loadHistory(guildId: string, botMessageId: string): Promise<ConversationTurn[]> {
-    return this.loadByKey(`${KEY_PREFIX}${guildId}:${botMessageId}`);
+  private buildConversationKey(scope: ConversationScope, botMessageId: string): string {
+    const profile = parseAgentProfile(scope.profile);
+    return `${KEY_PREFIX}v2:${scope.guildId}:${profile}:${scope.channelId}:${scope.userId}:${botMessageId}`;
   }
 
-  async saveConversation(guildId: string, botMessageId: string, turns: ConversationTurn[]): Promise<void> {
-    await this.saveByKey(`${KEY_PREFIX}${guildId}:${botMessageId}`, turns);
+  private buildProvenanceKey(botMessageId: string): string {
+    return `${KEY_PREFIX}prov:v2:${botMessageId}`;
   }
 
+  async loadHistory(scope: ConversationScope, botMessageId: string): Promise<ConversationTurn[]> {
+    return this.loadByKey(this.buildConversationKey(scope, botMessageId));
+  }
+
+  async saveConversation(scope: ConversationScope, botMessageId: string, turns: ConversationTurn[]): Promise<void> {
+    const normalized: ConversationScope = {
+      guildId: scope.guildId,
+      profile: parseAgentProfile(scope.profile),
+      channelId: scope.channelId,
+      userId: scope.userId,
+    };
+    await this.saveByKey(this.buildConversationKey(normalized, botMessageId), turns);
+    try {
+      await this.redis.set(this.buildProvenanceKey(botMessageId), JSON.stringify(normalized), 'EX', TTL_SECONDS);
+    } catch {
+      // Graceful degradation
+    }
+  }
+
+  async getProvenance(botMessageId: string): Promise<ConversationScope | null> {
+    try {
+      const raw = await this.redis.get(this.buildProvenanceKey(botMessageId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        typeof parsed.guildId !== 'string' ||
+        typeof parsed.channelId !== 'string' ||
+        typeof parsed.userId !== 'string'
+      ) {
+        return null;
+      }
+      return {
+        guildId: parsed.guildId,
+        profile: parseAgentProfile(parsed.profile),
+        channelId: parsed.channelId,
+        userId: parsed.userId,
+      };
+    } catch {
+      return null;
+    }
+  }
 
   private async loadByKey(key: string): Promise<ConversationTurn[]> {
     try {

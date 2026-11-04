@@ -9,6 +9,8 @@ import { AgentActionProposalService } from './agent-action-proposal.service';
 import { DiscordMessageLogService } from './discord-message-log.service';
 import { DiscordAgentContextService } from './discord-agent-context.service';
 
+jest.mock('../leaderboard/leaderboard.service', () => ({ LeaderboardService: class {} }));
+
 describe('DiscordAgentToolExecutorService', () => {
   let service: DiscordAgentToolExecutorService;
 
@@ -204,6 +206,8 @@ describe('DiscordAgentToolExecutorService', () => {
     inspectMessage: jest.fn(),
   };
 
+  const mockToolPolicy = { resolveCall: jest.fn<any>(async (_context: unknown, name: string) => ({ id: name, dispatchName: name, source: 'BUILTIN', definition: { safety: { mode: 'read' } } })) };
+
   beforeEach(() => {
     jest.clearAllMocks();
     service = new DiscordAgentToolExecutorService(
@@ -215,30 +219,39 @@ describe('DiscordAgentToolExecutorService', () => {
       mockPluginTools as any,
       mockLeaderboard as any,
       mockSentinel as any,
+      mockToolPolicy as any,
     );
     service.setClient(mockClient as any);
   });
 
+  it('denies dispatch when the profile policy is absent', async () => {
+    service = new DiscordAgentToolExecutorService(mockModeration as any, mockPrisma as any, mockProposals as any, mockMessageLogs as any, mockContext as any, mockPluginTools as any);
+    await expect(service.execute('get_user_warnings', { targetUserId: 'user-1' }, {
+      guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1', profile: 'ADMIN', userId: 'admin-1',
+    })).rejects.toThrow('policy');
+    expect(mockModeration.listWarnings).not.toHaveBeenCalled();
+  });
+
   it('executes read tools immediately', async () => {
-    const res = await service.execute('get_user_warnings', { targetUserId: 'user-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_user_warnings', { targetUserId: 'user-1' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual([{ id: 'warn-1' }]);
     (expect(mockModeration.listWarnings) as any).toHaveBeenCalledWith('guild-1', { search: 'user-1' });
   });
 
   it('reuses moderation context for member info', async () => {
-    const res = await service.execute('get_member_info', { targetUserId: 'user-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_member_info', { targetUserId: 'user-1' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual({ member: { id: 'user-1' } });
     (expect(mockContext.buildModContext) as any).toHaveBeenCalledWith('guild-1', 'user-1');
   });
 
   it('gets recent channel messages with a clamped limit', async () => {
-    const res = await service.execute('get_channel_recent_messages', { channelId: 'channel-1', limit: 500 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'fallback-channel' });
+    const res = await service.execute('get_channel_recent_messages', { channelId: 'channel-1', limit: 500 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'fallback-channel' });
     expect(res).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'msg-1', content: 'hello' })]));
     (expect(mockMessageLogs.getChannelRecentMessages) as any).toHaveBeenCalledWith('guild-1', 'channel-1', 100, undefined);
   });
 
   it('creates proposals for write tools', async () => {
-    const res = await service.execute('warn_user', { targetUserId: 'user-1', reason: 'spam' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('warn_user', { targetUserId: 'user-1', reason: 'spam' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'WARN' });
   });
 
@@ -253,7 +266,7 @@ describe('DiscordAgentToolExecutorService', () => {
       footer: 'footer',
       ping: 'here',
       reason: 'weekly update',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'SEND_ANNOUNCEMENT' });
     (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
@@ -277,7 +290,7 @@ describe('DiscordAgentToolExecutorService', () => {
       limit: 25,
       channels: ['channel-1'],
       reason: 'spam cleanup',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'PURGE_USER_MESSAGES' });
     (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
@@ -294,10 +307,10 @@ describe('DiscordAgentToolExecutorService', () => {
     const joinRes = await service.execute('bot_join_voice', {
       voiceChannelId: 'voice-1',
       reason: 'join voice test',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     const leaveRes = await service.execute('bot_leave_voice', {
       reason: 'leave voice test',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(joinRes).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'BOT_JOIN_VOICE' });
     expect(leaveRes).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'BOT_LEAVE_VOICE' });
@@ -312,7 +325,7 @@ describe('DiscordAgentToolExecutorService', () => {
   it('defaults bot join voice to requester current voice channel', async () => {
     const res = await service.execute('bot_join_voice', {
       reason: 'join my voice',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'BOT_JOIN_VOICE' });
     (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
@@ -328,17 +341,17 @@ describe('DiscordAgentToolExecutorService', () => {
 
     await expect(service.execute('bot_join_voice', {
       reason: 'join my voice',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' })).rejects.toThrow('Kamu belum masuk voice channel.');
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' })).rejects.toThrow('Kamu belum masuk voice channel.');
   });
 
   it('gets deleted message history with filters', async () => {
-    const res = await service.execute('get_deleted_message_history', { targetUserId: 'user-1', limit: 10 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_deleted_message_history', { targetUserId: 'user-1', limit: 10 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'deleted-1', deletedAt: new Date('2026-01-01T00:01:00Z') })]));
     (expect(mockMessageLogs.getDeletedMessages) as any).toHaveBeenCalledWith('guild-1', 10, { channelId: undefined, userId: 'user-1' });
   });
 
   it('creates role management proposals', async () => {
-    const res = await service.execute('add_role_to_user', { targetUserId: 'user-1', roleId: 'role-1', reason: 'verified' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('add_role_to_user', { targetUserId: 'user-1', roleId: 'role-1', reason: 'verified' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual({ proposalCreated: true, proposalId: 'proposal-1', actionType: 'ADD_ROLE' });
     (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
       targetUserId: 'user-1',
@@ -347,7 +360,7 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('creates settings update proposals with only supported settings', async () => {
-    await service.execute('update_server_settings', { reason: 'reduce spam', slowmodeEnabled: true, unsupported: 'ignored' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    await service.execute('update_server_settings', { reason: 'reduce spam', slowmodeEnabled: true, unsupported: 'ignored' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     (expect(mockProposals.createProposal) as any).toHaveBeenCalledWith(expect.objectContaining({
       targetUserId: null,
       recommendation: expect.objectContaining({
@@ -359,7 +372,7 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('fetches Discord audit logs', async () => {
-    const res = await service.execute('get_discord_audit_logs', { limit: 10 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_discord_audit_logs', { limit: 10 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual([{
       id: 'log-1',
       action: 24,
@@ -396,7 +409,7 @@ describe('DiscordAgentToolExecutorService', () => {
       ],
     });
 
-    const res = await service.execute('get_audit_logs', { category: 'role' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_audit_logs', { category: 'role' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res.guildId).toBe('guild-1');
     expect(res.count).toBe(1);
     expect(res.entries[0]).toEqual(expect.objectContaining({
@@ -423,7 +436,7 @@ describe('DiscordAgentToolExecutorService', () => {
       ],
     });
 
-    const resTimeout = await service.execute('get_audit_logs', { category: 'timeout' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const resTimeout = await service.execute('get_audit_logs', { category: 'timeout' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(resTimeout.count).toBe(1);
     expect(resTimeout.entries[0].timeoutChange).toEqual({
       newUntil: '2026-01-01T01:00:00.000Z',
@@ -456,7 +469,7 @@ describe('DiscordAgentToolExecutorService', () => {
       ],
     });
 
-    const res = await service.execute('get_member_audit_trail', { targetUserId: 'user-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_member_audit_trail', { targetUserId: 'user-1' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res.count).toBe(1);
     expect(res.entries[0].id).toBe('log-role-1');
   });
@@ -476,7 +489,7 @@ describe('DiscordAgentToolExecutorService', () => {
       ],
     });
 
-    const res = await service.execute('get_moderator_actions', { moderatorId: 'admin-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_moderator_actions', { moderatorId: 'admin-1' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res.count).toBe(1);
     expect(mockGuild.fetchAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ user: 'admin-1' }));
   });
@@ -505,14 +518,14 @@ describe('DiscordAgentToolExecutorService', () => {
       ],
     });
 
-    const res = await service.execute('search_audit_events', { query: 'important' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('search_audit_events', { query: 'important' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res.count).toBe(1);
     expect(res.entries[0].id).toBe('log-role-1');
   });
 
   it('throws ForbiddenException when bot lacks ViewAuditLog permission', async () => {
     mockGuild.members.me.permissions.has.mockReturnValueOnce(false);
-    await expect(service.execute('get_audit_logs', {}, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' }))
+    await expect(service.execute('get_audit_logs', {}, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' }))
       .rejects.toThrow('Bot lacks View Audit Log permission');
   });
 
@@ -521,7 +534,7 @@ describe('DiscordAgentToolExecutorService', () => {
       { id: '1', channelId: 'ch-1', createdAt: new Date(), deletedAt: null },
       { id: '2', channelId: 'ch-2', createdAt: new Date(), deletedAt: new Date() },
     ]);
-    const res = await service.execute('check_user_activity_score', { targetUserId: 'user-1', days: 5 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('check_user_activity_score', { targetUserId: 'user-1', days: 5 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual({
       targetUserId: 'user-1',
       days: 5,
@@ -535,7 +548,7 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('adds user notes and lists them', async () => {
-    const addRes = await service.execute('add_user_note', { targetUserId: 'user-1', content: 'good member' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const addRes = await service.execute('add_user_note', { targetUserId: 'user-1', content: 'good member' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(addRes).toEqual({
       success: true,
       note: {
@@ -547,7 +560,7 @@ describe('DiscordAgentToolExecutorService', () => {
       },
     });
 
-    const getRes = await service.execute('get_user_notes', { targetUserId: 'user-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const getRes = await service.execute('get_user_notes', { targetUserId: 'user-1' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(getRes).toEqual({
       guildId: 'guild-1',
       userId: 'user-1',
@@ -563,7 +576,7 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('fetches message context around a target message', async () => {
-    const res = await service.execute('get_message_context', { messageId: 'target-msg', channelId: 'channel-1' }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'fallback-channel' });
+    const res = await service.execute('get_message_context', { messageId: 'target-msg', channelId: 'channel-1' }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'fallback-channel' });
 
     expect(res).toEqual(expect.objectContaining({
       guildId: 'guild-1',
@@ -579,7 +592,7 @@ describe('DiscordAgentToolExecutorService', () => {
       { id: '1', authorId: 'user-1', channelId: 'ch-1', content: 'spam message', createdAt: new Date() },
       { id: '2', authorId: 'user-1', channelId: 'ch-2', content: 'spam message', createdAt: new Date() },
     ]);
-    const res = await service.execute('find_duplicate_messages', { hours: 1 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('find_duplicate_messages', { hours: 1 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res.duplicateCount).toBe(1);
     expect(res.duplicates[0]).toEqual(expect.objectContaining({
       authorId: 'user-1',
@@ -594,7 +607,7 @@ describe('DiscordAgentToolExecutorService', () => {
     (mockPrisma.agentActionProposal.count as any).mockResolvedValueOnce(5);
     (mockPrisma.auditLog.count as any).mockResolvedValueOnce(5).mockResolvedValueOnce(5);
 
-    const res = await service.execute('get_server_stats', {}, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_server_stats', {}, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(res).toEqual(expect.objectContaining({
       guildId: 'guild-1',
       totalMembers: expect.any(Number),
@@ -608,7 +621,7 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('executes get_voice_leaderboard with formatted duration', async () => {
-    const res = await service.execute('get_voice_leaderboard', { days: '7', limit: 10 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_voice_leaderboard', { days: '7', limit: 10 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(mockLeaderboard.getVoiceLeaderboard).toHaveBeenCalledWith('guild-1', '7', 10);
     expect(res).toEqual([
       {
@@ -622,7 +635,7 @@ describe('DiscordAgentToolExecutorService', () => {
   });
 
   it('executes get_chat_leaderboard', async () => {
-    const res = await service.execute('get_chat_leaderboard', { days: '30', limit: 5 }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    const res = await service.execute('get_chat_leaderboard', { days: '30', limit: 5 }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
     expect(mockLeaderboard.getChatLeaderboard).toHaveBeenCalledWith('guild-1', '30', 5);
     expect(res).toEqual([
       {
@@ -653,7 +666,7 @@ describe('DiscordAgentToolExecutorService', () => {
       hours: 24,
       limit: 20,
       includeMessages: true,
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual(expect.objectContaining({
       guildId: 'guild-1',
@@ -705,7 +718,7 @@ describe('DiscordAgentToolExecutorService', () => {
       creationWindowDays: 7,
       similarityThreshold: 0.7,
       limit: 10,
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual(expect.objectContaining({
       guildId: 'guild-1',
@@ -735,7 +748,7 @@ describe('DiscordAgentToolExecutorService', () => {
     const res = await service.execute('detect_role_hierarchy_blockers', {
       targetUserId: 'target-admin',
       actionType: 'TIMEOUT',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res.canExecute).toBe(false);
     expect(res.blockers.some((b: string) => b.includes('higher than or equal to bot role'))).toBe(true);
@@ -763,7 +776,7 @@ describe('DiscordAgentToolExecutorService', () => {
     const res = await service.execute('analyze_channel_permissions_leak', {
       severityThreshold: 'HIGH',
       limit: 10,
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual(expect.objectContaining({
       guildId: 'guild-1',
@@ -777,7 +790,7 @@ describe('DiscordAgentToolExecutorService', () => {
     const testSecret = ['sk', 'testsecret12345'].join('-');
     const res = await service.execute('lookup_domain_reputation', {
       urlOrDomain: `https://discrod-nitro-gift.ru?token=${testSecret}`,
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual(expect.objectContaining({
       isThreat: true,
@@ -816,7 +829,7 @@ describe('DiscordAgentToolExecutorService', () => {
 
     const res = await service.execute('recover_panel_from_message', {
       messageId: 'panel-msg-1',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual({
       recovered: true,
@@ -884,7 +897,7 @@ describe('DiscordAgentToolExecutorService', () => {
 
     const res = await service.execute('find_unlinked_panels', {
       channelId: 'channel-1',
-    }, { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'channel-1' });
+    }, { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'channel-1' });
 
     expect(res).toEqual(expect.objectContaining({
       guildId: 'guild-1',
@@ -903,11 +916,13 @@ describe('DiscordAgentToolExecutorService', () => {
     }));
   });
 
-  describe('web_fetch and web_search tools', () => {
+  describe('web_fetch and web_search tools (Crawl4AI and SearXNG)', () => {
     afterEach(() => {
       jest.restoreAllMocks();
-      delete process.env.BRAVE_SEARCH_API_KEY;
-      delete process.env.TAVILY_API_KEY;
+      delete process.env.SEARXNG_URL;
+      delete process.env.SEARXNG_API_KEY;
+      delete process.env.CRAWL4AI_URL;
+      delete process.env.CRAWL4AI_API_TOKEN;
     });
 
     it('rejects invalid URL or unsupported protocols for web_fetch', async () => {
@@ -915,7 +930,7 @@ describe('DiscordAgentToolExecutorService', () => {
         service.execute(
           'web_fetch',
           { url: 'not-a-valid-url' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(BadRequestException);
 
@@ -923,17 +938,27 @@ describe('DiscordAgentToolExecutorService', () => {
         service.execute(
           'web_fetch',
           { url: 'ftp://files.example.com/data' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('blocks SSRF attempts to localhost, cloud metadata, or private IPs for web_fetch', async () => {
+    it('blocks SSRF attempts to localhost, internal docker hostnames, cloud metadata, or private IPs before calling Crawl4AI', async () => {
+      const fetchSpy = jest.spyOn(global, 'fetch');
+
       await expect(
         service.execute(
           'web_fetch',
           { url: 'http://localhost:3000/admin' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.execute(
+          'web_fetch',
+          { url: 'http://nio-server:3002/internal' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(ForbiddenException);
 
@@ -941,7 +966,7 @@ describe('DiscordAgentToolExecutorService', () => {
         service.execute(
           'web_fetch',
           { url: 'http://169.254.169.254/latest/meta-data' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(ForbiddenException);
 
@@ -949,12 +974,15 @@ describe('DiscordAgentToolExecutorService', () => {
         service.execute(
           'web_fetch',
           { url: 'http://127.0.0.1:8080/secret' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(ForbiddenException);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('blocks domains that resolve to private IP addresses via DNS', async () => {
+    it('blocks domains that resolve to private IP addresses via DNS before calling Crawl4AI', async () => {
+      const fetchSpy = jest.spyOn(global, 'fetch');
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '192.168.1.100', family: 4 },
       ]);
@@ -963,40 +991,39 @@ describe('DiscordAgentToolExecutorService', () => {
         service.execute(
           'web_fetch',
           { url: 'https://internal-service.mycorp.com' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(ForbiddenException);
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('fetches valid public web content and cleans HTML into markdown', async () => {
+    it('fetches valid public web content via Crawl4AI and extracts markdown', async () => {
+      process.env.CRAWL4AI_URL = 'http://crawl4ai.internal:11235';
+      process.env.CRAWL4AI_API_TOKEN = 'crawl-secret';
+
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '93.184.216.34', family: 4 },
       ]);
 
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-          <head><style>body { color: red; }</style></head>
-          <body>
-            <script>alert("xss")</script>
-            <header>Site Header</header>
-            <h1>Test Documentation</h1>
-            <p>Welcome to <b>Nio</b> documentation. Visit <a href="https://example.com/docs">our docs</a>.</p>
-            <ul>
-              <li>Item 1</li>
-              <li>Item 2</li>
-            </ul>
-            <footer>Copyright 2026</footer>
-          </body>
-        </html>
-      `;
-
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+      const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: 'OK',
-        headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
-        text: async () => htmlContent,
+        json: async () => ({
+          success: true,
+          results: [
+            {
+              url: 'https://example.com/info',
+              status_code: 200,
+              success: true,
+              metadata: { title: 'Test Documentation' },
+              markdown: {
+                raw_markdown: '# Test Documentation\nWelcome to Nio documentation. Visit [our docs](https://example.com/docs).\n- Item 1\n- Item 2',
+                fit_markdown: '### Test Documentation\nWelcome to Nio documentation. Visit [our docs](https://example.com/docs).\n- Item 1\n- Item 2',
+              },
+            },
+          ],
+        }),
       } as any);
 
       const res = await service.execute(
@@ -1005,13 +1032,30 @@ describe('DiscordAgentToolExecutorService', () => {
           url: 'https://example.com/info',
           maxChars: 5000,
         },
-        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
+      );
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://crawl4ai.internal:11235/crawl',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer crawl-secret',
+          }),
+          body: JSON.stringify({
+            urls: ['https://example.com/info'],
+            priority: 10,
+          }),
+        }),
       );
 
       expect(res).toEqual(
         expect.objectContaining({
           url: 'https://example.com/info',
+          engine: 'crawl4ai',
           status: 200,
+          title: 'Test Documentation',
           truncated: false,
         }),
       );
@@ -1019,21 +1063,17 @@ describe('DiscordAgentToolExecutorService', () => {
       expect(res.content).toContain('Welcome to Nio documentation');
       expect(res.content).toContain('[our docs](https://example.com/docs)');
       expect(res.content).toContain('- Item 1');
-      expect(res.content).not.toContain('alert("xss")');
-      expect(res.content).not.toContain('Site Header');
-      expect(res.content).not.toContain('Copyright 2026');
     });
 
-    it('handles web_fetch HTTP error responses gracefully', async () => {
+    it('handles Crawl4AI error responses gracefully', async () => {
       jest.spyOn(service as any, 'resolveDns').mockResolvedValueOnce([
         { address: '93.184.216.34', family: 4 },
       ]);
 
       jest.spyOn(global, 'fetch').mockResolvedValueOnce({
         ok: false,
-        status: 404,
-        statusText: 'Not Found',
-        headers: new Headers(),
+        status: 502,
+        statusText: 'Bad Gateway',
       } as any);
 
       const res = await service.execute(
@@ -1041,13 +1081,14 @@ describe('DiscordAgentToolExecutorService', () => {
         {
           url: 'https://example.com/not-found',
         },
-        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
       );
 
       expect(res).toEqual(
         expect.objectContaining({
+          engine: 'crawl4ai',
           success: false,
-          status: 404,
+          status: 502,
         }),
       );
     });
@@ -1057,26 +1098,33 @@ describe('DiscordAgentToolExecutorService', () => {
         service.execute(
           'web_search',
           { query: '   ' },
-          { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+          { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
         ),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('executes web_search using Brave Search API when configured', async () => {
-      process.env.BRAVE_SEARCH_API_KEY = 'test-brave-key';
+    it('executes web_search using SearXNG JSON API', async () => {
+      process.env.SEARXNG_URL = 'http://searxng.internal:8080/';
 
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+      const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
         ok: true,
+        status: 200,
         json: async () => ({
-          web: {
-            results: [
-              {
-                title: 'Discord JS Guide',
-                url: 'https://discordjs.guide',
-                description: 'Comprehensive guide',
-              },
-            ],
-          },
+          query: 'discord js guide',
+          results: [
+            {
+              title: 'Discord <b>JS</b> Guide',
+              url: 'https://discordjs.guide',
+              content: 'Comprehensive guide for Discord.js bots.',
+              engine: 'duckduckgo',
+            },
+            {
+              title: 'NestJS Docs',
+              url: 'https://docs.nestjs.com',
+              content: 'A progressive Node.js framework.',
+              engine: 'google',
+            },
+          ],
         }),
       } as any);
 
@@ -1084,85 +1132,39 @@ describe('DiscordAgentToolExecutorService', () => {
         'web_search',
         {
           query: 'discord js guide',
-          limit: 3,
+          limit: 1,
         },
-        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
       );
 
-      expect(res).toEqual(
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://searxng.internal:8080/search?q=discord%20js%20guide&format=json',
         expect.objectContaining({
-          engine: 'brave',
-          count: 1,
-          results: [
-            {
-              title: 'Discord JS Guide',
-              url: 'https://discordjs.guide',
-              snippet: 'Comprehensive guide',
-            },
-          ],
+          headers: expect.objectContaining({
+            Accept: 'application/json',
+          }),
         }),
       );
+
+      expect(res).toEqual({
+        engine: 'searxng',
+        query: 'discord js guide',
+        count: 1,
+        results: [
+          {
+            title: 'Discord JS Guide',
+            url: 'https://discordjs.guide',
+            snippet: 'Comprehensive guide for Discord.js bots.',
+            sourceEngine: 'duckduckgo',
+          },
+        ],
+      });
     });
 
-    it('executes web_search using Tavily Search API when configured', async () => {
-      process.env.TAVILY_API_KEY = 'test-tavily-key';
-
+    it('returns empty results with warning when SearXNG responds with non-OK status', async () => {
       jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          results: [
-            {
-              title: 'NestJS Docs',
-              url: 'https://docs.nestjs.com',
-              content: 'A progressive Node.js framework',
-            },
-          ],
-        }),
-      } as any);
-
-      const res = await service.execute(
-        'web_search',
-        {
-          query: 'nestjs documentation',
-          limit: 3,
-        },
-        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
-      );
-
-      expect(res).toEqual(
-        expect.objectContaining({
-          engine: 'tavily',
-          count: 1,
-          results: [
-            {
-              title: 'NestJS Docs',
-              url: 'https://docs.nestjs.com',
-              snippet: 'A progressive Node.js framework',
-            },
-          ],
-        }),
-      );
-    });
-
-    it('falls back to DuckDuckGo HTML scraping for zero-config web_search', async () => {
-      const mockDdgHtml = `
-        <div class="result results_links results_links_deep web-result ">
-          <div class="result__body links_main links_deep">
-            <h2 class="result__title">
-              <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fddg-result&rut=123">
-                Example <b>Title</b>
-              </a>
-            </h2>
-            <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fddg-result&rut=123">
-              This is a test snippet from DuckDuckGo.
-            </a>
-          </div>
-        </div>
-      `;
-
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: true,
-        text: async () => mockDdgHtml,
+        ok: false,
+        status: 503,
       } as any);
 
       const res = await service.execute(
@@ -1171,22 +1173,16 @@ describe('DiscordAgentToolExecutorService', () => {
           query: 'example query',
           limit: 5,
         },
-        { guildId: 'guild-1', requestedById: 'admin-1', channelId: 'ch-1' },
+        { guildId: 'guild-1', profile: 'ADMIN', userId: 'admin-1', requestedById: 'admin-1', channelId: 'ch-1' },
       );
 
-      expect(res).toEqual(
-        expect.objectContaining({
-          engine: 'duckduckgo',
-          count: 1,
-          results: [
-            {
-              title: 'Example Title',
-              url: 'https://example.com/ddg-result',
-              snippet: 'This is a test snippet from DuckDuckGo.',
-            },
-          ],
-        }),
-      );
+      expect(res).toEqual({
+        engine: 'searxng',
+        query: 'example query',
+        count: 0,
+        results: [],
+        warning: 'Search request returned HTTP 503',
+      });
     });
   });
 });

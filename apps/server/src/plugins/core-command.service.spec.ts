@@ -48,6 +48,21 @@ describe('/voice', () => {
     });
   });
 
+  it('registers guild-only /ai and /admin-ai commands with a required prompt option', () => {
+    const aiCmd = CORE_PLUGIN.commands.find(item => item.name === 'ai');
+    const adminAiCmd = CORE_PLUGIN.commands.find(item => item.name === 'admin-ai');
+    expect(aiCmd?.data).toMatchObject({
+      name: 'ai',
+      dm_permission: false,
+      options: [expect.objectContaining({ name: 'prompt', type: ApplicationCommandOptionType.String, required: true })],
+    });
+    expect(adminAiCmd?.data).toMatchObject({
+      name: 'admin-ai',
+      dm_permission: false,
+      options: [expect.objectContaining({ name: 'prompt', type: ApplicationCommandOptionType.String, required: true })],
+    });
+  });
+
   it('sends only the rendered voice stats card image without an embed', async () => {
     await service.execute('voice', interaction);
     expect(interaction.deferReply).toHaveBeenCalledWith();

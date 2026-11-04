@@ -25,7 +25,7 @@ describe('DiscordMessageLogService', () => {
     service = new DiscordMessageLogService(prisma);
   });
 
-  it('creates or updates a message log when the agent is enabled', async () => {
+  it('creates or updates a message log when the ADMIN agent is enabled', async () => {
     (mockPrisma as any).discordAgentSettings = {
       findUnique: jest.fn(async () => ({ enabled: true, excludedChannelIds: [] })),
     };
@@ -42,6 +42,7 @@ describe('DiscordMessageLogService', () => {
     });
 
     expect(prisma.discordMessageLog.upsert).toHaveBeenCalledTimes(1);
+    expect((mockPrisma as any).discordAgentSettings.findUnique).toHaveBeenCalledWith({ where: { guildId_profile: { guildId: 'guild-1', profile: 'ADMIN' } } });
   });
 
   it('does not log messages from excluded channels', async () => {

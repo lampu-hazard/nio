@@ -1,3 +1,5 @@
+import { AgentProfile } from './agent-profile.types';
+
 export type AgentActionType =
   | 'BATCH'
   | 'WARN' | 'TIMEOUT' | 'UPDATE_SETTINGS' | 'KICK' | 'BAN' | 'PURGE'
@@ -105,6 +107,8 @@ export type AgentActionRecommendation = {
 };
 
 export type CreateAgentActionProposalInput = {
+  profile: AgentProfile;
+  originToolId: string;
   guildId: string;
   channelId: string;
   requestedById: string;

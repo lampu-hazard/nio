@@ -15,7 +15,7 @@ describe('Discord image routing', () => {
     const message: any = { id: 'msg', guild: { id: 'guild', members: { me: {} }, maximumAttachmentSize: 10485760 }, channel: { id: 'channel', isThread: () => false, permissionsFor: () => ({ has: () => true }) },
       author: { id: 'user' }, content: '<@123> gambar burung', attachments: new Map(), embeds: [], mentions: { has: () => true }, reply: async () => loading };
     await service.handleAgentMessage(message);
-    expect(service.images.handle).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'burung', canAttach: true, messageId: 'msg', attachmentLimit: 8388608 }));
+    expect(service.images.handle).toHaveBeenCalledWith(expect.objectContaining({ profile: 'PUBLIC', prompt: 'burung', canAttach: true, messageId: 'msg', attachmentLimit: 8388608 }));
     expect(service.agent.getAccessDecision).not.toHaveBeenCalled();
     expect(service.agent.handleMention).not.toHaveBeenCalled();
     expect(service.conversationMemory.saveConversation).not.toHaveBeenCalled();

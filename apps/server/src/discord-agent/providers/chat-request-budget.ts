@@ -1,4 +1,4 @@
-import { PreparedChatCall } from '../interfaces/ai-provider.interface';
+import { PreparedChatCall, TokenEstimate } from '../interfaces/ai-provider.interface';
 
 export class ProviderCallError extends Error {
   constructor(readonly code: string, readonly dispatched: boolean, readonly definiteRejection = false) {
@@ -6,12 +6,17 @@ export class ProviderCallError extends Error {
   }
 }
 
-export function prepareChatBody(payload: unknown, messages: number, tools: number, cap: number): PreparedChatCall {
+export function prepareChatBody(payload: unknown, cap: number, estimate: TokenEstimate): PreparedChatCall {
   if (!Number.isInteger(cap) || cap < 128 || cap > 8192) throw new ProviderCallError('OUTPUT_CAP_INVALID', false);
   const body = JSON.stringify(payload);
-  const bytes = Buffer.byteLength(body, 'utf8');
-  if (bytes > 1048576) throw new ProviderCallError('REQUEST_TOO_LARGE', false);
-  return Object.freeze({ body, inputAllowance: bytes + 1024 + 64 * (messages + tools), maxOutputTokens: cap });
+  const serializedBytes = Buffer.byteLength(body, 'utf8');
+  if (serializedBytes > 1048576) throw new ProviderCallError('REQUEST_TOO_LARGE', false);
+  return Object.freeze({
+    body,
+    serializedBytes,
+    estimate: Object.freeze({ ...estimate }),
+    maxOutputTokens: cap,
+  });
 }
 
 export function validateTokenUsage(usage: unknown): number | null {

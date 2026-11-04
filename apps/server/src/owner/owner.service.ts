@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DiscordBotService } from '../discord/discord-bot.service';
 import { AiAgentSettingsService } from '../discord-agent/ai-agent-settings.service';
+import { parseAgentProfile } from '../discord-agent/agent-profile.types';
 import { UpdateAiAgentSettingsDto } from '../discord-agent/dto/update-ai-agent-settings.dto';
 import { GuildsService } from '../guilds/guilds.service';
 import { UpdateSettingsDto } from '../guilds/dto/update-settings.dto';
@@ -51,21 +52,22 @@ export class OwnerService {
     return live.filter((guild) => !filter || guild.name.toLocaleLowerCase().includes(filter) || guild.id.includes(filter));
   }
 
-  async getGuild(guildId: string, days = 30) {
+  async getGuild(guildId: string, days = 30, profile?: string) {
     const guild = this.bot.client.guilds.cache.get(guildId);
     if (!guild) throw new NotFoundException('Bot is not currently in this guild.');
+    const resolvedProfile = parseAgentProfile(profile ?? 'ADMIN');
     const boundedDays = this.boundedDays(days);
     const since = new Date(Date.now() - boundedDays * 24 * 60 * 60 * 1000);
     const [settings, aiSettings, usage] = await Promise.all([
       this.guilds.getSettings(guildId),
-      this.aiSettings.getSettings(guildId),
+      this.aiSettings.getSettings({ guildId, profile: resolvedProfile }),
       this.prisma.agentInteractionLog.aggregate({
-        where: { guildId, createdAt: { gte: since } },
+        where: { guildId, profile: resolvedProfile, createdAt: { gte: since } },
         _count: { _all: true },
         _sum: { promptTokens: true, completionTokens: true, totalTokens: true },
       }),
     ]);
-    const failures = await this.prisma.agentInteractionLog.count({ where: { guildId, createdAt: { gte: since }, status: 'FAILED' } });
+    const failures = await this.prisma.agentInteractionLog.count({ where: { guildId, profile: resolvedProfile, createdAt: { gte: since }, status: 'FAILED' } });
     const { hasCredential, ...safeAiSettings } = aiSettings;
     return {
       guild: { id: guild.id, name: guild.name, iconUrl: guild.iconURL({ size: 128 }), memberCount: guild.memberCount, createdAt: guild.createdAt.toISOString() },
@@ -80,12 +82,13 @@ export class OwnerService {
     return this.guilds.updateSettings(guildId, dto);
   }
 
-  updateAiSettings(guildId: string, dto: UpdateAiAgentSettingsDto) {
+  updateAiSettings(guildId: string, dto: UpdateAiAgentSettingsDto, profile?: string) {
     this.requirePresentGuild(guildId);
     if (dto.apiKey !== undefined || dto.clearApiKey !== undefined) {
       throw new BadRequestException('Credential changes are not available in the owner console.');
     }
-    return this.aiSettings.updateSettings(guildId, dto);
+    const resolvedProfile = parseAgentProfile(profile ?? 'ADMIN');
+    return this.aiSettings.updateSettings({ guildId, profile: resolvedProfile }, dto);
   }
 
   async leaveGuild(guildId: string) {

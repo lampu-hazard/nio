@@ -12,7 +12,7 @@ describe('quota-aware image generation', () => {
   let attempts: any[];
   let outcomes: any[];
   const lease = { guildId: 'guild', userId: 'user', requestId: 'message', fence: 1n, expiresAt: new Date(Date.now() + 60000) };
-  const input = { guildId: 'guild', channelId: 'channel', userId: 'user', messageId: 'message', prompt: 'bird', attachmentLimit: 8388608, canAttach: true };
+  const input = { guildId: 'guild', profile: 'PUBLIC' as const, channelId: 'channel', userId: 'user', messageId: 'message', prompt: 'bird', attachmentLimit: 8388608, canAttach: true };
   beforeEach(() => {
     attempts = []; outcomes = [];
     settings = { accessMode: 'ROLE_QUOTAS', policyRevision: 1n, imageEnabled: true, imageBaseUrl: 'https://provider.example/v1', imageModel: 'image-model', imageCredentialSource: 'SEPARATE', encryptedImageApiKey: 'encrypted-image', dailyGuildImageLimit: 10 };
@@ -34,7 +34,7 @@ describe('quota-aware image generation', () => {
     const result = await service.handle(input);
     expect(result.files?.[0]).toMatchObject({ name: 'nio-generated.png', attachment: Buffer.from('validated-image') });
     expect(result).not.toHaveProperty('conversationTurns');
-    expect(attempts[0]).toMatchObject({ capability: 'IMAGE', tokens: 0, images: 1, requestKey: 'guild:message:IMAGE', memberLimit: 2, guildLimit: 10 });
+    expect(attempts[0]).toMatchObject({ profile: 'PUBLIC', capability: 'IMAGE', tokens: 0, images: 1, requestKey: 'guild:PUBLIC:message:IMAGE', memberLimit: 2, guildLimit: 10 });
     expect(outcomes).toEqual([{ kind: 'REPORTED', images: 1, code: 'OK', chargedImages: 1n }]);
     expect(quota.releaseLease).toHaveBeenCalledTimes(1);
   });
@@ -109,7 +109,7 @@ describe('quota-aware image generation', () => {
     const runs = { start: jest.fn<any>(async () => ({ id: 'run-1' })), finish: jest.fn<any>(async () => {}) };
     service = new AgentImageService(access, quota, provider, { decryptApiKey: () => 'secret-key' } as any, runs as any);
     await service.handle({ ...input, prompt: 'sensitive prompt text' });
-    expect(runs.start).toHaveBeenCalledWith('guild', 'channel', 'user', 30);
+    expect(runs.start).toHaveBeenCalledWith({ guildId: 'guild', profile: 'PUBLIC', channelId: 'channel', userId: 'user' }, 30);
     expect(runs.finish).toHaveBeenCalledWith('run-1', 'COMPLETED', 'Gambar selesai dibuat.');
     expect(JSON.stringify(runs.finish.mock.calls)).not.toContain('sensitive prompt text');
     expect(JSON.stringify(runs.finish.mock.calls)).not.toContain('secret-key');

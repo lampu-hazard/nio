@@ -1,12 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { isIP } from 'node:net';
 import * as ipaddr from 'ipaddr.js';
-import { Client } from 'discord.js';
+import { Client, GuildBasedChannel, PermissionFlagsBits } from 'discord.js';
 import { Prisma } from '@prisma/client';
 import { AgentRoleRule, AgentUserTokenRule } from './agent-policy.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CredentialEncryptionService } from '../plugins/credential-encryption.service';
 import { UpdateAiAgentSettingsDto } from './dto/update-ai-agent-settings.dto';
+import { AgentProfile, AgentScope, parseAgentProfile } from './agent-profile.types';
 
 const DEFAULTS = {
   enabled: false,
@@ -26,7 +27,18 @@ const DEFAULTS = {
   imageBaseUrl: null as string | null,
   imageModel: null as string | null,
   imageCredentialSource: 'SEPARATE',
+  systemPrompt: null as string | null,
+  messageRetentionDays: 30,
+  allowedToolIds: [] as string[],
+  tokenQuotaMode: 'LIMITED',
 };
+
+function profileDefaults(profile: AgentProfile) {
+  return { ...DEFAULTS, profile,
+    tokenQuotaMode: profile === 'ADMIN' ? 'UNLIMITED' : 'LIMITED',
+    dailyGuildTokenLimit: profile === 'ADMIN' ? null : DEFAULTS.dailyGuildTokenLimit,
+    maxRunTokens: profile === 'ADMIN' ? null : DEFAULTS.maxRunTokens };
+}
 
 @Injectable()
 export class AiAgentSettingsService {
@@ -38,30 +50,43 @@ export class AiAgentSettingsService {
     this.client = client;
   }
 
-  async getSettings(guildId: string) {
-    const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId }, include: { roleRules: true } });
-    return this.redact(settings);
+  async getSettings(scope: AgentScope) {
+    const profile = parseAgentProfile(scope.profile);
+    const settings = await this.prisma.discordAgentSettings.findUnique({ where: { guildId_profile: { guildId: scope.guildId, profile } }, include: { roleRules: true } });
+    return this.redact(profile, settings);
   }
 
-  async updateSettings(guildId: string, dto: UpdateAiAgentSettingsDto) {
+  async updateSettings(scope: AgentScope, dto: UpdateAiAgentSettingsDto) {
+    const { guildId } = scope;
+    const profile = parseAgentProfile(scope.profile);
+    if (profile === 'ADMIN' && (dto.userTokenRules !== undefined
+      || (dto.dailyGuildTokenLimit !== undefined && dto.dailyGuildTokenLimit !== null)
+      || (dto.maxRunTokens !== undefined && dto.maxRunTokens !== null))) throw new BadRequestException('ADMIN token quotas are not applicable.');
     const writable = new Set([...Object.keys(DEFAULTS), 'roleRules', 'apiKey', 'clearApiKey', 'imageApiKey', 'clearImageApiKey']);
     if (Object.keys(dto).some((key) => !writable.has(key))) throw new BadRequestException('Unknown AI settings field.');
     const guild = this.client?.guilds.cache.get(guildId);
     const roles = dto.roleRules === undefined ? null : await guild?.roles.fetch().catch(() => null);
     // Serializable protects the complete effective snapshot, including omitted fields.
     const save = () => this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "guildId" FROM "DiscordAgentSettings" WHERE "guildId" = ${guildId} FOR UPDATE`;
-      const existing = await tx.discordAgentSettings.findUnique({ where: { guildId }, include: { roleRules: true } });
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${guildId}, 0))`;
+      await tx.$queryRaw`SELECT "guildId" FROM "DiscordAgentSettings" WHERE "guildId" = ${guildId} AND "profile" = ${profile} FOR UPDATE`;
+      const existing = await tx.discordAgentSettings.findUnique({ where: { guildId_profile: { guildId, profile } }, include: { roleRules: true } });
       const { apiKey, clearApiKey, imageApiKey, clearImageApiKey, roleRules, userTokenRules, ...fields } = dto;
       const update = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
-      const effective = { ...DEFAULTS, ...existing, ...update };
+      const defaults = profileDefaults(profile);
+      const effective = { ...defaults, ...existing, ...update, profile };
       this.validateEffective(effective);
+      if (dto.allowedUserIds !== undefined || (dto.accessMode !== undefined && dto.accessMode !== 'ROLE_QUOTAS')) {
+        throw new BadRequestException('Legacy user grants are read-only migration data.');
+      }
       for (const ids of [dto.allowedUserIds, dto.allowedChannelIds, dto.excludedChannelIds]) {
         if (ids !== undefined && (!Array.isArray(ids) || ids.length > 500 || ids.some((id) => typeof id !== 'string' || (id !== '*' && !/^\d{5,25}$/.test(id))))) {
           throw new BadRequestException('Discord ID list is invalid.');
         }
       }
-      if (roleRules !== undefined) this.validateRoleRules(roleRules, existing?.roleRules ?? [], roles ?? null);
+      if (roleRules !== undefined) this.validateRoleRules(profile, roleRules, existing?.roleRules ?? [], roles ?? null);
+      const otherProfiles = await tx.discordAgentSettings.findMany({ where: { guildId, profile: { not: profile } } });
+      await this.validateChannels(guildId, effective, roleRules ?? existing?.roleRules ?? [], otherProfiles);
       const encrypted: { encryptedApiKey?: string | null; encryptedImageApiKey?: string | null } = {};
       for (const [key, clear, field] of [
         [apiKey, clearApiKey, 'encryptedApiKey'],
@@ -92,10 +117,10 @@ export class AiAgentSettingsService {
       const baseData = { ...update, ...encrypted,
         ...(userTokenRules === undefined ? {} : { userTokenRules: userTokenRules.map(({ userId, dailyTokenLimit }) => ({ userId, dailyTokenLimit })) }) };
       const row = await tx.discordAgentSettings.upsert({
-        where: { guildId },
+        where: { guildId_profile: { guildId, profile } },
         create: {
           guildId,
-          ...DEFAULTS,
+          ...defaults,
           ...baseData,
           ...(rules === undefined ? {} : { roleRules: { create: rules } }),
           policyRevision: 1n,
@@ -107,7 +132,7 @@ export class AiAgentSettingsService {
         },
         include: { roleRules: true },
       });
-      return this.redact(row);
+      return this.redact(profile, row);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     for (let attempt = 0; ; attempt++) {
       try { return await save(); }
@@ -117,18 +142,20 @@ export class AiAgentSettingsService {
     }
   }
 
-  async getUsage(guildId: string, days = 30) {
+  async getUsage(scope: AgentScope, days = 30) {
+    const { guildId } = scope;
+    const profile = parseAgentProfile(scope.profile);
     const boundedDays = Number.isFinite(days) ? Math.max(1, Math.min(90, Math.floor(days))) : 30;
     const since = new Date(Date.now() - boundedDays * 24 * 60 * 60 * 1000);
     const rows = await this.prisma.agentInteractionLog.groupBy({
       by: ['userId'],
-      where: { guildId, createdAt: { gte: since } },
+      where: { guildId, profile, createdAt: { gte: since } },
       _count: { _all: true },
       _sum: { promptTokens: true, completionTokens: true, totalTokens: true },
     });
     const failures = await this.prisma.agentInteractionLog.groupBy({
       by: ['userId'],
-      where: { guildId, createdAt: { gte: since }, status: 'FAILED' },
+      where: { guildId, profile, createdAt: { gte: since }, status: 'FAILED' },
       _count: { _all: true },
     });
     const failedByUser = new Map(failures.map((row) => [row.userId, row._count._all]));
@@ -216,25 +243,35 @@ export class AiAgentSettingsService {
     };
   }
 
-  private redact(row: (Prisma.DiscordAgentSettingsGetPayload<{ include: { roleRules: true } }>) | null) {
-    const { encryptedApiKey, encryptedImageApiKey, policyRevision, roleRules, ...safe } = row ?? {};
-    return { ...DEFAULTS, ...safe, roleRules: roleRules ?? [], policyRevision: String(policyRevision ?? 0n),
+  private redact(profile: AgentProfile, row: (Prisma.DiscordAgentSettingsGetPayload<{ include: { roleRules: true } }>) | null) {
+    const { encryptedApiKey, encryptedImageApiKey, policyRevision, roleRules, migrationAudit, ...safe } = row ?? {};
+    return { ...profileDefaults(profile), ...safe, roleRules: roleRules ?? [], policyRevision: String(policyRevision ?? 0n),
       baseUrl: row?.baseUrl || null, hasCredential: Boolean(encryptedApiKey), hasImageCredential: Boolean(encryptedImageApiKey) };
   }
 
   private validateEffective(settings: Record<string, unknown>) {
     const invalid = () => { throw new BadRequestException('AI settings are invalid.'); };
     if (!['gemini', 'openai-compatible'].includes(String(settings.provider))) invalid();
-    if (!['LEGACY_USERS', 'ROLE_QUOTAS'].includes(String(settings.accessMode))) invalid();
+    if (settings.accessMode !== 'ROLE_QUOTAS') invalid();
+    const profile = parseAgentProfile(settings.profile);
+    if (settings.tokenQuotaMode !== (profile === 'ADMIN' ? 'UNLIMITED' : 'LIMITED')) invalid();
+    if (profile === 'ADMIN' && (settings.dailyGuildTokenLimit !== null || settings.maxRunTokens !== null)) invalid();
+    if (settings.systemPrompt !== null && (typeof settings.systemPrompt !== 'string' || settings.systemPrompt.length > 32000)) invalid();
+    if (!Number.isInteger(settings.messageRetentionDays) || Number(settings.messageRetentionDays) < 1 || Number(settings.messageRetentionDays) > 90) invalid();
+    if (!Array.isArray(settings.allowedToolIds) || settings.allowedToolIds.length > 500
+      || settings.allowedToolIds.some((id) => typeof id !== 'string' || !/^[a-zA-Z0-9_.:-]{1,200}$/.test(id))
+      || new Set(settings.allowedToolIds).size !== settings.allowedToolIds.length) invalid();
+    if (profile === 'PUBLIC' && (settings.allowedToolIds as string[]).some((id) => !['web_search', 'web_fetch'].includes(id))) invalid();
     if (!['SEPARATE', 'CHAT'].includes(String(settings.imageCredentialSource))) invalid();
     for (const [name, min, max] of [
       ['dailyGuildTokenLimit', 1, 1000000000], ['dailyGuildImageLimit', 0, 10000],
       ['maxOutputTokens', 128, 8192], ['maxRunTokens', 1024, 262144],
     ] as const) {
+      if (profile === 'ADMIN' && (name === 'dailyGuildTokenLimit' || name === 'maxRunTokens')) continue;
       const value = settings[name];
       if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) invalid();
     }
-    if (Number(settings.maxRunTokens) < Number(settings.maxOutputTokens)) invalid();
+    if (profile === 'PUBLIC' && Number(settings.maxRunTokens) < Number(settings.maxOutputTokens)) invalid();
     if (typeof settings.model !== 'string' || !settings.model.trim() || settings.model.length > 120) invalid();
     if (settings.provider === 'gemini' && settings.baseUrl) throw new BadRequestException('Gemini does not use a custom base URL.');
     if (settings.baseUrl) this.validateBaseUrl(String(settings.baseUrl));
@@ -257,15 +294,55 @@ export class AiAgentSettingsService {
     }
   }
 
-  private validateRoleRules(rules: AgentRoleRule[], previous: AgentRoleRule[], roles: { has(id: string): boolean } | null) {
+  private async validateChannels(guildId: string, effective: Record<string, any>, rules: AgentRoleRule[], others: { allowedChannelIds: string[] }[]) {
+    const ids = effective.allowedChannelIds as string[];
+    if (ids.includes('*')) throw new BadRequestException('Select explicit channels.');
+    if (effective.enabled && (!ids.length || !rules.some((rule) => rule.chatEnabled || rule.imageEnabled))) {
+      throw new BadRequestException('Enabled profiles require explicit channels and roles.');
+    }
+    const guild = this.client?.guilds.cache.get(guildId);
+    const channels = new Map<string, GuildBasedChannel>();
+    for (const id of new Set([...ids, ...others.flatMap((other) => other.allowedChannelIds)])) {
+      try {
+        const channel = await guild?.channels.fetch(id, { force: true });
+        if (channel && channel.guildId === guildId && channel.isTextBased()) channels.set(id, channel);
+      } catch { /* Unavailable channels cannot activate a profile. */ }
+    }
+    for (const other of others) for (const id of ids) for (const otherId of other.allowedChannelIds) {
+      if (id === otherId || channels.get(id)?.parentId === otherId || channels.get(otherId)?.parentId === id) {
+        throw new BadRequestException('Channel is assigned to another profile.');
+      }
+    }
+    if (!effective.enabled) return;
+    const roles = await guild?.roles.fetch().catch(() => null);
+    if (!rules.some((rule) => roles?.has(rule.roleId) && (rule.chatEnabled || (effective.imageEnabled && rule.imageEnabled)))) {
+      throw new BadRequestException('Select an available role with an enabled capability.');
+    }
+    const bot = await guild?.members.fetchMe({ force: true }).catch(() => null);
+    const usable = ids.some((id) => {
+      const channel = channels.get(id);
+      if (!channel || !bot || effective.excludedChannelIds.includes('*') || effective.excludedChannelIds.includes(id)
+        || (channel.parentId && effective.excludedChannelIds.includes(channel.parentId))) return false;
+      const thread = channel.isThread();
+      if (thread && (channel.archived || channel.locked)) return false;
+      const permissions = channel.permissionsFor(bot);
+      return permissions?.has(PermissionFlagsBits.ViewChannel)
+        && permissions.has(thread ? PermissionFlagsBits.SendMessagesInThreads : PermissionFlagsBits.SendMessages);
+    });
+    if (!usable) throw new BadRequestException('Select an available, non-excluded channel where the bot can view and send messages.');
+  }
+
+  private validateRoleRules(profile: AgentProfile, rules: AgentRoleRule[], previous: AgentRoleRule[], roles: { has(id: string): boolean } | null) {
     if (!Array.isArray(rules) || rules.length > 100) throw new BadRequestException('At most 100 role rules are allowed.');
     const ids = new Set<string>();
     for (const rule of rules) {
       if (!rule || typeof rule.roleId !== 'string' || !/^\d{5,25}$/.test(rule.roleId) || ids.has(rule.roleId)
         || typeof rule.chatEnabled !== 'boolean' || typeof rule.imageEnabled !== 'boolean'
-        || !Number.isSafeInteger(rule.dailyTokenLimit) || rule.dailyTokenLimit < 0 || rule.dailyTokenLimit > 100000000
+        || (profile === 'ADMIN' ? rule.dailyTokenLimit !== null : (typeof rule.dailyTokenLimit !== 'number'
+          || !Number.isSafeInteger(rule.dailyTokenLimit) || rule.dailyTokenLimit < 0 || rule.dailyTokenLimit > 100000000
+          || (rule.chatEnabled && !rule.dailyTokenLimit)))
         || !Number.isSafeInteger(rule.dailyImageLimit) || rule.dailyImageLimit < 0 || rule.dailyImageLimit > 1000
-        || (rule.chatEnabled && !rule.dailyTokenLimit) || (rule.imageEnabled && !rule.dailyImageLimit)) {
+        || (rule.imageEnabled && !rule.dailyImageLimit)) {
         throw new BadRequestException('Role policy is invalid.');
       }
       ids.add(rule.roleId);

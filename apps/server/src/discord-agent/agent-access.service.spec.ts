@@ -1,123 +1,104 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { PermissionFlagsBits } from 'discord.js';
 import { AgentAccessService } from './agent-access.service';
+import { AgentRequestScope } from './agent-profile.types';
 
+const scope: AgentRequestScope = { guildId: '10000', channelId: '30000', userId: '40000', profile: 'PUBLIC' };
 const rule = { roleId: '20000', chatEnabled: true, imageEnabled: true, dailyTokenLimit: 100000, dailyImageLimit: 5 };
 
-describe('AgentAccessService', () => {
+describe('AgentAccessService profile admission', () => {
   let settings: any;
   let guild: any;
+  let channel: any;
+  let member: any;
   let service: AgentAccessService;
   let prisma: any;
 
   beforeEach(() => {
-    settings = { enabled: true, accessMode: 'ROLE_QUOTAS', policyRevision: 1n,
-      allowedUserIds: ['*'], allowedChannelIds: ['other'], excludedChannelIds: [],
-      imageEnabled: true, roleRules: [rule] };
-    guild = { id: '10000', ownerId: '40000', roles: { fetch: jest.fn<any>(async () => new Map([['20000', {}], ['10000', {}]])) },
-      members: { fetch: jest.fn<any>(async () => ({ guild: { id: '10000' }, roles: { cache: new Map([['20000', {}]]) } })) } };
+    settings = { profile: 'PUBLIC', tokenQuotaMode: 'LIMITED', enabled: true, accessMode: 'ROLE_QUOTAS', policyRevision: 1n,
+      allowedUserIds: ['*'], allowedChannelIds: ['30000'], excludedChannelIds: [], userTokenRules: [], imageEnabled: true, roleRules: [rule] };
+    member = { guild: { id: '10000' }, roles: { cache: new Map([['20000', {}]]) } };
+    channel = { guildId: '10000', isTextBased: () => true, isThread: () => false,
+      permissionsFor: jest.fn<any>(() => ({ has: () => true })) };
+    guild = { id: '10000', roles: { fetch: jest.fn<any>(async () => new Map([['20000', {}], ['10000', {}]])) },
+      channels: { fetch: jest.fn<any>(async () => channel) },
+      members: { fetch: jest.fn<any>(async () => member), fetchMe: jest.fn<any>(async () => ({ id: 'bot' })) } };
     prisma = { discordAgentSettings: { findUnique: jest.fn<any>(async () => settings) } };
     service = new AgentAccessService(prisma);
     service.setClient({ guilds: { cache: new Map([['10000', guild]]) } } as any);
   });
 
-  it('reports current allowances for quota pages without requiring chat permission', async () => {
-    const result = await service.getAllowances('10000', [{ ...rule, chatEnabled: false }], ['40000']);
-    expect(result.get('40000')).toMatchObject({ dailyTokenLimit: 0, dailyImageLimit: 5 });
-  });
-  it('reports an unavailable allowance, not invented zero capacity, when Discord fails', async () => {
-    guild.members.fetch.mockRejectedValue(new Error('offline'));
-    expect((await service.getAllowances('10000', [rule], ['40000'])).get('40000')).toBeNull();
-  });
-  it('refreshes authoritative membership and returns a coherent revisioned snapshot', async () => {
-    const result = await service.resolve('10000', '30000', '40000', 'CHAT');
-    expect(result).toMatchObject({ allowed: true, settings: { policyRevision: 1n }, allowance: { dailyTokenLimit: 100000 } });
+  it('refreshes membership and reads exactly the requested profile', async () => {
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true, allowance: { dailyTokenLimit: 100000 } });
+    expect(prisma.discordAgentSettings.findUnique).toHaveBeenCalledWith({ where: { guildId_profile: { guildId: '10000', profile: 'PUBLIC' } }, include: { roleRules: true } });
     expect(guild.members.fetch).toHaveBeenCalledWith({ user: '40000', force: true });
   });
-
-  it('does not let wildcard, owner, or administrator bypass absent roles', async () => {
-    guild.members.fetch.mockResolvedValue({ guild: { id: '10000' }, permissions: { has: () => true }, roles: { cache: new Map() } });
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: false, code: 'ROLE_DENIED' });
+  it('does not let a personal override or owner permissions bypass role admission', async () => {
+    member.roles.cache.clear();
+    member.permissions = { has: () => true };
+    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: null }];
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'ROLE_DENIED' });
   });
-
-  it('excludes deleted roles even when a member cache still contains them', async () => {
-    guild.roles.fetch.mockResolvedValue(new Map());
-    expect(await service.resolve('10000', '30000', '40000', 'IMAGE')).toMatchObject({ allowed: false });
+  it('applies personal limits only after a matching chat role grants entry', async () => {
+    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: 50 }];
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true, allowance: { dailyTokenLimit: 50, dailyImageLimit: 5 } });
+    settings.userTokenRules[0].dailyTokenLimit = null;
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true, allowance: { dailyTokenLimit: null } });
   });
-
-  it('fails closed on membership refresh failure', async () => {
-    guild.members.fetch.mockRejectedValue(new Error('unavailable'));
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: false, code: 'MEMBERSHIP_UNAVAILABLE' });
+  it('admits ADMIN with a null role cap but never uses personal rules', async () => {
+    settings = { ...settings, profile: 'ADMIN', tokenQuotaMode: 'UNLIMITED', roleRules: [{ ...rule, dailyTokenLimit: null }], userTokenRules: [] };
+    expect(await service.resolve({ ...scope, profile: 'ADMIN' }, 'CHAT')).toMatchObject({ allowed: true, allowance: { dailyTokenLimit: null } });
+    settings.roleRules = [];
+    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: null }];
+    expect(await service.resolve({ ...scope, profile: 'ADMIN' }, 'CHAT')).toMatchObject({ allowed: false, code: 'ROLE_DENIED' });
   });
-
-  it('uses explicit everyone grants', async () => {
-    settings.roleRules = [{ ...rule, roleId: '10000' }];
-    guild.members.fetch.mockResolvedValue({ guild: { id: '10000' }, roles: { cache: new Map() } });
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: true });
+  it('denies legacy and environment grants', async () => {
+    settings.accessMode = 'LEGACY_USERS';
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'POLICY_INVALID' });
+    settings = null;
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'DISABLED' });
   });
-
-  it('allows image-only roles without granting chat', async () => {
-    settings.roleRules = [{ ...rule, chatEnabled: false }];
-    expect(await service.resolve('10000', '30000', '40000', 'IMAGE')).toMatchObject({ allowed: true, allowance: { dailyTokenLimit: 0 } });
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: false });
-  });
-
-  it.each(['CHAT', 'IMAGE'] as const)('applies excluded channels to %s', async (capability) => {
+  it('requires a configured channel and rejects exclusions before member lookup', async () => {
+    settings.allowedChannelIds = ['other'];
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_DENIED' });
     settings.excludedChannelIds = ['30000'];
-    expect(await service.resolve('10000', '30000', '40000', capability)).toMatchObject({ allowed: false, code: 'CHANNEL_EXCLUDED' });
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_EXCLUDED' });
     expect(guild.members.fetch).not.toHaveBeenCalled();
   });
-
-  it('preserves legacy wildcard chat but never legacy images', async () => {
-    settings.accessMode = 'LEGACY_USERS';
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: true });
-    expect(await service.resolve('10000', '30000', '40000', 'IMAGE')).toMatchObject({ allowed: false, code: 'ROLE_MODE_REQUIRED' });
+  it('inherits thread routing but parent exclusions override explicit thread grants', async () => {
+    channel.isThread = () => true;
+    channel.parentId = 'parent';
+    settings.allowedChannelIds = ['parent'];
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true });
+    settings.allowedChannelIds = ['30000'];
+    settings.excludedChannelIds = ['parent'];
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_EXCLUDED' });
   });
-
-  it('does not turn database failures into environment legacy access', async () => {
-    prisma.discordAgentSettings.findUnique.mockRejectedValue(new Error('schema unavailable'));
-    await expect(service.resolve('10000', '30000', '40000', 'CHAT')).rejects.toThrow('schema unavailable');
+  it('denies missing requester or bot channel permissions', async () => {
+    channel.permissionsFor.mockReturnValue({ has: (permission: bigint) => permission !== PermissionFlagsBits.SendMessages });
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_PERMISSIONS' });
+    channel.isThread = () => true;
+    channel.permissionsFor.mockReturnValue({ has: (permission: bigint) => permission !== PermissionFlagsBits.SendMessagesInThreads });
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_PERMISSIONS' });
   });
-
-  it('uses a personal token cap even when lower than the matching role', async () => {
-    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: 50 }];
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({
-      allowed: true, allowance: { dailyTokenLimit: 50, dailyImageLimit: 5 },
-    });
-  });
-
-  it('grants truly unlimited personal chat without granting images', async () => {
-    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: null }];
-    guild.members.fetch.mockResolvedValue({ guild: { id: '10000' }, roles: { cache: new Map() } });
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({
-      allowed: true, allowance: { dailyTokenLimit: null, imageAllowed: false, dailyImageLimit: 0 },
-    });
-    expect(await service.resolve('10000', '30000', '40000', 'IMAGE')).toMatchObject({ allowed: false });
-  });
-
-  it('reports personal overrides in the quota ledger using the same role image policy', async () => {
-    const result = await service.getAllowances('10000', [rule], ['40000'], [{ userId: '40000', dailyTokenLimit: null }]);
-    expect(result.get('40000')).toMatchObject({ dailyTokenLimit: null, dailyImageLimit: 5 });
-  });
-
-  it('restores role policy after removing the personal rule', async () => {
-    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: 50 }];
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowance: { dailyTokenLimit: 50 } });
-    settings.userTokenRules = [];
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowance: { dailyTokenLimit: 100000 } });
-  });
-
-  it('still verifies membership and excluded channels for unlimited members', async () => {
-    settings.userTokenRules = [{ userId: '40000', dailyTokenLimit: null }];
+  it('denies unavailable channels or membership without importing cached grants', async () => {
+    guild.channels.fetch.mockResolvedValue(null);
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_UNAVAILABLE' });
+    guild.channels.fetch.mockResolvedValue(channel);
     guild.members.fetch.mockRejectedValue(new Error('offline'));
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: false, code: 'MEMBERSHIP_UNAVAILABLE' });
-    settings.excludedChannelIds = ['30000'];
-    expect(await service.resolve('10000', '30000', '40000', 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_EXCLUDED' });
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'MEMBERSHIP_UNAVAILABLE' });
   });
-
-  it('does not use the legacy member allowlist as an image grant in role mode', async () => {
-    settings.allowedUserIds = ['40000'];
-    guild.members.fetch.mockResolvedValue({ guild: { id: '10000' }, roles: { cache: new Map() } });
-    const result = await service.resolve('10000', '30000', '40000', 'CHAT');
-    expect(result).toMatchObject({ allowed: false, code: 'ROLE_DENIED' });
+  it('excludes deleted roles and respects capability enablement', async () => {
+    guild.roles.fetch.mockResolvedValue(new Map());
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'ROLE_DENIED' });
+    settings.imageEnabled = false;
+    expect(await service.resolve(scope, 'IMAGE')).toMatchObject({ allowed: false, code: 'IMAGES_DISABLED' });
+  });
+  it('reports unavailable policy separately from finite or unlimited allowance', async () => {
+    const rules = [{ ...rule, dailyTokenLimit: null }];
+    expect((await service.getAllowances({ guildId: '10000', profile: 'ADMIN' }, rules, ['40000'], [])).get('40000'))
+      .toMatchObject({ chatAllowed: true, dailyTokenLimit: null, dailyImageLimit: 5 });
+    guild.members.fetch.mockRejectedValue(new Error('offline'));
+    expect((await service.getAllowances({ guildId: '10000', profile: 'PUBLIC' }, [rule], ['40000'], [])).get('40000')).toBeNull();
   });
 });

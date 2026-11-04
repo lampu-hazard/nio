@@ -356,18 +356,22 @@ model EmbedTemplate {
 }
 
 model DiscordAgentSettings {
-  guildId              String   @id
+  guildId              String
+  profile              String
+  tokenQuotaMode       String
+  allowedToolIds       String[] @default([])
+  migrationAudit       Json?
   enabled              Boolean  @default(false)
   provider             String   @default("gemini")
   model                String   @default("gemini-2.5-flash")
   baseUrl              String?
   encryptedApiKey      String?
-  accessMode           String   @default("LEGACY_USERS")
+  accessMode           String   @default("ROLE_QUOTAS")
   policyRevision       BigInt   @default(0)
-  dailyGuildTokenLimit Int      @default(1000000)
+  dailyGuildTokenLimit Int?
   dailyGuildImageLimit Int      @default(100)
   maxOutputTokens      Int      @default(2048)
-  maxRunTokens         Int      @default(32768)
+  maxRunTokens         Int?
   imageEnabled         Boolean  @default(false)
   imageBaseUrl         String?
   imageModel           String?
@@ -382,22 +386,26 @@ model DiscordAgentSettings {
   messageRetentionDays Int      @default(30)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
+  @@id([guildId, profile])
 }
 
 model AgentRoleRule {
   guildId         String
+  profile         String
   roleId          String
   chatEnabled     Boolean @default(false)
   imageEnabled    Boolean @default(false)
-  dailyTokenLimit Int     @default(0)
+  dailyTokenLimit Int?
   dailyImageLimit Int     @default(0)
-  settings        DiscordAgentSettings @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  settings        DiscordAgentSettings @relation(fields: [guildId, profile], references: [guildId, profile], onDelete: Cascade)
 
-  @@id([guildId, roleId])
+  @@id([guildId, profile, roleId])
 }
 
 model AgentQuotaBucket {
   guildId         String
+  profile         String
   periodStart     DateTime @db.Timestamptz(3)
   subject         String
   committedTokens BigInt @default(0)
@@ -405,7 +413,7 @@ model AgentQuotaBucket {
   committedImages BigInt @default(0)
   reservedImages  BigInt @default(0)
 
-  @@id([guildId, periodStart, subject])
+  @@id([guildId, profile, periodStart, subject])
   @@index([periodStart])
 }
 
@@ -413,6 +421,10 @@ model AgentQuotaAttempt {
   id              String @id
   requestKey      String? @unique
   guildId         String
+  profile         String
+  tokenCountSource String?
+  tokenCounterVersion String?
+  inputTokenEstimate BigInt?
   userId          String
   requestId       String
   runId           String?
@@ -434,7 +446,7 @@ model AgentQuotaAttempt {
   finalizedAt     DateTime? @db.Timestamptz(3)
 
   @@index([state, expiresAt])
-  @@index([guildId, periodStart, userId])
+  @@index([guildId, profile, periodStart, userId])
   @@index([finalizedAt])
 }
 
@@ -452,6 +464,7 @@ model AgentMemberLease {
 model AgentRun {
   id          String          @id @default(cuid())
   guildId     String
+  profile     String
   channelId   String
   userId      String
   status      String          @default("PLANNING")
@@ -459,8 +472,8 @@ model AgentRun {
   completedAt DateTime?
   events      AgentRunEvent[]
 
-  @@index([guildId, startedAt])
-  @@index([guildId, userId, startedAt])
+  @@index([guildId, profile, startedAt])
+  @@index([guildId, profile, userId, startedAt])
   @@index([status, startedAt])
 }
 
@@ -482,6 +495,7 @@ model AgentRunEvent {
 model AgentInteractionLog {
   id           String   @id @default(cuid())
   guildId      String
+  profile      String
   channelId    String
   userId       String
   targetUserId String?
@@ -496,9 +510,9 @@ model AgentInteractionLog {
   completionTokens Int      @default(0)
   totalTokens      Int      @default(0)
 
-  @@index([guildId, createdAt])
-  @@index([guildId, userId, createdAt])
-  @@index([guildId, targetUserId, createdAt])
+  @@index([guildId, profile, createdAt])
+  @@index([guildId, profile, userId, createdAt])
+  @@index([guildId, profile, targetUserId, createdAt])
 }
 
 model DiscordMessageLog {
@@ -521,6 +535,8 @@ model DiscordMessageLog {
 model AgentActionProposal {
   id            String   @id @default(cuid())
   guildId       String
+  profile       String
+  originToolId  String?
   channelId     String
   requestedById String
   targetUserId  String?
@@ -533,8 +549,8 @@ model AgentActionProposal {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@index([guildId, requestedById, status])
-  @@index([guildId, targetUserId, createdAt])
+  @@index([guildId, profile, requestedById, status])
+  @@index([guildId, profile, targetUserId, createdAt])
 }
 
 model UserNote {

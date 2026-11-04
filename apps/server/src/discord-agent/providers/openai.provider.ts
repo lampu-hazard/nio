@@ -13,6 +13,8 @@ import {
 } from '../interfaces/ai-provider.interface';
 import { parseProviderJson, readProviderBody, readProviderChunk } from './provider-json';
 import { prepareChatBody, ProviderCallError } from './chat-request-budget';
+import { countOpenAiTokens } from './chat-token-counter';
+import { AgentProfile } from '../agent-profile.types';
 
 @Injectable()
 export class OpenAiProvider implements AiProvider {
@@ -30,10 +32,10 @@ export class OpenAiProvider implements AiProvider {
   }
 
   async generate(request: AiGenerateRequest): Promise<AiGenerateResult> {
-    return this.generatePrepared(this.prepare(request), request.signal, request.onTextDelta);
+    return this.generatePrepared(await this.prepare(request), request.signal, request.onTextDelta);
   }
 
-  prepare(request: AiGenerateRequest): PreparedChatCall {
+  async prepare(request: AiGenerateRequest, _options?: { profile?: AgentProfile }): Promise<PreparedChatCall> {
     if (!this.apiKey && this.endpoint.includes('api.openai.com')) {
       throw new Error('OpenAI API key is not configured.');
     }
@@ -41,21 +43,27 @@ export class OpenAiProvider implements AiProvider {
       throw new Error('OpenAI request requires at least one message.');
     }
 
+    const cap = request.maxOutputTokens ?? 2048;
     const messages = this.toOpenAiMessages(request.messages, request.systemPrompt);
+    const tools = request.tools && request.tools.length > 0
+      ? request.tools.map((tool) => this.toOpenAiTool(tool))
+      : [];
     const payload: Record<string, unknown> = {
       model: this.model,
       messages,
       stream: true,
       stream_options: { include_usage: true },
-      max_completion_tokens: request.maxOutputTokens ?? 2048,
+      max_completion_tokens: cap,
     };
 
-    if (request.tools && request.tools.length > 0) {
-      payload.tools = request.tools.map((tool) => this.toOpenAiTool(tool));
+    if (tools.length > 0) {
+      payload.tools = tools;
       payload.tool_choice = 'auto';
     }
 
-    const call = prepareChatBody(payload, messages.length, request.tools.length, request.maxOutputTokens ?? 2048);
+    const serializedBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+    const estimate = countOpenAiTokens(this.model, messages, tools, serializedBytes);
+    const call = prepareChatBody(payload, cap, estimate);
     this.prepared.add(call);
     return call;
   }

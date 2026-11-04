@@ -64,8 +64,8 @@ describe('DiscordAgentService loop', () => {
   };
 
   const mockMemory = {
-    loadHistory: jest.fn<any>(async (_guildId?: string, _botMessageId?: string): Promise<any[]> => []),
-    saveConversation: jest.fn<any>(async (_guildId?: string, _botMessageId?: string, _turns?: any[]): Promise<void> => {}),
+    loadHistory: jest.fn<any>(async (_scope?: any, _botMessageId?: string): Promise<any[]> => []),
+    saveConversation: jest.fn<any>(async (_scope?: any, _botMessageId?: string, _turns?: any[]): Promise<void> => {}),
   };
 
   const mockPluginTools = {
@@ -177,9 +177,106 @@ describe('DiscordAgentService loop', () => {
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1>');
 
     expect(result).toEqual({
+      profile: 'ADMIN',
       content: '⚠️ Sebutkan pertanyaan atau instruksi setelah mention saya.',
     });
     expect(providerMock.generate).not.toHaveBeenCalled();
+  });
+
+  it('uses PUBLIC natural prompt without Hermes headers, exposes only PUBLIC-allowed tools, and rejects forged write tool calls in PUBLIC', async () => {
+    process.env.OWNER_DISCORD_ID = 'member-1';
+    (service as any).access = {
+      resolve: jest.fn<any>(async () => ({
+        allowed: true,
+        settings: {
+          enabled: true,
+          profile: 'PUBLIC',
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+        },
+      })),
+    };
+    const toolPolicy = {
+      definitions: jest.fn<any>(async () => [
+        {
+          name: 'web_search',
+          description: 'Search the web',
+          parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+          safety: { mode: 'read' },
+        },
+      ]),
+      resolveCall: jest.fn<any>(async (_ctx: any, name: string) => {
+        if (name === 'web_search') {
+          return {
+            id: 'web_search',
+            providerName: 'web_search',
+            source: 'BUILTIN',
+            definition: { name: 'web_search', description: 'Search the web', parameters: { type: 'object', properties: {} }, safety: { mode: 'read' } },
+          };
+        }
+        throw new Error(`Tool "${name}" is not allowed for profile PUBLIC.`);
+      }),
+    };
+    (service as any).toolPolicy = toolPolicy;
+
+    let turn = 0;
+    const capturedRequests: AiGenerateRequest[] = [];
+    const providerMock = {
+      generate: jest.fn<any>(async (req: AiGenerateRequest): Promise<AiGenerateResult> => {
+        capturedRequests.push(req);
+        turn++;
+        if (turn === 1) {
+          return {
+            message: {
+              role: 'assistant',
+              parts: [
+                { type: 'tool_call', id: 'forged-1', name: 'ban_user', arguments: { targetUserId: 'u2', reason: 'hack' } },
+              ],
+            },
+            finishReason: 'tool_calls',
+          };
+        }
+        return {
+          message: {
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'Halo! Aku cuma bisa bantu obrolan umum dan pencarian web.' }],
+          },
+          finishReason: 'stop',
+        };
+      }),
+    };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(providerMock);
+
+    const replyContext = {
+      id: 'ref-pub',
+      channelId: 'channel-public',
+      authorId: 'user-2',
+      authorTag: 'member#1111',
+      content: 'apa itu rust?',
+      createdAt: new Date('2026-07-10T12:00:00Z'),
+      attachments: [],
+    };
+
+    const res = await service.handleMention(
+      'guild-1',
+      'channel-public',
+      'member-1',
+      '<@bot-1> jelasin dong',
+      undefined,
+      replyContext,
+      undefined,
+      'PUBLIC',
+    );
+
+    expect(res.profile).toBe('PUBLIC');
+    expect(capturedRequests[0].systemPrompt).not.toContain('Hermes-Style Advanced Reasoning Framework');
+    expect(capturedRequests[0].systemPrompt).not.toContain('Bot owner authorization');
+    expect(capturedRequests[0].tools.map((t) => t.name)).toEqual(['web_search']);
+    const firstUserText = (capturedRequests[0].messages[0].parts[0] as any).text;
+    expect(firstUserText).toContain('Pesan pengguna:\njelasin dong');
+    expect(firstUserText).not.toContain('Permintaan moderator:');
+    expect(mockProposals.createProposal).not.toHaveBeenCalled();
+    expect(mockExecutor.execute).not.toHaveBeenCalled();
   });
 
   it('runs tool execution loop and returns final reply accumulating tokens', async () => {
@@ -233,7 +330,7 @@ describe('DiscordAgentService loop', () => {
     expect(mockExecutor.execute).toHaveBeenCalledWith(
       'get_user_warnings',
       { targetUserId: 'user-1' },
-      { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' },
+      { guildId: 'guild-1', profile: 'ADMIN', channelId: 'channel-1', userId: 'admin-1', requestedById: 'admin-1' },
     );
     expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -329,7 +426,10 @@ describe('DiscordAgentService loop', () => {
 
     const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', '<@bot-1> continue', 'prev-bot-msg-id');
 
-    expect(mockMemory.loadHistory).toHaveBeenCalledWith('guild-1', 'prev-bot-msg-id');
+    expect(mockMemory.loadHistory).toHaveBeenCalledWith(
+      { guildId: 'guild-1', profile: 'ADMIN', channelId: 'channel-1', userId: 'admin-1' },
+      'prev-bot-msg-id',
+    );
 
     const generateCall = (providerMock.generate as any).mock.calls[0][0] as AiGenerateRequest;
     const messages = generateCall.messages;
@@ -502,7 +602,7 @@ describe('DiscordAgentService loop', () => {
     expect(mockExecutor.execute).toHaveBeenCalledWith(
       'warn_user',
       { targetUserId: 'user-1', reason: 'Spamming' },
-      { guildId: 'guild-1', channelId: 'channel-1', requestedById: 'admin-1' },
+      { guildId: 'guild-1', profile: 'ADMIN', channelId: 'channel-1', userId: 'admin-1', requestedById: 'admin-1' },
     );
   });
 
@@ -555,6 +655,8 @@ describe('DiscordAgentService loop', () => {
     expect(result.content).toBe('Saya telah menyiapkan proposal untuk menghapus 2 role.');
     expect(mockProposals.createBatchProposal).toHaveBeenCalledWith({
       guildId: 'guild-1',
+      profile: 'ADMIN',
+      originToolId: 'batch',
       channelId: 'channel-1',
       requestedById: 'admin-1',
       proposalIds: ['prop-1', 'prop-2'],

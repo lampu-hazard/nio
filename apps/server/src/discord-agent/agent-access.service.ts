@@ -65,7 +65,9 @@ export class AgentAccessService {
     if (!channel || channel.guildId !== guildId || !channel.isTextBased()) return { allowed: false, code: 'CHANNEL_UNAVAILABLE' };
     const parentId = channel.isThread() ? channel.parentId : null;
     if (parentId && excluded(parentId)) return { allowed: false, code: 'CHANNEL_EXCLUDED' };
-    if (!settings.allowedChannelIds.includes(channelId) && !(parentId && settings.allowedChannelIds.includes(parentId))) {
+    if (!settings.allowedChannelIds.includes('*')
+      && !settings.allowedChannelIds.includes(channelId)
+      && !(parentId && settings.allowedChannelIds.includes(parentId))) {
       return { allowed: false, code: 'CHANNEL_DENIED' };
     }
     try {

@@ -58,7 +58,10 @@ describe('AgentAccessService profile admission', () => {
     settings = null;
     expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'DISABLED' });
   });
-  it('requires a configured channel and rejects exclusions before member lookup', async () => {
+  it('requires a configured channel and rejects exclusions before member lookup, while allowing wildcard *', async () => {
+    settings.allowedChannelIds = ['*'];
+    expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: true });
+    guild.members.fetch.mockClear();
     settings.allowedChannelIds = ['other'];
     expect(await service.resolve(scope, 'CHAT')).toMatchObject({ allowed: false, code: 'CHANNEL_DENIED' });
     settings.excludedChannelIds = ['30000'];

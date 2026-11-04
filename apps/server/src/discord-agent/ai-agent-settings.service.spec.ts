@@ -54,12 +54,19 @@ describe('AiAgentSettingsService', () => {
     expect(prisma.discordAgentSettings.upsert).not.toHaveBeenCalled();
   });
 
-  it('rejects parent/thread assignments across profiles', async () => {
+  it('allows shared channels and parent/thread assignments across profiles and casts advisory lock to text', async () => {
     prisma.discordAgentSettings.findMany.mockResolvedValueOnce([{ profile: 'ADMIN', allowedChannelIds: ['30001'] }]);
     service.setClient({ guilds: { cache: new Map([['guild-1', {
-      channels: { fetch: async (id: string) => ({ id, guildId: 'guild-1', parentId: id === '30001' ? '30000' : null, isTextBased: () => true }) },
+      roles: { fetch: async () => new Map([['20000', {}]]) },
+      members: { fetchMe: async () => ({ id: 'bot' }) },
+      channels: { fetch: async (id: string) => ({ id, guildId: 'guild-1', parentId: id === '30001' ? '30000' : null, isTextBased: () => true,
+        isThread: () => false, permissionsFor: () => ({ has: () => true }) }) },
     }]]) } } as any);
-    await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, { allowedChannelIds: ['30000'] })).rejects.toThrow('another profile');
+    await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, { allowedChannelIds: ['30000'] })).resolves.toMatchObject({
+      allowedChannelIds: ['30000'],
+    });
+    const lockQuery = prisma.$queryRaw.mock.calls[0]?.[0];
+    expect(Array.isArray(lockQuery) ? lockQuery.join('') : String(lockQuery)).toContain('::text');
   });
 
   it('represents ADMIN with explicit unlimited mode and rejects token editors', async () => {
@@ -72,13 +79,14 @@ describe('AiAgentSettingsService', () => {
     }
   });
 
-  it('rejects shared channel assignment under the guild save lock', async () => {
-    prisma.discordAgentSettings.findMany.mockResolvedValueOnce([{ profile: 'ADMIN', allowedChannelIds: ['30000'], excludedChannelIds: [] }]);
-    await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, { allowedChannelIds: ['30000'] })).rejects.toThrow('another profile');
-    expect(prisma.discordAgentSettings.upsert).not.toHaveBeenCalled();
+  it('allows shared channel assignment and wildcard allow-all channels across PUBLIC and ADMIN', async () => {
+    prisma.discordAgentSettings.findMany.mockResolvedValueOnce([{ profile: 'ADMIN', allowedChannelIds: ['*'], excludedChannelIds: [] }]);
+    await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, { allowedChannelIds: ['*'] })).resolves.toMatchObject({
+      allowedChannelIds: ['*'],
+    });
   });
 
-  it.each([{ systemPrompt: 'x'.repeat(32001) }, { messageRetentionDays: 0 }, { messageRetentionDays: 91 }, { allowedChannelIds: ['*'] }])('validates profile prompt/channel bounds %j', async (dto) => {
+  it.each([{ systemPrompt: 'x'.repeat(32001) }, { messageRetentionDays: 0 }, { messageRetentionDays: 91 }])('validates profile prompt/channel bounds %j', async (dto) => {
     await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, dto as any)).rejects.toThrow();
   });
 

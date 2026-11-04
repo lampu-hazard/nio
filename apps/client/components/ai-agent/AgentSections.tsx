@@ -318,14 +318,17 @@ export function AgentChannelAccess({
   const adminEveryoneChannelSelected =
     admin &&
     channels.some(
-      (channel) => channel.everyoneVisible && settings.allowedChannelIds.includes(channel.id),
+      (channel) =>
+        channel.everyoneVisible &&
+        (settings.allowedChannelIds.includes('*') || settings.allowedChannelIds.includes(channel.id)),
     );
 
   const toggleAllowed = (id: string) => {
-    if (otherProfileChannelIds.includes(id)) return;
-    const next = settings.allowedChannelIds.includes(id)
-      ? settings.allowedChannelIds.filter((value) => value !== id && value !== '*')
-      : [...settings.allowedChannelIds.filter((value) => value !== '*'), id];
+    const next = settings.allowedChannelIds.includes('*')
+      ? channels.map((channel) => channel.id).filter((value) => value !== id)
+      : settings.allowedChannelIds.includes(id)
+        ? settings.allowedChannelIds.filter((value) => value !== id)
+        : [...settings.allowedChannelIds, id];
     onChange({ ...settings, allowedChannelIds: next });
   };
 
@@ -357,25 +360,33 @@ export function AgentChannelAccess({
       <section className="dashboard-section">
         <h2>Allowed channels</h2>
         <p className="mb-4 text-[var(--muted)]">
-          Automatic @nio mentions and replies only activate in channels explicitly assigned to this profile. A channel cannot belong to both PUBLIC and ADMIN.
+          Automatic @nio mentions and replies activate in channels allowed for this profile. Channels can be shared between PUBLIC and ADMIN.
         </p>
         {adminEveryoneChannelSelected && (
           <p role="note" className="mb-3">
             Warning: One or more selected ADMIN channels are visible to @everyone. Assign dedicated staff channels to prevent exposing administrative workflows in public channels.
           </p>
         )}
+        <label className="dashboard-toggle">
+          <span>Allow all channels</span>
+          <input
+            type="checkbox"
+            checked={settings.allowedChannelIds.includes('*')}
+            onChange={(event) => onChange({ ...settings, allowedChannelIds: event.target.checked ? ['*'] : [] })}
+          />
+        </label>
         {allAllowedChannels.map((channel) => {
-          const assignedToOther = otherProfileChannelIds.includes(channel.id);
+          const assignedToOther =
+            otherProfileChannelIds.includes('*') || otherProfileChannelIds.includes(channel.id);
           return (
             <label key={channel.id} className="dashboard-toggle">
               <span className="break-all">
                 {channel.name}
-                {assignedToOther && <small className="block text-[var(--muted)]">Assigned to {otherLabel} profile</small>}
+                {assignedToOther && <small className="block text-[var(--muted)]">Also allowed in {otherLabel} profile</small>}
               </span>
               <input
                 type="checkbox"
-                disabled={assignedToOther && !settings.allowedChannelIds.includes(channel.id)}
-                checked={settings.allowedChannelIds.includes(channel.id)}
+                checked={settings.allowedChannelIds.includes('*') || settings.allowedChannelIds.includes(channel.id)}
                 onChange={() => toggleAllowed(channel.id)}
               />
             </label>

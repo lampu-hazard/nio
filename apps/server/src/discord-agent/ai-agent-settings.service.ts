@@ -68,7 +68,7 @@ export class AiAgentSettingsService {
     const roles = dto.roleRules === undefined ? null : await guild?.roles.fetch().catch(() => null);
     // Serializable protects the complete effective snapshot, including omitted fields.
     const save = () => this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${guildId}, 0))`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${guildId}, 0))::text`;
       await tx.$queryRaw`SELECT "guildId" FROM "DiscordAgentSettings" WHERE "guildId" = ${guildId} AND "profile" = ${profile} FOR UPDATE`;
       const existing = await tx.discordAgentSettings.findUnique({ where: { guildId_profile: { guildId, profile } }, include: { roleRules: true } });
       const { apiKey, clearApiKey, imageApiKey, clearImageApiKey, roleRules, userTokenRules, ...fields } = dto;
@@ -85,8 +85,7 @@ export class AiAgentSettingsService {
         }
       }
       if (roleRules !== undefined) this.validateRoleRules(profile, roleRules, existing?.roleRules ?? [], roles ?? null);
-      const otherProfiles = await tx.discordAgentSettings.findMany({ where: { guildId, profile: { not: profile } } });
-      await this.validateChannels(guildId, effective, roleRules ?? existing?.roleRules ?? [], otherProfiles);
+      await this.validateChannels(guildId, effective, roleRules ?? existing?.roleRules ?? []);
       const encrypted: { encryptedApiKey?: string | null; encryptedImageApiKey?: string | null } = {};
       for (const [key, clear, field] of [
         [apiKey, clearApiKey, 'encryptedApiKey'],
@@ -294,32 +293,45 @@ export class AiAgentSettingsService {
     }
   }
 
-  private async validateChannels(guildId: string, effective: Record<string, any>, rules: AgentRoleRule[], others: { allowedChannelIds: string[] }[]) {
+  private async validateChannels(guildId: string, effective: Record<string, any>, rules: AgentRoleRule[]) {
     const ids = effective.allowedChannelIds as string[];
-    if (ids.includes('*')) throw new BadRequestException('Select explicit channels.');
+    const allowAll = ids.includes('*');
     if (effective.enabled && (!ids.length || !rules.some((rule) => rule.chatEnabled || rule.imageEnabled))) {
       throw new BadRequestException('Enabled profiles require explicit channels and roles.');
     }
-    const guild = this.client?.guilds.cache.get(guildId);
-    const channels = new Map<string, GuildBasedChannel>();
-    for (const id of new Set([...ids, ...others.flatMap((other) => other.allowedChannelIds)])) {
-      try {
-        const channel = await guild?.channels.fetch(id, { force: true });
-        if (channel && channel.guildId === guildId && channel.isTextBased()) channels.set(id, channel);
-      } catch { /* Unavailable channels cannot activate a profile. */ }
-    }
-    for (const other of others) for (const id of ids) for (const otherId of other.allowedChannelIds) {
-      if (id === otherId || channels.get(id)?.parentId === otherId || channels.get(otherId)?.parentId === id) {
-        throw new BadRequestException('Channel is assigned to another profile.');
-      }
-    }
     if (!effective.enabled) return;
+    const guild = this.client?.guilds.cache.get(guildId);
     const roles = await guild?.roles.fetch().catch(() => null);
     if (!rules.some((rule) => roles?.has(rule.roleId) && (rule.chatEnabled || (effective.imageEnabled && rule.imageEnabled)))) {
       throw new BadRequestException('Select an available role with an enabled capability.');
     }
     const bot = await guild?.members.fetchMe({ force: true }).catch(() => null);
-    const usable = ids.some((id) => {
+    if (!bot || effective.excludedChannelIds.includes('*')) {
+      throw new BadRequestException('Select an available, non-excluded channel where the bot can view and send messages.');
+    }
+    const channels = new Map<string, GuildBasedChannel>();
+    if (allowAll) {
+      const fetched: any = await guild?.channels.fetch().catch(() => guild?.channels.cache);
+      const entries: any[] = fetched && typeof fetched.values === 'function'
+        ? Array.from(fetched.values())
+        : fetched && typeof fetched.isTextBased === 'function'
+          ? [fetched]
+          : Array.from(guild?.channels.cache?.values?.() ?? []);
+      for (const channel of entries) {
+        if (channel && channel.guildId === guildId && channel.isTextBased()) {
+          channels.set(channel.id ?? '*', channel);
+        }
+      }
+    } else {
+      for (const id of new Set(ids)) {
+        try {
+          const channel = await guild?.channels.fetch(id, { force: true });
+          if (channel && channel.guildId === guildId && channel.isTextBased()) channels.set(id, channel);
+        } catch { /* Unavailable channels cannot activate a profile. */ }
+      }
+    }
+    const candidateIds = allowAll ? [...channels.keys()] : ids;
+    const usable = candidateIds.some((id) => {
       const channel = channels.get(id);
       if (!channel || !bot || effective.excludedChannelIds.includes('*') || effective.excludedChannelIds.includes(id)
         || (channel.parentId && effective.excludedChannelIds.includes(channel.parentId))) return false;

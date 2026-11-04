@@ -38,8 +38,14 @@ export class AgentImageService {
             || new URL(config.baseUrl).origin !== new URL(config.imageBaseUrl).origin) throw new AgentQuotaError('IMAGE_CONFIGURATION_INVALID');
           encrypted = config.encryptedApiKey;
         }
-        const apiKey = this.settings.decryptApiKey(encrypted);
-        if (!apiKey) throw new AgentQuotaError('IMAGE_CREDENTIAL_MISSING');
+        const apiKey = this.settings.decryptApiKey(encrypted) ?? '';
+        const isPollinations = (() => {
+          try {
+            const host = new URL(config.imageBaseUrl).hostname.toLowerCase();
+            return host === 'pollinations.ai' || host.endsWith('.pollinations.ai');
+          } catch { return false; }
+        })();
+        if (!apiKey && !isPollinations) throw new AgentQuotaError('IMAGE_CREDENTIAL_MISSING');
         if (!lease) {
           lease = await this.quota.acquireLease(input.guildId, input.userId, input.messageId);
           let running = false;

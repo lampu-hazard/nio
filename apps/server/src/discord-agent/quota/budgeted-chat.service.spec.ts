@@ -210,6 +210,26 @@ describe('budgeted chat calls', () => {
       expect(reservations).toHaveLength(1);
     } finally { await run.close(); }
   });
+  it('never enlarges the run ceiling for unlimited members on their first call', async () => {
+    settings.maxRunTokens = 2048;
+    access.resolve.mockImplementation(async () => ({ allowed: true, settings, allowance: { dailyTokenLimit: null, dailyImageLimit: 0 } }));
+    const run = await service.beginRun(args());
+    try {
+      const large = { ...request, systemPrompt: 'x'.repeat(5000) };
+      await expect(run.generate(large)).rejects.toMatchObject({ code: 'RUN_BUDGET_EXHAUSTED' });
+      expect(sends).toBe(0);
+      expect(reservations).toHaveLength(0);
+    } finally { await run.close(); }
+  });
+  it('keeps an equal output/run cap valid by shrinking output rather than bypassing the run cap', async () => {
+    settings.maxRunTokens = 2048;
+    const run = await service.beginRun(args());
+    try {
+      await run.generate(request);
+      expect(reservations[0].tokens).toBeLessThanOrEqual(2048);
+      expect(reservations[0].runTokenLimit).toBe(2048);
+    } finally { await run.close(); }
+  });
   it('blocks switching an active run from quota mode to legacy mode', async () => {
     const run = await service.beginRun(args());
     try {

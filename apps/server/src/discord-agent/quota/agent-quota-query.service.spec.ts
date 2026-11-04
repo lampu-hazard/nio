@@ -24,6 +24,11 @@ describe('current quota pages', () => {
       images: { committed: '2', reserved: '1', limit: 5, remaining: 2 }, usageSources: { REPORTED: 1 } });
     expect(() => JSON.stringify(result)).not.toThrow();
   });
+  it('distinguishes a known unlimited token allowance from unavailable policy', async () => {
+    access.getAllowances.mockResolvedValue(new Map([['member', { dailyTokenLimit: null, dailyImageLimit: 0 }]]));
+    expect((await service.getToday('guild')).members[0]).toMatchObject({ allowanceStatus: 'KNOWN',
+      tokens: { unlimited: true, limit: null, remaining: null }, images: { limit: 0 } });
+  });
   it('preserves recorded usage with null allowance when Discord is unavailable', async () => {
     access.getAllowances.mockResolvedValue(new Map([['member', null]]));
     const result = await service.getToday('guild');

@@ -31,7 +31,7 @@ export class AgentQuotaService {
     return current;
   }
 
-  async remaining(lease: Lease, revision: bigint, limits: { memberTokens: number; guildTokens: number; memberImages: number; guildImages: number }): Promise<{ tokens: number; images: number }> {
+  async remaining(lease: Lease, revision: bigint, limits: { memberTokens: number | null; guildTokens: number; memberImages: number; guildImages: number }): Promise<{ tokens: number; images: number }> {
     return this.transaction(async (tx) => {
       const settings = await this.lockSettings(tx, lease.guildId);
       if (!settings?.enabled || settings.accessMode !== 'ROLE_QUOTAS' || settings.policyRevision !== revision) throw new AgentQuotaError('POLICY_CHANGED');
@@ -42,14 +42,16 @@ export class AgentQuotaService {
         where: { guildId_periodStart_subject: { guildId: lease.guildId, periodStart, subject } },
       }));
       return {
-        tokens: Math.min(...buckets.map((b, i) => remainingQuota(i === 0 ? limits.guildTokens : limits.memberTokens, b?.committedTokens ?? 0n, b?.reservedTokens ?? 0n))),
+        tokens: Math.min(...buckets.map((b, i) => i === 1 && limits.memberTokens === null ? Infinity
+          : remainingQuota(i === 0 ? limits.guildTokens : limits.memberTokens!, b?.committedTokens ?? 0n, b?.reservedTokens ?? 0n))),
         images: Math.min(...buckets.map((b, i) => remainingQuota(i === 0 ? limits.guildImages : limits.memberImages, b?.committedImages ?? 0n, b?.reservedImages ?? 0n))),
       };
     });
   }
 
   async reserve(input: ReserveInput) {
-    const quantities = [input.tokens, input.images, input.memberLimit, input.guildLimit, input.runTokensUsed, input.runTokenLimit];
+    const quantities = [input.tokens, input.images, input.guildLimit, input.runTokensUsed, input.runTokenLimit,
+      ...(input.memberLimit === null && input.capability === 'CHAT' ? [] : [input.memberLimit ?? NaN])];
     if (quantities.some((n) => !Number.isSafeInteger(n) || n < 0)
       || (input.capability === 'CHAT' ? input.tokens <= 0 || input.images !== 0 : input.capability !== 'IMAGE' || input.images !== 1 || input.tokens !== 0)) {
       throw new AgentQuotaError('INVALID_RESERVATION');
@@ -66,7 +68,8 @@ export class AgentQuotaService {
       // The settings lock serializes a guild's ledger, including bucket creation.
       for (const [index, key] of bucketKeys.entries()) {
         const bucket = await tx.agentQuotaBucket.upsert({ where: { guildId_periodStart_subject: key }, create: key, update: {} });
-        const limit = BigInt(index === 0 ? input.guildLimit : input.memberLimit);
+        if (index === 1 && input.memberLimit === null) continue;
+        const limit = BigInt(index === 0 ? input.guildLimit : input.memberLimit!);
         const used = input.capability === 'CHAT' ? bucket.committedTokens + bucket.reservedTokens + tokens : bucket.committedImages + bucket.reservedImages + images;
         if (used > limit) throw new AgentQuotaError('QUOTA_EXHAUSTED', resetAt);
       }

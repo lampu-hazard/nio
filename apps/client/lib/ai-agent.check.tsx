@@ -7,9 +7,16 @@ const valid: AiSettings = {
   dailyGuildImageLimit: 10, maxOutputTokens: 2048, maxRunTokens: 32768,
   imageEnabled: false, imageBaseUrl: null, imageModel: null, imageCredentialSource: 'SEPARATE', hasImageCredential: false,
 };
+const personal = [{ userId: '40000', dailyTokenLimit: 50 }, { userId: '50000', dailyTokenLimit: null }];
+assert.equal(validateSettings({ ...valid, userTokenRules: personal } as any), null);
+assert.equal(validateSettings({ ...valid, userTokenRules: [{ userId: '40000', dailyTokenLimit: NaN }] } as any)?.section, 'access');
+assert.equal(validateSettings({ ...valid, userTokenRules: [personal[0], personal[0]] } as any)?.section, 'access');
+assert.deepEqual(settingsPayload({ ...valid, userTokenRules: personal } as any, { apiKey: '', clearApiKey: false, imageApiKey: '', clearImageApiKey: false }).userTokenRules, personal);
+assert.ok(quotaText({ committed: '200000000', reserved: '20', limit: null, remaining: null, unlimited: true } as any).includes('Unlimited'));
 assert.equal(validateSettings(valid), null);
 assert.equal(validateSettings({ ...valid, model: ' ' })?.section, 'config');
-assert.equal(validateSettings({ ...valid, maxRunTokens: 2048 })?.section, 'config');
+assert.equal(validateSettings({ ...valid, maxRunTokens: 2048 }), null);
+assert.equal(validateSettings({ ...valid, maxRunTokens: 1024 })?.section, 'config');
 assert.equal(validateSettings({ ...valid, dailyGuildTokenLimit: NaN })?.section, 'access');
 assert.equal(validateSettings({ ...valid, roleRules: [{ roleId: 'a', chatEnabled: false, imageEnabled: true, dailyTokenLimit: 0, dailyImageLimit: 0 }] })?.section, 'access');
 assert.equal(validateSettings({ ...valid, imageEnabled: true })?.section, 'images');

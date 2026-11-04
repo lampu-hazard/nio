@@ -156,15 +156,15 @@ export default function TakoDashboardPage({ params }: PageProps) {
         enabled: settings.enabled,
         creatorSlug: settings.creatorSlug || '',
         rewardRoleId: settings.rewardRoleId || null,
-        minimumAmount: settings.minimumAmount,
+        minimumAmount: Number.isFinite(settings.minimumAmount) ? settings.minimumAmount : 10000,
         paymentMethods: settings.paymentMethods,
         logChannelId: settings.logChannelId || null,
         directNotificationsEnabled: settings.directNotificationsEnabled,
         directNotificationChannelId: settings.directNotificationChannelId || null,
-        directNotifyMinimumAmount: settings.directNotifyMinimumAmount,
+        directNotifyMinimumAmount: Number.isFinite(settings.directNotifyMinimumAmount) ? settings.directNotifyMinimumAmount : 0,
         rewardTiers: settings.rewardTiers.map((tier, index) => ({
           label: tier.label,
-          thresholdAmount: tier.thresholdAmount,
+          thresholdAmount: Number.isFinite(tier.thresholdAmount) ? tier.thresholdAmount : 1000,
           roleId: tier.roleId,
           position: index,
         })),
@@ -437,8 +437,8 @@ export default function TakoDashboardPage({ params }: PageProps) {
                         type="number"
                         min="1000"
                         className="input py-1.5 text-xs"
-                        value={settings.minimumAmount}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, minimumAmount: parseInt(e.target.value) || 10000 }))}
+                        value={Number.isNaN(settings.minimumAmount) ? '' : settings.minimumAmount}
+                        onChange={(e) => setSettings((prev) => ({ ...prev, minimumAmount: e.target.value === '' ? Number.NaN : parseInt(e.target.value, 10) }))}
                         required
                       />
                     </label>
@@ -488,8 +488,8 @@ export default function TakoDashboardPage({ params }: PageProps) {
                                 type="number"
                                 min="1000"
                                 className="input py-1 text-xs"
-                                value={tier.thresholdAmount}
-                                onChange={(e) => updateRewardTier(index, { thresholdAmount: parseInt(e.target.value) || 1000 })}
+                                value={Number.isNaN(tier.thresholdAmount) ? '' : tier.thresholdAmount}
+                                onChange={(e) => updateRewardTier(index, { thresholdAmount: e.target.value === '' ? Number.NaN : parseInt(e.target.value, 10) })}
                               />
                             </label>
                             <label className="block">
@@ -569,8 +569,8 @@ export default function TakoDashboardPage({ params }: PageProps) {
                           type="number"
                           min="0"
                           className="input py-1.5 text-xs"
-                          value={settings.directNotifyMinimumAmount}
-                          onChange={(e) => setSettings((prev) => ({ ...prev, directNotifyMinimumAmount: parseInt(e.target.value) || 0 }))}
+                          value={Number.isNaN(settings.directNotifyMinimumAmount) ? '' : settings.directNotifyMinimumAmount}
+                          onChange={(e) => setSettings((prev) => ({ ...prev, directNotifyMinimumAmount: e.target.value === '' ? Number.NaN : parseInt(e.target.value, 10) }))}
                         />
                       </label>
                     </div>

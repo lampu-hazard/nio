@@ -268,7 +268,7 @@ export function PanelForm({
       style: draft.style,
       color: draft.color,
       ...mediaPayload(draft.imageUrl, draft.thumbnailUrl, window.location.origin),
-      maxRoles: draft.maxRoles,
+      maxRoles: Number.isFinite(draft.maxRoles) ? draft.maxRoles : 2,
       visualDocument: visual,
       expectedRevision: panel ? revision : undefined,
     };
@@ -408,8 +408,8 @@ export function PanelForm({
                 <option value="exclusive">Exclusive (one role)</option>
                 <option value="capped">Capped</option>
               </select>
-              {draft.maxRoles > 1 && (
-                <input type="number" min={2} max={25} value={draft.maxRoles} onChange={(event) => patchDraft({ maxRoles: Math.min(25, Math.max(2, Number(event.target.value) || 2)) })} className="input mt-2" aria-label="Maximum roles" />
+              {(draft.maxRoles > 1 || Number.isNaN(draft.maxRoles)) && (
+                <input type="number" min={2} max={25} required value={Number.isNaN(draft.maxRoles) ? '' : draft.maxRoles} onChange={(event) => patchDraft({ maxRoles: event.target.value === '' ? Number.NaN : Number(event.target.value) })} onBlur={() => { if (!Number.isFinite(draft.maxRoles) || draft.maxRoles < 2 || draft.maxRoles > 25) patchDraft({ maxRoles: Math.min(25, Math.max(2, Math.round(draft.maxRoles) || 2)) }); }} className="input mt-2" aria-label="Maximum roles" />
               )}
               <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Exclusive swaps roles within this panel. Capped allows 2–25 roles.</p>
             </label>

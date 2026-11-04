@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 import * as ipaddr from 'ipaddr.js';
 import { Client } from 'discord.js';
 import { Prisma } from '@prisma/client';
-import { AgentRoleRule } from './agent-policy.types';
+import { AgentRoleRule, AgentUserTokenRule } from './agent-policy.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CredentialEncryptionService } from '../plugins/credential-encryption.service';
 import { UpdateAiAgentSettingsDto } from './dto/update-ai-agent-settings.dto';
@@ -13,6 +13,7 @@ const DEFAULTS = {
   provider: 'gemini',
   model: 'gemini-2.5-flash',
   baseUrl: null as string | null,
+  userTokenRules: [] as AgentUserTokenRule[],
   allowedUserIds: [] as string[],
   allowedChannelIds: [] as string[],
   excludedChannelIds: [] as string[],
@@ -51,7 +52,7 @@ export class AiAgentSettingsService {
     const save = () => this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "guildId" FROM "DiscordAgentSettings" WHERE "guildId" = ${guildId} FOR UPDATE`;
       const existing = await tx.discordAgentSettings.findUnique({ where: { guildId }, include: { roleRules: true } });
-      const { apiKey, clearApiKey, imageApiKey, clearImageApiKey, roleRules, ...fields } = dto;
+      const { apiKey, clearApiKey, imageApiKey, clearImageApiKey, roleRules, userTokenRules, ...fields } = dto;
       const update = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
       const effective = { ...DEFAULTS, ...existing, ...update };
       this.validateEffective(effective);
@@ -74,13 +75,36 @@ export class AiAgentSettingsService {
           catch { throw new BadRequestException('Gagal mengenkripsi API Key: PLUGIN_CREDENTIALS_ENCRYPTION_KEY belum dikonfigurasi di file .env server (minimal 32 karakter).'); }
         }
       }
-      const data = { ...update, ...encrypted, ...(roleRules === undefined ? {} : {
-        roleRules: { deleteMany: {}, create: roleRules.map(({ roleId, chatEnabled, imageEnabled, dailyTokenLimit, dailyImageLimit }) => ({ roleId, chatEnabled, imageEnabled, dailyTokenLimit, dailyImageLimit })) },
-      }) };
+      const rules = roleRules?.map(({ roleId, chatEnabled, imageEnabled, dailyTokenLimit, dailyImageLimit }) => ({
+        roleId, chatEnabled, imageEnabled, dailyTokenLimit, dailyImageLimit,
+      }));
+      if (userTokenRules !== undefined) {
+        if (!Array.isArray(userTokenRules) || userTokenRules.length > 500) throw new BadRequestException('Personal token rules are invalid.');
+        const ids = new Set<string>();
+        for (const rule of userTokenRules) {
+          if (!rule || typeof rule.userId !== 'string' || !/^\d{5,25}$/.test(rule.userId) || ids.has(rule.userId)
+            || (rule.dailyTokenLimit !== null && (!Number.isSafeInteger(rule.dailyTokenLimit) || rule.dailyTokenLimit < 1 || rule.dailyTokenLimit > 100000000))) {
+            throw new BadRequestException('Personal token rules are invalid.');
+          }
+          ids.add(rule.userId);
+        }
+      }
+      const baseData = { ...update, ...encrypted,
+        ...(userTokenRules === undefined ? {} : { userTokenRules: userTokenRules.map(({ userId, dailyTokenLimit }) => ({ userId, dailyTokenLimit })) }) };
       const row = await tx.discordAgentSettings.upsert({
         where: { guildId },
-        create: { guildId, ...DEFAULTS, ...data, policyRevision: 1n },
-        update: { ...data, policyRevision: { increment: 1n } },
+        create: {
+          guildId,
+          ...DEFAULTS,
+          ...baseData,
+          ...(rules === undefined ? {} : { roleRules: { create: rules } }),
+          policyRevision: 1n,
+        },
+        update: {
+          ...baseData,
+          ...(rules === undefined ? {} : { roleRules: { deleteMany: {}, create: rules } }),
+          policyRevision: { increment: 1n },
+        },
         include: { roleRules: true },
       });
       return this.redact(row);
@@ -210,7 +234,7 @@ export class AiAgentSettingsService {
       const value = settings[name];
       if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) invalid();
     }
-    if (Number(settings.maxRunTokens) <= Number(settings.maxOutputTokens)) invalid();
+    if (Number(settings.maxRunTokens) < Number(settings.maxOutputTokens)) invalid();
     if (typeof settings.model !== 'string' || !settings.model.trim() || settings.model.length > 120) invalid();
     if (settings.provider === 'gemini' && settings.baseUrl) throw new BadRequestException('Gemini does not use a custom base URL.');
     if (settings.baseUrl) this.validateBaseUrl(String(settings.baseUrl));

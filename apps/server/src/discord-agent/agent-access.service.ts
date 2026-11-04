@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Client } from 'discord.js';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AgentCapability, AgentRoleRule, EffectiveAllowance } from './agent-policy.types';
+import { AgentCapability, AgentRoleRule, AgentUserTokenRule, EffectiveAllowance } from './agent-policy.types';
 import { evaluateRolePolicy } from './agent-policy';
 
 type Settings = Prisma.DiscordAgentSettingsGetPayload<{ include: { roleRules: true } }>;
@@ -16,7 +16,18 @@ export class AgentAccessService {
   constructor(private readonly prisma: PrismaService) {}
   setClient(client: Client) { this.client = client; }
 
-  async getAllowances(guildId: string, rules: AgentRoleRule[], userIds: string[]): Promise<Map<string, EffectiveAllowance | null>> {
+  private allowance(rules: AgentRoleRule[], roleIds: string[], userId: string, userTokenRules: unknown): EffectiveAllowance {
+    const allowance = evaluateRolePolicy(rules, roleIds);
+    const personal = Array.isArray(userTokenRules)
+      ? userTokenRules.find((rule: AgentUserTokenRule) => rule?.userId === userId) : undefined;
+    if (personal && (personal.dailyTokenLimit === null || (Number.isSafeInteger(personal.dailyTokenLimit)
+      && personal.dailyTokenLimit > 0 && personal.dailyTokenLimit <= 100000000))) {
+      return { ...allowance, chatAllowed: true, dailyTokenLimit: personal.dailyTokenLimit };
+    }
+    return allowance;
+  }
+
+  async getAllowances(guildId: string, rules: AgentRoleRule[], userIds: string[], userTokenRules: unknown = []): Promise<Map<string, EffectiveAllowance | null>> {
     const result = new Map<string, EffectiveAllowance | null>(userIds.map((id) => [id, null]));
     const guild = this.client?.guilds.cache.get(guildId);
     if (!guild || userIds.length === 0) return result;
@@ -27,7 +38,7 @@ export class AgentAccessService {
         try {
           const member = await guild.members.fetch({ user: userId, force: true });
           if (member.guild.id !== guildId) continue;
-          result.set(userId, evaluateRolePolicy(rules, [...member.roles.cache.keys(), guildId].filter((id) => roles.has(id))));
+          result.set(userId, this.allowance(rules, [...member.roles.cache.keys(), guildId].filter((id) => roles.has(id)), userId, userTokenRules));
         } catch { /* Keep this member's allowance unavailable. */ }
       }
     } catch { /* Role lookup unavailable for the entire page. */ }
@@ -53,7 +64,7 @@ export class AgentAccessService {
       if (member.guild.id !== guildId) return { allowed: false, code: 'MEMBERSHIP_UNAVAILABLE' };
       const currentRoles = await guild.roles.fetch();
       const roleIds = [...member.roles.cache.keys(), guildId].filter((id) => currentRoles.has(id));
-      const allowance = evaluateRolePolicy(settings.roleRules, roleIds);
+      const allowance = this.allowance(settings.roleRules, roleIds, userId, settings.userTokenRules);
       if (!(capability === 'CHAT' ? allowance.chatAllowed : allowance.imageAllowed)) return { allowed: false, code: 'ROLE_DENIED' };
       return { allowed: true, settings, allowance };
     } catch {

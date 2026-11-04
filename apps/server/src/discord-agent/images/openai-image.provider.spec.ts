@@ -91,4 +91,26 @@ describe('OpenAI-compatible image adapter', () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ code: 'IMAGE_PROVIDER_ERROR', dispatched: true });
   });
+  it('supports keyless Pollinations GET /prompt endpoint and 768x768 JPEG responses', async () => {
+    const jpeg768 = await sharp({ create: { width: 768, height: 768, channels: 3, background: '#225588' } }).jpeg().toBuffer();
+    const f = fixture([], jpeg768);
+    f.http.request = async (input: any) => {
+      f.calls.push(input);
+      return { status: 200, headers: { 'content-type': 'image/jpeg' }, body: jpeg768 };
+    };
+    const result = await f.provider.generate({
+      ...config,
+      baseUrl: 'https://image.pollinations.ai',
+      model: 'flux',
+      apiKey: '',
+    });
+    expect(result.extension).toBe('jpg');
+    expect(result.buffer).toEqual(jpeg768);
+    expect(f.calls[0]).toMatchObject({
+      url: 'https://image.pollinations.ai/prompt/a%20blue%20bird?model=flux&width=1024&height=1024&nologo=true',
+      method: 'GET',
+      redirects: 2,
+    });
+    expect(f.calls[0].headers?.Authorization).toBeUndefined();
+  });
 });

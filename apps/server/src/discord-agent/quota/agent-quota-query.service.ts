@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AgentAccessService } from '../agent-access.service';
 import { quotaPeriod, remainingQuota } from './agent-quota-accounting';
 
-type Counter = { committed: string; reserved: string; limit: number | null; remaining: number | null };
+type Counter = { committed: string; reserved: string; limit: number | null; remaining: number | null; unlimited?: boolean };
 type BucketView = {
   allowanceStatus: 'KNOWN' | 'UNAVAILABLE'; tokens: Counter; images: Counter;
   usageSources: Record<string, number>; overruns: number;
@@ -50,7 +50,7 @@ export class AgentQuotaQueryService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     const roleMode = snapshot.settings?.accessMode === 'ROLE_QUOTAS';
     const allowances = roleMode
-      ? await this.access.getAllowances(guildId, snapshot.settings!.roleRules, snapshot.userIds)
+      ? await this.access.getAllowances(guildId, snapshot.settings!.roleRules, snapshot.userIds, snapshot.settings!.userTokenRules)
       : new Map();
     const summary = (sources: typeof snapshot.guildSources) => {
       const usageSources: Record<string, number> = {};
@@ -69,7 +69,7 @@ export class AgentQuotaQueryService {
       members: snapshot.members.map((row) => {
         const userId = row.subject.slice(5);
         const allowance = allowances.get(userId);
-        return { userId, ...this.view(row, allowance?.dailyTokenLimit ?? null, allowance?.dailyImageLimit ?? null),
+        return { userId, ...this.view(row, allowance?.dailyTokenLimit ?? null, allowance?.dailyImageLimit ?? null, allowance?.dailyTokenLimit === null),
           ...summary(snapshot.memberSources.filter((source) => source.userId === userId)) };
       }),
       nextCursor: snapshot.rows.length > take ? Buffer.from(JSON.stringify({ guildId, periodStart: periodStart.toISOString(),
@@ -77,13 +77,13 @@ export class AgentQuotaQueryService {
     };
   }
 
-  private view(bucket: Counters | null, tokens: number | null, images: number | null): BucketView {
+  private view(bucket: Counters | null, tokens: number | null, images: number | null, unlimitedTokens = false): BucketView {
     const counter = (committed: bigint, reserved: bigint, limit: number | null): Counter => ({
       committed: committed.toString(), reserved: reserved.toString(), limit,
       remaining: limit === null ? null : remainingQuota(limit, committed, reserved),
     });
-    return { allowanceStatus: tokens === null || images === null ? 'UNAVAILABLE' : 'KNOWN',
-      tokens: counter(bucket?.committedTokens ?? 0n, bucket?.reservedTokens ?? 0n, tokens),
+    return { allowanceStatus: (tokens === null && !unlimitedTokens) || images === null ? 'UNAVAILABLE' : 'KNOWN',
+      tokens: { ...counter(bucket?.committedTokens ?? 0n, bucket?.reservedTokens ?? 0n, tokens), ...(unlimitedTokens ? { unlimited: true } : {}) },
       images: counter(bucket?.committedImages ?? 0n, bucket?.reservedImages ?? 0n, images), usageSources: {}, overruns: 0 };
   }
 }

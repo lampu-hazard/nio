@@ -1,10 +1,44 @@
-export async function readProviderBody(response: Response): Promise<string> {
-  if (typeof response.text === 'function') return response.text().catch(() => '');
-  // Test doubles and non-standard fetch adapters may only implement json().
-  if (typeof response.json === 'function') {
-    try { return JSON.stringify(await response.json()); } catch { return ''; }
+export async function readProviderChunk(reader: ReadableStreamDefaultReader<Uint8Array>, signal?: AbortSignal): Promise<ReadableStreamReadResult<Uint8Array>> {
+  if (!signal) return reader.read();
+  return new Promise((resolve, reject) => {
+    const aborted = () => {
+      signal.removeEventListener('abort', aborted);
+      reject(new Error('PROVIDER_ABORTED: Request canceled.'));
+      void reader.cancel().catch(() => {});
+    };
+    if (signal.aborted) { aborted(); return; }
+    signal.addEventListener('abort', aborted, { once: true });
+    reader.read().then((value) => { signal.removeEventListener('abort', aborted); resolve(value); },
+      (error) => { signal.removeEventListener('abort', aborted); reject(error); });
+  });
+}
+
+export async function readProviderBody(response: Response, signal?: AbortSignal, maxBytes = 8388608): Promise<string> {
+  if (signal?.aborted) throw new Error('PROVIDER_ABORTED: Request canceled.');
+  if (response.body) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let bytes = 0;
+    let body = '';
+    try {
+      while (true) {
+        const { value, done } = await readProviderChunk(reader, signal);
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > maxBytes) throw new Error('PROVIDER_RESPONSE_TOO_LARGE: Response limit exceeded.');
+        body += decoder.decode(value, { stream: true });
+      }
+      return body + decoder.decode();
+    } finally {
+      void reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
   }
-  return '';
+  // Non-standard adapters and test doubles may only expose text/json.
+  const body = typeof response.text === 'function' ? await response.text()
+    : typeof response.json === 'function' ? JSON.stringify(await response.json()) : '';
+  if (Buffer.byteLength(body) > maxBytes) throw new Error('PROVIDER_RESPONSE_TOO_LARGE: Response limit exceeded.');
+  return body;
 }
 
 export function parseProviderJson(body: string, provider: string): Record<string, any> {

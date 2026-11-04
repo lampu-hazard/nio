@@ -5,12 +5,14 @@ import {
   AiMessage,
   AiPart,
   AiProvider,
+  PreparedChatCall,
   AiTextPart,
   AiToolCallPart,
   AiToolDefinition,
   AiToolResultPart,
 } from '../interfaces/ai-provider.interface';
-import { parseProviderJson, readProviderBody } from './provider-json';
+import { parseProviderJson, readProviderBody, readProviderChunk } from './provider-json';
+import { prepareChatBody, ProviderCallError } from './chat-request-budget';
 
 @Injectable()
 export class OpenAiProvider implements AiProvider {
@@ -28,6 +30,10 @@ export class OpenAiProvider implements AiProvider {
   }
 
   async generate(request: AiGenerateRequest): Promise<AiGenerateResult> {
+    return this.generatePrepared(this.prepare(request), request.signal, request.onTextDelta);
+  }
+
+  prepare(request: AiGenerateRequest): PreparedChatCall {
     if (!this.apiKey && this.endpoint.includes('api.openai.com')) {
       throw new Error('OpenAI API key is not configured.');
     }
@@ -41,6 +47,7 @@ export class OpenAiProvider implements AiProvider {
       messages,
       stream: true,
       stream_options: { include_usage: true },
+      max_completion_tokens: request.maxOutputTokens ?? 2048,
     };
 
     if (request.tools && request.tools.length > 0) {
@@ -48,6 +55,26 @@ export class OpenAiProvider implements AiProvider {
       payload.tool_choice = 'auto';
     }
 
+    const call = prepareChatBody(payload, messages.length, request.tools.length, request.maxOutputTokens ?? 2048);
+    this.prepared.add(call);
+    return call;
+  }
+
+  private readonly prepared = new WeakSet<PreparedChatCall>();
+
+  async generatePrepared(call: PreparedChatCall, signal?: AbortSignal, onTextDelta?: AiGenerateRequest['onTextDelta']): Promise<AiGenerateResult> {
+    if (!this.prepared.has(call)) throw new ProviderCallError('INVALID_PREPARED_CALL', false);
+    if (signal?.aborted) throw new ProviderCallError('PROVIDER_ABORTED', false);
+    try {
+      return await this.sendPrepared(call, signal, onTextDelta);
+    } catch (error) {
+      if (error instanceof ProviderCallError) throw error;
+      const code = error instanceof Error && /^[A-Z][A-Z0-9_]+:/.test(error.message) ? error.message.split(':')[0] : 'PROVIDER_NETWORK_ERROR';
+      throw new ProviderCallError(signal?.aborted ? 'PROVIDER_ABORTED' : code, true);
+    }
+  }
+
+  private async sendPrepared(call: PreparedChatCall, signal?: AbortSignal, onTextDelta?: AiGenerateRequest['onTextDelta']): Promise<AiGenerateResult> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
@@ -59,19 +86,22 @@ export class OpenAiProvider implements AiProvider {
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
+      body: call.body,
+      signal,
     });
 
     if (!response.ok) {
-      throw new Error(`OPENAI_HTTP_${response.status}: Provider request failed.`);
+      void response.body?.cancel().catch(() => {});
+      const rejected = [400, 401, 403, 404, 413, 422, 429].includes(response.status);
+      throw new ProviderCallError([400, 422].includes(response.status) ? 'BUDGET_UNSUPPORTED' : `OPENAI_HTTP_${response.status}`, true, rejected);
     }
 
     const contentType = response.headers?.get('content-type') || '';
     if (contentType.includes('text/event-stream') && response.body) {
-      return this.readEventStream(response, request);
+      return this.readEventStream(response, { onTextDelta, signal });
     }
 
-    const body = await readProviderBody(response);
+    const body = await readProviderBody(response, signal);
     const data = parseProviderJson(body, 'OpenAI-compatible');
     if (!Array.isArray(data?.choices) || !data.choices.length) {
       throw new Error('OPENAI_INVALID_RESPONSE: No completion choices returned.');
@@ -145,7 +175,7 @@ export class OpenAiProvider implements AiProvider {
     };
   }
 
-  private async readEventStream(response: Response, request: AiGenerateRequest): Promise<AiGenerateResult> {
+  private async readEventStream(response: Response, request: Pick<AiGenerateRequest, 'onTextDelta' | 'signal'>): Promise<AiGenerateResult> {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
@@ -154,6 +184,7 @@ export class OpenAiProvider implements AiProvider {
     let finishReason: string | undefined;
     let usage: any;
     let sawDone = false;
+    let receivedBytes = 0;
 
     const processEvent = async (event: string) => {
       const data = event.split(/\r?\n/)
@@ -196,8 +227,10 @@ export class OpenAiProvider implements AiProvider {
 
     try {
       while (!sawDone) {
-        const { value, done } = await reader.read();
+        const { value, done } = await readProviderChunk(reader, request.signal);
         if (done) break;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > 8388608) throw new ProviderCallError('PROVIDER_RESPONSE_TOO_LARGE', true);
         buffer += decoder.decode(value, { stream: true });
         let separator: number;
         while ((separator = buffer.search(/\r?\n\r?\n/)) !== -1) {
@@ -213,6 +246,7 @@ export class OpenAiProvider implements AiProvider {
         throw new Error('OPENAI_TRUNCATED_STREAM: Provider stream ended before completion.');
       }
     } finally {
+      void reader.cancel().catch(() => {});
       reader.releaseLock();
     }
 

@@ -115,6 +115,40 @@ describe('DiscordAgentService loop', () => {
     });
   });
 
+  it.each([true, false])('keeps explicit PUBLIC web research subject to authorized tool selection enabled=%s', async (enabled) => {
+    mockPrisma.discordAgentSettings.findUnique.mockResolvedValueOnce({ enabled: true, allowedUserIds: ['admin-1'], webResearchPolicy: 'ON_REQUEST' });
+    const resolveCall = jest.fn<any>(async () => ({ allowed: true, source: 'BUILTIN', name: 'web_fetch' }));
+    (service as any).toolPolicy = { definitions: async () => enabled ? [{ name: 'web_fetch' }] : [], resolveCall };
+    const requests: any[] = [];
+    const provider = { generate: async (request: any) => {
+      requests.push(request);
+      return { message: { role: 'assistant', parts: [{ type: 'text', text: 'Jawaban.' }] } };
+    } };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(provider);
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', 'baca https://example.com', undefined, undefined, undefined, 'PUBLIC');
+    expect(requests[0].tools.some((tool: any) => tool.name === 'web_fetch')).toBe(enabled);
+    expect(resolveCall).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('blocks unrequested web calls with paired results (policy=%s)', async (withPolicy) => {
+    mockPrisma.discordAgentSettings.findUnique.mockResolvedValueOnce({ enabled: true, allowedUserIds: ['admin-1'], webResearchPolicy: 'ON_REQUEST', activityVisibility: 'HIDDEN' });
+    if (withPolicy) (service as any).toolPolicy = { definitions: async () => [{ name: 'web_search' }], resolveCall: jest.fn<any>() };
+    const requests: any[] = [];
+    const provider = { generate: jest.fn<any>(async (request: any) => {
+      requests.push(request);
+      return requests.length === 1
+        ? { message: { role: 'assistant', parts: [{ type: 'tool_call', id: 'denied-web', name: 'web_search', arguments: { query: 'news' } }] } }
+        : { message: { role: 'assistant', parts: [{ type: 'text', text: 'Belum diverifikasi.' }] } };
+    }) };
+    jest.spyOn(service as any, 'getProvider').mockReturnValue(provider);
+    const progress = jest.fn<any>();
+    await service.handleMention('guild-1', 'channel-1', 'admin-1', 'berita terbaru', undefined, undefined, progress);
+    expect(requests[0].tools.some((tool: any) => tool.name === 'web_search')).toBe(false);
+    expect(mockExecutor.execute).not.toHaveBeenCalled();
+    expect(requests[1].messages.flatMap((message: any) => message.parts).some((part: any) => part.type === 'tool_result' && part.toolCallId === 'denied-web' && part.result.ok === false)).toBe(true);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
   it('uses one metered run for tool turns and synthesis, including synthesis usage in the log', async () => {
     const responses = [
       { message: { role: 'assistant', parts: [{ type: 'tool_call', id: 'bounded-1', name: 'get_user_warnings', arguments: { targetUserId: 'user-1' } }] }, usage: { totalTokens: 20 } },
@@ -798,7 +832,7 @@ describe('DiscordAgentService loop', () => {
     expect(result.content).not.toContain(sampleKey);
   });
 
-  it('notifies onProgress callback with English status messages during loop', async () => {
+  it('reports concise activity without exposing technical tool names or model drafts', async () => {
     const mockResponses: AiGenerateResult[] = [
       {
         message: {
@@ -849,9 +883,107 @@ describe('DiscordAgentService loop', () => {
     );
 
     expect(result.content).toBe('Leaderboard retrieved successfully.');
-    expect(progressCalls).toContain('🧭 *Menyiapkan pemeriksaan...*');
-    expect(progressCalls).toContain('🔎 *Memeriksa sumber: `get_voice_leaderboard`...*');
-    expect(progressCalls).toContain('🧩 *Menyatukan temuan...*');
+    expect(progressCalls).toContain('Memeriksa data yang diizinkan…');
+    expect(progressCalls.join(' ')).not.toMatch(/get_voice_leaderboard|\[draft\]|pemeriksaan|laporan akhir/);
+    expect(progressCalls.filter((s) => s === 'Menyusun jawaban…')).toHaveLength(1);
+  });
+
+  it('does not expose streamed model drafts or investigation stages for a direct answer', async () => {
+    const progress: string[] = [];
+    jest.spyOn(service as any, 'getProvider').mockReturnValue({
+      generate: async (request: AiGenerateRequest) => {
+        await request.onTextDelta?.('<think>private incomplete reasoning');
+        return { message: { role: 'assistant', parts: [{ type: 'text', text: 'Halo! Ada yang ingin dibahas?' }] } };
+      },
+    });
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', 'halo', undefined, undefined, async (s) => { progress.push(s); });
+    expect(result.content).toBe('Halo! Ada yang ingin dibahas?');
+    expect(progress).toEqual([]);
+  });
+
+  it('stops novel tool calls at the run budget and returns an explicitly partial answer', async () => {
+    let calls = 0;
+    jest.spyOn(service as any, 'getProvider').mockReturnValue({
+      generate: async (request: AiGenerateRequest) => {
+        if (!request.tools.length) return { message: { role: 'assistant', parts: [{ type: 'text', text: 'Data yang sudah tersedia.' }] } };
+        calls++;
+        return { message: { role: 'assistant', parts: [{ type: 'tool_call', id: `c-${calls}`, name: 'get_user_warnings', arguments: { targetUserId: `u-${calls}` } }] } };
+      },
+    });
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', 'check');
+    expect(mockExecutor.execute.mock.calls.length).toBeLessThanOrEqual(24);
+    expect(result.content).toContain('Hasil parsial');
+    expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PARTIAL' }) }));
+  });
+
+  it('keeps tool-call history paired when the provider exceeds the per-turn batch limit', async () => {
+    let turn = 0;
+    let followup: AiGenerateRequest | undefined;
+    jest.spyOn(service as any, 'getProvider').mockReturnValue({ generate: async (request: AiGenerateRequest) => {
+      if (++turn === 1) return { message: { role: 'assistant', parts: Array.from({ length: 7 }, (_, i) => ({ type: 'tool_call', id: `batch-${i}`, name: 'get_user_warnings', arguments: { targetUserId: `u-${i}` } })) } };
+      followup = request;
+      return { message: { role: 'assistant', parts: [{ type: 'text', text: 'Pemeriksaan terbatas selesai.' }] } };
+    } });
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', 'check batch');
+    expect(result.content).toBe('Pemeriksaan terbatas selesai.');
+    const calls = followup!.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool_call').map((p: any) => p.id);
+    const results = followup!.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool_result').map((p: any) => p.toolCallId);
+    expect(calls.sort()).toEqual(results.sort());
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(4);
+    expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PARTIAL' }) }));
+  });
+
+  it('records a returned tool failure as partial rather than successful evidence', async () => {
+    let turn = 0;
+    jest.spyOn(service as any, 'getProvider').mockReturnValue({ generate: async () => ({ message: {
+      role: 'assistant', parts: ++turn === 1
+        ? [{ type: 'tool_call', id: 'failed-web', name: 'web_fetch', arguments: { url: 'https://example.com' } }]
+        : [{ type: 'text', text: 'Halaman tidak dapat diverifikasi.' }],
+    } }) });
+    mockExecutor.execute.mockResolvedValue({ success: false, error: 'HTTP 502' });
+    const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', 'read');
+    expect(result.content).toBe('Halaman tidak dapat diverifikasi.');
+    expect((service as any).runs.evidence).toHaveBeenCalledWith('run-1', 'web_fetch', 'FAILED', expect.any(String));
+    expect(mockPrisma.agentInteractionLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PARTIAL' }) }));
+  });
+
+  it('aborts an in-flight provider at the run deadline and closes its quota lease', async () => {
+    jest.useFakeTimers();
+    const close = jest.fn<any>(async () => {});
+    let receivedSignal: AbortSignal | undefined;
+    (service as any).budgetedChat = { beginRun: async (input: any) => {
+      receivedSignal = input.signal;
+      return { close, spentTokens: 0, generate: () => new Promise((_resolve, reject) => {
+        input.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      }) };
+    } };
+    try {
+      const pending = service.handleMention('guild-1', 'channel-1', 'admin-1', 'slow');
+      await jest.advanceTimersByTimeAsync(120_001);
+      const result = await pending;
+      expect(receivedSignal?.aborted).toBe(true);
+      expect(result.content).toContain('batas waktu');
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('stops after the overall deadline without another provider or tool dispatch', async () => {
+    const now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    let calls = 0;
+    jest.spyOn(service as any, 'getProvider').mockReturnValue({
+      generate: async () => {
+        calls++;
+        clock.mockReturnValue(now + 130_000);
+        return { message: { role: 'assistant', parts: [{ type: 'tool_call', id: 'late', name: 'get_user_warnings', arguments: { targetUserId: 'u' } }] } };
+      },
+    });
+    try {
+      const result = await service.handleMention('guild-1', 'channel-1', 'admin-1', 'check');
+      expect(calls).toBe(1);
+      expect(mockExecutor.execute).not.toHaveBeenCalled();
+      expect(result.content).toContain('batas waktu');
+    } finally { clock.mockRestore(); }
   });
 
   describe('getProvider', () => {
@@ -933,12 +1065,12 @@ describe('DiscordAgentService loop', () => {
       expect(neutralized).toBe(`Hello @${String.fromCharCode(8203)}everyone and @${String.fromCharCode(8203)}here!`);
     });
 
-    it('removes thought-tagged model text and truncates the public response', () => {
+    it('removes thought-tagged model text without truncating the answer before delivery planning', () => {
       const finalAnswer = 'Ini adalah jawaban final yang penting.';
       const formatted = formatAgentResponse(`<think>internal</think>${finalAnswer}${'a'.repeat(2500)}`);
       expect(formatted).toContain(finalAnswer);
       expect(formatted).not.toContain('internal');
-      expect(formatted.length).toBeLessThanOrEqual(2000);
+      expect(formatted).toBe(finalAnswer + 'a'.repeat(2500));
     });
 
     it('compacts bulky tool results in older turns while preserving recent turns and user prompt', () => {

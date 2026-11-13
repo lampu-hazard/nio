@@ -10,7 +10,7 @@ coverage/
 # Rust build output
 target/
 *.node
-
+.playwright-mcp
 # env/secrets
 .env
 .env.*

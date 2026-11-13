@@ -6,6 +6,10 @@ import { AgentProfileRouterService } from './agent-profile-router.service';
 import { AgentAccessService } from './agent-access.service';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { parseImageCommand } from './images/image-command';
+import { planAgentAnswer } from '../discord/agent-answer-plan';
+import { deliverPlannedAnswer } from '../discord/agent-answer-delivery';
+import { agentReplyExtras } from '../discord/agent-reply';
+import { deliveredConversationTurns } from './delivered-conversation';
 
 @Injectable()
 export class AgentCommandService {
@@ -117,30 +121,30 @@ export class AgentCommandService {
       return;
     }
 
-    const edited: any = await interaction.editReply({
-      content: reply.content,
-      ...(reply.embeds ? { embeds: reply.embeds } : {}),
-      ...(reply.components ? { components: reply.components } : {}),
-      ...(reply.files ? { files: reply.files } : {}),
+    const receipt = await deliverPlannedAnswer({
+      plan: planAgentAnswer({ content: reply.content ?? '', canAttach, attachmentLimit }),
+      extras: agentReplyExtras(reply),
+      first: async (payload) => {
+        const edited: any = await interaction.editReply(payload);
+        const id = edited?.id || (await interaction.fetchReply().then((m) => m?.id).catch(() => undefined));
+        return { ...(id ? { id } : {}), edit: (next) => interaction.editReply(next) };
+      },
+      next: async (payload) => {
+        const sent = await interaction.followUp({
+          ...payload, ...(resolvedProfile === 'ADMIN' ? { flags: MessageFlags.Ephemeral } : {}),
+        });
+        return { ...(sent?.id ? {
+          id: sent.id, edit: (next) => interaction.webhook.editMessage(sent.id, next),
+        } : {}) };
+      },
     });
-
-    if (resolvedProfile === 'PUBLIC' && reply.conversationTurns && this.memory) {
-      const replyId =
-        edited?.id ||
-        (await interaction.fetchReply?.()
-          .then((m: any) => m?.id)
-          .catch(() => null));
-      if (replyId) {
+    const turns = deliveredConversationTurns(reply.conversationTurns, receipt.deliveredContent);
+    if (resolvedProfile === 'PUBLIC' && turns.length && this.memory) {
+      for (const id of receipt.messageIds) {
         await this.memory.saveConversation(
-          {
-            guildId: interaction.guildId,
-            profile: 'PUBLIC',
-            channelId: interaction.channelId,
-            userId: interaction.user.id,
-          },
-          replyId,
-          reply.conversationTurns,
-        );
+          { guildId: interaction.guildId, profile: 'PUBLIC', channelId: interaction.channelId, userId: interaction.user.id },
+          id, turns,
+        ).catch(() => undefined);
       }
     }
   }

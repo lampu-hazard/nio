@@ -18,6 +18,12 @@ const valid: AiSettings = {
   dailyGuildImageLimit: 10, maxOutputTokens: 2048, maxRunTokens: 32768,
   imageEnabled: false, imageBaseUrl: null, imageModel: null, imageCredentialSource: 'SEPARATE', hasImageCredential: false,
 };
+const behavior = { conversationStyle: 'CASUAL', responseLength: 'DETAILED', activityVisibility: 'HIDDEN', webResearchPolicy: 'ON_REQUEST' } as const;
+const behaviorPayload = settingsPayload({ ...valid, ...behavior }, { apiKey: '', clearApiKey: false, imageApiKey: '', clearImageApiKey: false });
+for (const [field, value] of Object.entries(behavior)) {
+  assert.equal(behaviorPayload[field], value);
+  assert.equal(validateSettings({ ...valid, [field]: 'INVALID' } as any)?.section, 'config');
+}
 const personal = [{ userId: '40000', dailyTokenLimit: 50 }, { userId: '50000', dailyTokenLimit: null }];
 assert.equal(validateSettings({ ...valid, userTokenRules: personal } as any), null);
 assert.equal(validateSettings({ ...valid, userTokenRules: [{ userId: '40000', dailyTokenLimit: NaN }] } as any)?.section, 'access');

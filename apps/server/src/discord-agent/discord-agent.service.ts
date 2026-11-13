@@ -26,16 +26,18 @@ import { AgentAccessService } from './agent-access.service';
 import { BudgetedChatService, BoundedAiProvider } from './quota/budgeted-chat.service';
 import { AgentQuotaError } from './quota/agent-quota.types';
 import { AgentProfile, AgentRequestScope, parseAgentProfile } from './agent-profile.types';
+import { normalizeAgentBehavior } from './agent-behavior';
+import { canResearchWeb, isBuiltinWebTool } from './agent-web-research';
 import { buildAgentSystemPrompt } from './agent-system-prompt';
 import { AgentToolEntry, AgentToolPolicyService } from './agent-tool-policy.service';
 
-// ponytail: no wall-clock limit (Hermes-style); the turn cap and repeated-call guard are what stop runaway loops.
-const MAX_AGENT_TURNS = 200;
-const MAX_TOOL_CALLS_PER_TURN = 8;
-const MAX_TOTAL_TOOL_CALLS = 400;
+// Operational safety limits apply even to profiles with unlimited token quotas.
+const MAX_AGENT_TURNS = 8;
+const MAX_TOOL_CALLS_PER_TURN = 4;
+const MAX_TOTAL_TOOL_CALLS = 24;
+const MAX_RUN_MS = 120_000;
 const MAX_PROVIDER_RETRIES = 5;
 const MAX_RESULT_BYTES = 32_000;
-const MAX_DISCORD_RESPONSE_LENGTH = 2000;
 const MAX_PROPOSALS = 5;
 
 function cleanModelText(rawText: string) {
@@ -93,9 +95,6 @@ export function neutralizeMentions(text: string): string {
 
 export function formatAgentResponse(finalText: string): string {
   const cleanFinal = sanitizeSensitiveInfo(neutralizeMentions(cleanModelText(finalText))).trim();
-  if (cleanFinal.length > MAX_DISCORD_RESPONSE_LENGTH) {
-    return `${cleanFinal.slice(0, MAX_DISCORD_RESPONSE_LENGTH - 3)}...`;
-  }
   return cleanFinal;
 }
 
@@ -261,7 +260,9 @@ export class DiscordAgentService {
 
     const providerName = settings?.provider || process.env.DISCORD_AGENT_PROVIDER || 'gemini';
     const modelName = settings?.model || process.env.DISCORD_AGENT_MODEL || 'gemini-2.5-flash';
-    const effectiveSystemPrompt = buildAgentSystemPrompt(resolvedProfile, settings?.systemPrompt, authorId);
+    const behavior = normalizeAgentBehavior(settings as any);
+    const webResearchAllowed = canResearchWeb(behavior.webResearchPolicy, prompt);
+    const effectiveSystemPrompt = buildAgentSystemPrompt(resolvedProfile, settings?.systemPrompt, authorId, behavior, webResearchAllowed);
 
     if (settings?.accessMode === 'ROLE_QUOTAS' && !this.budgetedChat) {
       return {
@@ -270,12 +271,18 @@ export class DiscordAgentService {
       };
     }
     const run = await this.runs?.start(scope, settings?.messageRetentionDays ?? 30);
+    const deadline = Date.now() + MAX_RUN_MS;
+    const runController = new AbortController();
+    const deadlineTimer = setTimeout(() => runController.abort(), MAX_RUN_MS);
+    deadlineTimer.unref?.();
+    const expired = () => runController.signal.aborted || Date.now() >= deadline;
     let chatRun: Awaited<ReturnType<BudgetedChatService['beginRun']>> | undefined;
     try {
       chatRun = await this.budgetedChat?.beginRun({
         ...scope,
         requestId: randomUUID(),
         runId: run?.id,
+        signal: runController.signal,
         provider: (current) => this.getProvider(
           current?.provider || process.env.DISCORD_AGENT_PROVIDER || 'gemini',
           current?.model || process.env.DISCORD_AGENT_MODEL || 'gemini-2.5-flash',
@@ -283,6 +290,7 @@ export class DiscordAgentService {
         ),
       });
     } catch (err) {
+      clearTimeout(deadlineTimer);
       const explained = this.explainChatError(err);
       if (run && this.runs) await this.runs.finish(run.id, 'FAILED', explained.code).catch(() => undefined);
       return {
@@ -294,12 +302,22 @@ export class DiscordAgentService {
       // Only legacy callers without the metering dependency use the compatibility adapter.
       const provider = chatRun ? undefined : this.getProvider(providerName, modelName,
         this.aiSettings?.decryptApiKey(settings?.encryptedApiKey), settings?.baseUrl);
-      const generate = (request: Parameters<AiProvider['generate']>[0]) => chatRun
-        ? chatRun.generate(request)
-        : this.generateWithRetry(providerName, () => provider!.generate({ ...request, maxOutputTokens: settings?.maxOutputTokens ?? 2048 }));
+      const generate = (request: Parameters<AiProvider['generate']>[0]) => {
+        if (expired()) throw new Error('AGENT_DEADLINE');
+        const bounded = { ...request, signal: runController.signal };
+        return chatRun ? chatRun.generate(bounded)
+          : this.generateWithRetry(providerName, () => {
+            if (expired()) throw new Error('AGENT_DEADLINE');
+            return provider!.generate({ ...bounded, maxOutputTokens: settings?.maxOutputTokens ?? 2048 });
+          }, runController.signal);
+      };
+      let lastActivity = '';
       const reportStage = async (stage: 'PLANNING' | 'INVESTIGATING' | 'SYNTHESIZING' | 'AWAITING_APPROVAL', message: string) => {
         if (run && this.runs) await this.runs.stage(run.id, stage, message).catch(() => undefined);
-        await onProgress?.(message);
+        if (message !== lastActivity) {
+          lastActivity = message;
+          if (behavior.activityVisibility !== 'HIDDEN') await onProgress?.(message);
+        }
       };
 
       const toolMap = new Map<string, AiToolDefinition>();
@@ -330,6 +348,8 @@ export class DiscordAgentService {
         }
         availableTools = Array.from(toolMap.values());
       }
+
+      if (!webResearchAllowed) availableTools = availableTools.filter((tool) => !isBuiltinWebTool(tool.name));
 
       let previousTurns: ConversationTurn[] = [];
       if (referencedBotMessageId) {
@@ -372,6 +392,7 @@ ${prompt || defaultPromptFallback}`;
       let finalContent = '';
       let lastEmittedText = '';
       let hasPartialResults = false;
+      let stopReason: 'time' | 'steps' | undefined;
       const proposalIds: string[] = [];
       const callCounts = new Map<string, number>();
       const startTime = Date.now();
@@ -381,26 +402,20 @@ ${prompt || defaultPromptFallback}`;
       let totalTokens = 0;
 
       while (turns < MAX_AGENT_TURNS) {
+        if (expired()) { stopReason = 'time'; break; }
+        if (totalToolCalls >= MAX_TOTAL_TOOL_CALLS) { stopReason = 'steps'; break; }
         turns++;
         this.logger.log(`💭 [Turn ${turns}/${MAX_AGENT_TURNS}] Thinking...`);
 
-        await reportStage(turns === 1 ? 'PLANNING' : 'SYNTHESIZING', turns === 1 ? '🧭 *Menyiapkan pemeriksaan...*' : '🧩 *Menyatukan temuan...*');
-
         let response: AiGenerateResult;
-        let streamedText = '';
         try {
           response = await generate({
             systemPrompt: effectiveSystemPrompt,
             messages: compactHistoryMessages([...messages]),
             tools: availableTools,
-            onTextDelta: async (delta) => {
-              streamedText += delta;
-              if (!onProgress) return;
-              const safeText = sanitizeSensitiveInfo(neutralizeMentions(cleanModelText(streamedText)));
-              if (safeText) await onProgress(`[draft] ${safeText.slice(-1000)}`);
-            },
           });
         } catch (err: any) {
+          if (expired()) { stopReason = 'time'; break; }
           const explained = this.explainChatError(err);
           this.logger.warn(`AI provider request failed provider=${providerName} code=${explained.code}`);
           finalContent = explained.message;
@@ -433,10 +448,11 @@ ${prompt || defaultPromptFallback}`;
           break;
         }
 
-        const callsToProcess = toolCalls.slice(0, MAX_TOOL_CALLS_PER_TURN);
-        const toolNames = callsToProcess.map((c) => `\`${c.name}\``).join(', ');
+        if (expired()) { stopReason = 'time'; break; }
+        const callsToProcess = toolCalls.slice(0, Math.min(MAX_TOOL_CALLS_PER_TURN, MAX_TOTAL_TOOL_CALLS - totalToolCalls));
         this.logger.log(`🔧 [Tool Call${callsToProcess.length > 1 ? 's' : ''}] ${callsToProcess.map((c) => c.name).join(', ')}`);
-        await reportStage('INVESTIGATING', `🔎 *Memeriksa sumber: ${toolNames}...*`);
+        const webOnly = callsToProcess.every((c) => c.name === 'web_search' || c.name === 'web_fetch');
+        await reportStage('INVESTIGATING', webOnly ? 'Mencari sumber terbaru…' : 'Memeriksa data yang diizinkan…');
 
         let shouldTerminateForRepetition = false;
 
@@ -475,6 +491,11 @@ ${prompt || defaultPromptFallback}`;
 
         const toolResultParts: AiToolResultPart[] = await Promise.all(
           plannedCalls.map(async ({ call, preError }): Promise<AiToolResultPart> => {
+            if (expired()) {
+              stopReason = 'time';
+              hasPartialResults = true;
+              return { type: 'tool_result', toolCallId: call.id, name: call.name, result: { ok: false, error: { code: 'AGENT_DEADLINE', message: 'Run deadline reached; this tool was not dispatched.' } } };
+            }
             if (preError) {
               return {
                 type: 'tool_result',
@@ -484,6 +505,10 @@ ${prompt || defaultPromptFallback}`;
               };
             }
 
+            if (!webResearchAllowed && isBuiltinWebTool(call.name)) {
+              hasPartialResults = true;
+              return { type: 'tool_result', toolCallId: call.id, name: call.name, result: { ok: false, error: { code: 'WEB_RESEARCH_NOT_REQUESTED', message: 'Live research requires an explicit request in the current user prompt.' } } };
+            }
             let resolvedEntry: AgentToolEntry | undefined;
             if (this.toolPolicy) {
               try {
@@ -508,6 +533,11 @@ ${prompt || defaultPromptFallback}`;
               }
             }
 
+            if (expired()) {
+              stopReason = 'time';
+              hasPartialResults = true;
+              return { type: 'tool_result', toolCallId: call.id, name: call.name, result: { ok: false, error: { code: 'AGENT_DEADLINE', message: 'Run deadline reached; this tool was not dispatched.' } } };
+            }
             const mcpResolved = resolvedProfile === 'ADMIN' ? this.mcpTools?.resolve(call.name) : undefined;
             const toolDef = resolvedEntry?.definition || toolMap.get(call.name);
             const safety = mcpResolved?.safety || toolDef?.safety;
@@ -611,9 +641,16 @@ ${prompt || defaultPromptFallback}`;
                 });
               }
 
+              if (res?.success === false || res?.ok === false) {
+                hasPartialResults = true;
+                if (run && this.runs) await this.runs.evidence(run.id, call.name, 'FAILED', `${call.name} mengembalikan kegagalan; hasil belum terverifikasi.`).catch(() => undefined);
+                return { type: 'tool_result', toolCallId: call.id, name: call.name, result: { ok: false, error: { code: 'TOOL_REPORTED_FAILURE', message: sanitizeSensitiveInfo(String(res.error || res.message || 'Tool reported failure.')).slice(0, 500) } } };
+              }
+              if (res?.truncated || res?.partial) hasPartialResults = true;
               const serialized = JSON.stringify(res ?? null);
               let cappedVal = res;
               if (serialized.length > MAX_RESULT_BYTES) {
+                hasPartialResults = true;
                 cappedVal = {
                   truncated: true,
                   content: serialized.slice(0, MAX_RESULT_BYTES),
@@ -653,6 +690,15 @@ ${prompt || defaultPromptFallback}`;
           }),
         );
 
+        // Every call in the provider's assistant turn needs a matching result,
+        // including calls skipped by operational limits or repetition guards.
+        const answeredIds = new Set(toolResultParts.map((p) => p.toolCallId));
+        for (const call of toolCalls) {
+          if (!answeredIds.has(call.id)) {
+            hasPartialResults = true;
+            toolResultParts.push({ type: 'tool_result', toolCallId: call.id, name: call.name, result: { ok: false, error: { code: 'CALL_NOT_DISPATCHED', message: 'This call was not dispatched because the execution batch or safety limit was reached.' } } });
+          }
+        }
         for (const resPart of toolResultParts) {
           const val = resPart.result?.ok ? (resPart.result.value as any) : null;
           if (val?.proposalCreated && val?.proposalId && resolvedProfile === 'ADMIN') {
@@ -671,26 +717,29 @@ ${prompt || defaultPromptFallback}`;
         });
 
         if (toolResultParts.length > 0) {
-          await reportStage('SYNTHESIZING', '🧩 *Menyatukan temuan...*');
+          await reportStage('SYNTHESIZING', 'Menyusun jawaban…');
         }
 
         if (shouldTerminateForRepetition) {
+          stopReason = 'steps';
           break;
         }
       }
+      if (!finalContent && !stopReason && turns >= MAX_AGENT_TURNS) stopReason = 'steps';
+      if (stopReason) hasPartialResults = true;
 
       this.logger.log(`✅ [Agent:${resolvedProfile}] Completed in ${Date.now() - startTime}ms (${turns} turns, ${totalTokens} tokens)`);
 
-      if (!finalContent && messages.some((m) => m.role === 'user' && m.parts?.some((p) => p.type === 'tool_result'))) {
+      if (!finalContent && !expired() && messages.some((m) => m.role === 'user' && m.parts?.some((p) => p.type === 'tool_result'))) {
         try {
-          await reportStage('SYNTHESIZING', '🧾 *Menyusun laporan akhir...*');
+          await reportStage('SYNTHESIZING', 'Menyusun jawaban…');
           const synthesisRes = await generate({
             systemPrompt: effectiveSystemPrompt,
             messages: [
               ...compactHistoryMessages(messages),
               {
                 role: 'user',
-                parts: [{ type: 'text', text: 'Semua pemanggilan tool telah selesai. Sekarang, berikan jawaban akhir yang jelas, lengkap, dan informatif kepada pengguna berdasarkan data dan temuan tool di atas.' }],
+                parts: [{ type: 'text', text: 'No further tools are available for this run. Answer concisely using only verified results above. Identify missing or failed checks and pending proposals. Do not claim incomplete work succeeded; include source links for web claims when available.' }],
               },
             ],
             tools: [],
@@ -713,8 +762,16 @@ ${prompt || defaultPromptFallback}`;
         }
       }
 
-      if (!finalContent && lastEmittedText) {
+      if (!finalContent && lastEmittedText && !stopReason) {
         finalContent = lastEmittedText;
+      }
+      if (expired() && !finalContent) stopReason = 'time';
+      if (stopReason) {
+        hasPartialResults = true;
+        const notice = stopReason === 'time'
+          ? 'Hasil parsial: batas waktu tercapai. Pemeriksaan belum selesai; persempit permintaan untuk melanjutkan.'
+          : 'Hasil parsial: batas langkah pemeriksaan tercapai. Tidak semua pemeriksaan selesai; persempit permintaan untuk melanjutkan.';
+        finalContent = finalContent ? `${notice}\n\n${finalContent}` : notice;
       }
 
       if (!finalContent) {
@@ -724,11 +781,10 @@ ${prompt || defaultPromptFallback}`;
       const fullResponse = formatAgentResponse(finalContent);
       const runStatus: 'AWAITING_APPROVAL' | 'FAILED' | 'PARTIAL' | 'COMPLETED' = fullResponse.startsWith('⚠️') ? 'FAILED' : proposalIds.length ? 'AWAITING_APPROVAL' : hasPartialResults ? 'PARTIAL' : 'COMPLETED';
       if (run && this.runs) {
-        if (runStatus === 'AWAITING_APPROVAL') await reportStage('AWAITING_APPROVAL', '⏳ *Menunggu persetujuan moderator...*');
-        else if (runStatus !== 'FAILED') await reportStage('SYNTHESIZING', '🧾 *Menyusun laporan akhir...*');
+        if (runStatus === 'AWAITING_APPROVAL') await reportStage('AWAITING_APPROVAL', 'Menunggu persetujuan moderator…');
         await this.runs.finish(run.id, runStatus, runStatus === 'AWAITING_APPROVAL' ? 'Pemeriksaan selesai; tindakan terkait masih menunggu persetujuan.' : runStatus === 'FAILED' ? 'Run berakhir dengan kegagalan.' : runStatus === 'PARTIAL' ? 'Run selesai dengan hasil parsial.' : 'Run selesai.').catch(() => undefined);
       }
-      const sanitizedCleanFinal = sanitizeSensitiveInfo(neutralizeMentions(finalContent));
+      const sanitizedCleanFinal = fullResponse;
 
       let embeds: any = undefined;
       let components: any = undefined;
@@ -795,6 +851,7 @@ ${prompt || defaultPromptFallback}`;
         ...(conversationTurns ? { conversationTurns } : {}),
       };
     } finally {
+      clearTimeout(deadlineTimer);
       await chatRun?.close();
     }
   }
@@ -818,17 +875,26 @@ ${prompt || defaultPromptFallback}`;
   }
 
   // Transient provider errors (5xx, 429, network, truncated stream) are retried with backoff; 4xx config errors fail fast.
-  private async generateWithRetry(providerName: string, call: () => Promise<AiGenerateResult>): Promise<AiGenerateResult> {
+  private async generateWithRetry(providerName: string, call: () => Promise<AiGenerateResult>, signal?: AbortSignal): Promise<AiGenerateResult> {
     for (let attempt = 1; ; attempt++) {
+      if (signal?.aborted) throw new Error('AGENT_DEADLINE');
       try {
         return await call();
       } catch (err: any) {
+        if (signal?.aborted) throw err;
         const msg = String(err?.message || err);
+        if (msg === 'AGENT_DEADLINE') throw err;
         const transient = !/_HTTP_4(?!29)\d\d\b|not configured|Unsupported AI provider|requires at least one message/.test(msg);
         if (!transient || attempt > MAX_PROVIDER_RETRIES) throw err;
         const delay = Math.min(30_000, 1000 * 2 ** (attempt - 1));
         this.logger.warn(`AI provider retry ${attempt}/${MAX_PROVIDER_RETRIES} provider=${providerName} in ${delay}ms`);
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise<void>((resolve, reject) => {
+          const done = () => { signal?.removeEventListener('abort', abort); resolve(); };
+          const timer = setTimeout(done, delay);
+          const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('AGENT_DEADLINE')); };
+          signal?.addEventListener('abort', abort, { once: true });
+          if (signal?.aborted) abort();
+        });
       }
     }
   }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { AgentBehaviorSettings } from './AgentBehaviorSettings';
 import {
   AgentProfile,
   AgentToolCatalogItem,
@@ -163,6 +164,8 @@ export function AgentProfileForm({
                   onChange={(value) => onChange({ ...settings, messageRetentionDays: value })}
                 />
               </div>
+              <details className="mt-4">
+                <summary className="cursor-pointer">Instruksi komunitas lanjutan</summary>
               <label className="dashboard-field mt-4">
                 <span>Custom system instructions (optional, appended before immutable server safety rules)</span>
                 <textarea
@@ -178,6 +181,7 @@ export function AgentProfileForm({
                   onChange={(event) => onChange({ ...settings, systemPrompt: event.target.value || null })}
                 />
               </label>
+              </details>
               <label className="dashboard-field mt-4">
                 <span>API key ({settings.hasCredential ? 'saved' : 'not configured'})</span>
                 <input
@@ -210,6 +214,7 @@ export function AgentProfileForm({
                 </label>
               )}
             </section>
+            <AgentBehaviorSettings settings={settings} onChange={onChange} />
             <AgentToolCatalog settings={settings} tools={tools} onChange={onChange} />
           </div>
         ) : tab === 'images' ? (

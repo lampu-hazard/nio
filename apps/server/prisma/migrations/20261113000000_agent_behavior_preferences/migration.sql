@@ -1,0 +1,5 @@
+ALTER TABLE "DiscordAgentSettings"
+  ADD COLUMN "conversationStyle" TEXT NOT NULL DEFAULT 'BALANCED',
+  ADD COLUMN "responseLength" TEXT NOT NULL DEFAULT 'ADAPTIVE',
+  ADD COLUMN "activityVisibility" TEXT NOT NULL DEFAULT 'BRIEF',
+  ADD COLUMN "webResearchPolicy" TEXT NOT NULL DEFAULT 'AUTO';

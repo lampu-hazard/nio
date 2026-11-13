@@ -17,7 +17,18 @@ export type RoleRule = {
 };
 export type UserTokenRule = { userId: string; dailyTokenLimit: number | null };
 
+export const behaviorOptions = {
+  conversationStyle: ['BALANCED', 'CASUAL', 'FORMAL'],
+  responseLength: ['CONCISE', 'ADAPTIVE', 'DETAILED'],
+  activityVisibility: ['BRIEF', 'HIDDEN'],
+  webResearchPolicy: ['AUTO', 'ON_REQUEST'],
+} as const;
+
 type BaseAiSettings = {
+  conversationStyle?: 'BALANCED' | 'CASUAL' | 'FORMAL';
+  responseLength?: 'CONCISE' | 'ADAPTIVE' | 'DETAILED';
+  activityVisibility?: 'BRIEF' | 'HIDDEN';
+  webResearchPolicy?: 'AUTO' | 'ON_REQUEST';
   profile?: AgentProfile;
   tokenQuotaMode?: 'LIMITED' | 'UNLIMITED';
   systemPrompt?: string | null;
@@ -152,6 +163,12 @@ export function validateSettings(settings: AiSettings, otherProfileChannelIds: s
   };
 
   const admin = isAdminProfile(settings);
+  for (const [field, values] of Object.entries(behaviorOptions)) {
+    const value = settings[field as keyof typeof behaviorOptions];
+    if (value !== undefined && !(values as readonly unknown[]).includes(value)) {
+      return { section: 'config', message: 'Choose a valid conversation behavior setting.' };
+    }
+  }
 
   if (!settings.model.trim() || settings.model.length > 120) {
     return { section: 'config', message: 'Enter a model name (up to 120 characters).' };
@@ -266,6 +283,7 @@ export function settingsPayload(settings: AiSettings, keys: KeyDraft): Record<st
   }
   const admin = isAdminProfile(settings);
   const commonFields = [
+    'conversationStyle', 'responseLength', 'activityVisibility', 'webResearchPolicy',
     'enabled',
     'provider',
     'model',

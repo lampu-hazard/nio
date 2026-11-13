@@ -2329,7 +2329,7 @@ export class DiscordAgentToolExecutorService {
     }
 
     const limit = Math.max(500, Math.min(25000, Number(maxChars) || 10000));
-    const firecrawlBaseUrl = (process.env.FIRECRAWL_URL || 'http://127.0.0.1:3002').replace(/\/+$/, '');
+    const firecrawlBaseUrl = (process.env.FIRECRAWL_URL?.trim() || 'https://api.firecrawl.dev').replace(/\/+$/, '');
     const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
 
     const controller = new AbortController();
@@ -2506,9 +2506,9 @@ export class DiscordAgentToolExecutorService {
       }
 
       const firecrawlEnvUrl = process.env.FIRECRAWL_URL?.trim();
-      if (firecrawlEnvUrl) {
-        const firecrawlBaseUrl = firecrawlEnvUrl.replace(/\/+$/, '');
-        const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
+      const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
+      if (firecrawlEnvUrl || firecrawlApiKey) {
+        const firecrawlBaseUrl = (firecrawlEnvUrl || 'https://api.firecrawl.dev').replace(/\/+$/, '');
         const fcHeaders: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'application/json',

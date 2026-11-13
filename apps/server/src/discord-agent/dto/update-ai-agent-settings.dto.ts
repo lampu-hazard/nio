@@ -15,6 +15,10 @@ export class AgentUserTokenRuleDto {
 }
 
 export class UpdateAiAgentSettingsDto {
+  @ValidateIf((_o, value) => value !== undefined) @IsIn(['BALANCED', 'CASUAL', 'FORMAL']) conversationStyle?: 'BALANCED' | 'CASUAL' | 'FORMAL';
+  @ValidateIf((_o, value) => value !== undefined) @IsIn(['CONCISE', 'ADAPTIVE', 'DETAILED']) responseLength?: 'CONCISE' | 'ADAPTIVE' | 'DETAILED';
+  @ValidateIf((_o, value) => value !== undefined) @IsIn(['BRIEF', 'HIDDEN']) activityVisibility?: 'BRIEF' | 'HIDDEN';
+  @ValidateIf((_o, value) => value !== undefined) @IsIn(['AUTO', 'ON_REQUEST']) webResearchPolicy?: 'AUTO' | 'ON_REQUEST';
   @IsOptional() @IsString() @MaxLength(32000) systemPrompt?: string | null;
   @IsOptional() @IsInt() @Min(1) @Max(90) messageRetentionDays?: number;
   @IsOptional() @IsArray() @ArrayMaxSize(500) @IsString({ each: true }) allowedToolIds?: string[];

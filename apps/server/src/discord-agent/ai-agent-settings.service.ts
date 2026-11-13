@@ -9,7 +9,10 @@ import { CredentialEncryptionService } from '../plugins/credential-encryption.se
 import { UpdateAiAgentSettingsDto } from './dto/update-ai-agent-settings.dto';
 import { AgentProfile, AgentScope, parseAgentProfile } from './agent-profile.types';
 
+import { AGENT_BEHAVIOR_VALUES, DEFAULT_AGENT_BEHAVIOR } from './agent-behavior';
+
 const DEFAULTS = {
+  ...DEFAULT_AGENT_BEHAVIOR,
   enabled: false,
   provider: 'gemini',
   model: 'gemini-2.5-flash',
@@ -256,6 +259,9 @@ export class AiAgentSettingsService {
 
   private validateEffective(settings: Record<string, unknown>) {
     const invalid = () => { throw new BadRequestException('AI settings are invalid.'); };
+    for (const [field, values] of Object.entries(AGENT_BEHAVIOR_VALUES)) {
+      if (!(values as readonly unknown[]).includes(settings[field])) invalid();
+    }
     if (!['gemini', 'openai-compatible'].includes(String(settings.provider))) invalid();
     if (settings.accessMode !== 'ROLE_QUOTAS') invalid();
     const profile = parseAgentProfile(settings.profile);

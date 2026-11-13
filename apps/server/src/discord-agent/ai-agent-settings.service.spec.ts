@@ -32,6 +32,8 @@ describe('AiAgentSettingsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.discordAgentSettings.findUnique.mockReset().mockImplementation(async () => row);
+    prisma.discordAgentSettings.upsert.mockReset().mockImplementation(async ({ create }: any) => ({ ...row, ...create, roleRules: create.roleRules?.create ?? [] }));
     prisma.$transaction.mockReset().mockImplementation(async (work: any) => work(prisma));
     service = new AiAgentSettingsService(prisma as unknown as PrismaService, encryption as unknown as CredentialEncryptionService);
     service.setClient({ guilds: { cache: new Map([['guild-1', { id: 'guild-1',
@@ -88,6 +90,40 @@ describe('AiAgentSettingsService', () => {
 
   it.each([{ systemPrompt: 'x'.repeat(32001) }, { messageRetentionDays: 0 }, { messageRetentionDays: 91 }])('validates profile prompt/channel bounds %j', async (dto) => {
     await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, dto as any)).rejects.toThrow();
+  });
+
+  it('returns behavior defaults independently for missing profiles', async () => {
+    for (const profile of ['PUBLIC', 'ADMIN'] as const) {
+      prisma.discordAgentSettings.findUnique.mockResolvedValueOnce(null);
+      expect(await service.getSettings({ guildId: 'guild-1', profile })).toMatchObject({
+        conversationStyle: 'BALANCED', responseLength: 'ADAPTIVE',
+        activityVisibility: 'BRIEF', webResearchPolicy: 'AUTO',
+      });
+    }
+  });
+
+  it.each(['conversationStyle', 'responseLength', 'activityVisibility', 'webResearchPolicy'])('rejects invalid behavior field %s', async (field) => {
+    for (const value of [null, '', 'INVALID']) {
+      await expect(service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, { [field]: value } as any)).rejects.toThrow();
+    }
+  });
+
+  it('preserves omitted behavior and isolates profile updates', async () => {
+    const stored: Record<string, any> = {
+      PUBLIC: { ...row, conversationStyle: 'CASUAL', responseLength: 'DETAILED', activityVisibility: 'HIDDEN', webResearchPolicy: 'ON_REQUEST', policyRevision: 2n },
+      ADMIN: { ...row, profile: 'ADMIN', conversationStyle: 'FORMAL', policyRevision: 4n },
+    };
+    prisma.discordAgentSettings.findUnique.mockImplementation(async ({ where }: any) => stored[where.guildId_profile.profile]);
+    prisma.discordAgentSettings.upsert.mockImplementation(async ({ where, update }: any) => {
+      const profile = where.guildId_profile.profile;
+      stored[profile] = { ...stored[profile], ...update, policyRevision: stored[profile].policyRevision + 1n };
+      return stored[profile];
+    });
+    const result = await service.updateSettings({ guildId: 'guild-1', profile: 'PUBLIC' }, { responseLength: 'CONCISE' } as any);
+    expect(result).toMatchObject({ conversationStyle: 'CASUAL', responseLength: 'CONCISE', activityVisibility: 'HIDDEN', webResearchPolicy: 'ON_REQUEST', policyRevision: '3' });
+    expect((await service.getSettings({ guildId: 'guild-1', profile: 'ADMIN' })) as any).toMatchObject({ conversationStyle: 'FORMAL', policyRevision: '4' });
+    prisma.discordAgentSettings.findUnique.mockReset().mockImplementation(async () => row);
+    prisma.discordAgentSettings.upsert.mockReset().mockImplementation(async ({ create }: any) => ({ ...row, ...create, roleRules: create.roleRules?.create ?? [] }));
   });
 
   it('masks encrypted credentials from settings responses', async () => {

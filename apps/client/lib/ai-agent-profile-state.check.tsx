@@ -123,4 +123,13 @@ assert.equal(state.drafts.PUBLIC.dirty, true);
 assert.equal(state.drafts.PUBLIC.settings?.model, 'gemini-2.5-pro');
 assert.equal(state.drafts.PUBLIC.keys.apiKey, 'pub-secret-key');
 
+// Behavior preferences participate in dirtiness and remain profile-local across stale loads.
+state = updateProfileSettings(state, 'PUBLIC', { ...state.drafts.PUBLIC.settings!, conversationStyle: 'CASUAL', webResearchPolicy: 'ON_REQUEST' });
+state = updateProfileSettings(state, 'ADMIN', { ...state.drafts.ADMIN.settings!, conversationStyle: 'FORMAL', responseLength: 'DETAILED' });
+state = applyProfileLoadResponse(state, 'ADMIN', staleAdminReq, { ...adminInitial, conversationStyle: 'BALANCED' });
+assert.equal(state.drafts.PUBLIC.dirty, true);
+assert.equal(state.drafts.PUBLIC.settings?.conversationStyle, 'CASUAL');
+assert.equal(state.drafts.PUBLIC.settings?.webResearchPolicy, 'ON_REQUEST');
+assert.equal(state.drafts.ADMIN.settings?.conversationStyle, 'FORMAL');
+assert.equal(state.drafts.ADMIN.settings?.responseLength, 'DETAILED');
 console.log('AI profile state isolation checks passed.');

@@ -25,6 +25,7 @@ import { AgentToolPolicyService } from '../discord-agent/agent-tool-policy.servi
 import { AgentImageService } from '../discord-agent/images/agent-image.service';
 import { isUnsupportedImageIntent, parseImageCommand } from '../discord-agent/images/image-command';
 import { deliverAgentReply } from './agent-reply';
+import { deliveredConversationTurns } from '../discord-agent/delivered-conversation';
 import { DiscordVoiceConnectionService } from './discord-voice-connection.service';
 import { HallOfFameService } from './hall-of-fame.service';
 import { VoiceActivityService } from './voice-activity.service';
@@ -421,52 +422,42 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       await (message.channel as any).sendTyping().catch(() => null);
     }
 
-    const loadingMessage = await message.reply({
-      content: '*Thinking...*',
+    const loadingMessage = decision.settings?.activityVisibility === 'HIDDEN' ? null : await message.reply({
+      content: '*Menyiapkan jawaban…*',
       allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
     }).catch(() => null);
 
     let lastProgressEdit = 0;
     let pendingProgress: string | null = null;
     let progressTimer: ReturnType<typeof setTimeout> | undefined;
-    const progressSteps: string[] = [];
-    let currentDraft = '';
-
-    const stripEmojis = (str: string) =>
-      str.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, '').trim();
-
-    const formatProgressContent = () => {
-      const cleanSteps = progressSteps.map((s) => `- ${s}`).join('\n');
-      const cleanDraft = currentDraft ? `\n\n\`\`\`\n${currentDraft.slice(-600)}\n\`\`\`` : '';
-      const text = `${cleanSteps}${cleanDraft}`.trim();
-      return text.slice(0, 1900) || '*Thinking...*';
-    };
+    let progressEdit: Promise<unknown> = Promise.resolve();
+    let progressClosed = false;
+    let lastActivity = '';
+    // Only server-authored public activity labels may reach the channel.
+    const visibleActivities = new Set([
+      'Mencari sumber terbaru…', 'Memeriksa data yang diizinkan…',
+      'Menyusun jawaban…', 'Menunggu persetujuan moderator…',
+    ]);
 
     const onProgress = async (status: string) => {
-      if (!loadingMessage) return;
-      const clean = stripEmojis(status);
-
-      if (status.startsWith('✍️') || status.startsWith('[draft]')) {
-        currentDraft = clean.replace(/^\[draft\]\s*/i, '');
-      } else {
-        currentDraft = '';
-        const step = clean.replace(/^\*+|\*+$/g, '').trim();
-        if (step && !progressSteps.includes(step)) {
-          progressSteps.push(step);
-        }
-      }
-
-      pendingProgress = formatProgressContent();
+      if (!loadingMessage || progressClosed) return;
+      if (!visibleActivities.has(status) || status === lastActivity) return;
+      lastActivity = status;
+      pendingProgress = `*${status}*`;
       const editProgress = async () => {
         progressTimer = undefined;
         const progress = pendingProgress;
         pendingProgress = null;
         if (!progress) return;
         lastProgressEdit = Date.now();
-        await loadingMessage.edit({
-          content: progress.slice(0, 1900),
-          allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
-        }).catch(() => null);
+        progressEdit = progressEdit.then(() => {
+          if (progressClosed) return;
+          return loadingMessage.edit({
+            content: progress.slice(0, 1900),
+            allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
+          }).catch(() => null);
+        });
+        await progressEdit;
       };
       const wait = Math.max(0, 1200 - (Date.now() - lastProgressEdit));
       if (!progressTimer) {
@@ -475,6 +466,12 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       }
     };
 
+    const finishProgress = async () => {
+      progressClosed = true;
+      if (progressTimer) clearTimeout(progressTimer);
+      pendingProgress = null;
+      await progressEdit;
+    };
     let response: any;
     try {
       response = await this.agent.handleMention(
@@ -488,6 +485,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
         profile,
       );
     } catch (err: any) {
+      await finishProgress();
       const raw = String(err?.message || err || 'unknown');
       const code = raw.match(/\b(?:OPENAI|GEMINI)_[A-Z0-9_]+\b/)?.[0] || 'AGENT_INVOCATION_ERROR';
       this.logger.error(`Discord agent invocation failed code=${code} guild=${message.guild.id}`, undefined, 'DiscordBot');
@@ -504,8 +502,7 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       }
       return;
     } finally {
-      if (progressTimer) clearTimeout(progressTimer);
-      pendingProgress = null;
+      await finishProgress();
     }
 
     if (!response) {
@@ -513,19 +510,21 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const { messageId: responseMessageId } = await deliverAgentReply({ message, loadingMessage, response });
-
-    if (responseMessageId && response.conversationTurns?.length) {
-      await this.conversationMemory.saveConversation(
-        {
-          guildId: message.guild.id,
-          profile: response.profile || profile,
-          channelId: message.channel.id,
-          userId: message.author.id,
-        },
-        responseMessageId,
-        response.conversationTurns,
-      ).catch(() => null);
+    const me = message.guild.members?.me;
+    const permissions = me && 'permissionsFor' in message.channel ? message.channel.permissionsFor(me) : null;
+    const canAttach = Boolean(permissions?.has('AttachFiles') &&
+      (!message.channel.isThread?.() || permissions.has('SendMessagesInThreads')));
+    const guildMax = (message.guild as any).maximumAttachmentSize;
+    const attachmentLimit = Math.min(8388608, typeof guildMax === 'number' && guildMax > 0 ? guildMax : 8388608);
+    const receipt = await deliverAgentReply({ message, loadingMessage, response, canAttach, attachmentLimit });
+    const turns = deliveredConversationTurns(response.conversationTurns, receipt.deliveredContent);
+    if (turns.length) {
+      for (const id of receipt.messageIds) {
+        await this.conversationMemory.saveConversation(
+          { guildId: message.guild.id, profile, channelId: message.channel.id, userId: message.author.id },
+          id, turns,
+        ).catch(() => null);
+      }
     }
   }
 

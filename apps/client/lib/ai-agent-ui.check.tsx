@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import * as Sections from '../components/ai-agent/AgentSections';
 import { AgentRoleQuotas, AgentImages, AgentQuotaUsage, AgentToolCatalog } from '../components/ai-agent/AgentSections';
 import { AgentProfileForm } from '../components/ai-agent/AgentProfileForm';
+import { AgentBehaviorSettings } from '../components/ai-agent/AgentBehaviorSettings';
 
 const settings: any = {
   profile: 'PUBLIC',
@@ -29,6 +30,22 @@ const settings: any = {
   hasImageCredential: false,
   allowedToolIds: ['web_search', 'plugin:unsafe:write'],
 };
+
+const behaviorForm = renderToStaticMarkup(<AgentProfileForm profile="PUBLIC" tab="config" settings={settings} keys={{ apiKey: '', clearApiKey: false, imageApiKey: '', clearImageApiKey: false }} channels={[]} members={[]} roles={[]} tools={[]} onChange={() => {}} onKeysChange={() => {}} />);
+for (const label of ['Perilaku percakapan', 'Gaya bahasa', 'Panjang jawaban', 'Aktivitas', 'Pencarian web']) assert.ok(behaviorForm.includes(label), label);
+assert.ok(behaviorForm.includes('<details') && behaviorForm.includes('Custom system instructions'));
+
+let changedBehavior: any;
+const behaviorTree = AgentBehaviorSettings({ settings, onChange: (next) => { changedBehavior = next; } });
+const behaviorFields = (behaviorTree.props.children[1] as any).props.children;
+for (const [index, [key, value]] of Object.entries({ conversationStyle: 'FORMAL', responseLength: 'DETAILED', activityVisibility: 'HIDDEN', webResearchPolicy: 'ON_REQUEST' }).entries()) {
+  behaviorFields[index].props.children[1].props.onChange({ target: { value } });
+  assert.deepEqual(changedBehavior, { ...settings, [key]: value });
+}
+for (const locked of [{ saving: true }, { readOnly: true }]) {
+  const markup = renderToStaticMarkup(<AgentProfileForm profile="PUBLIC" tab="config" settings={settings} keys={{ apiKey: '', clearApiKey: false, imageApiKey: '', clearImageApiKey: false }} channels={[]} members={[]} roles={[]} tools={[]} onChange={() => {}} onKeysChange={() => {}} {...locked} />);
+  assert.match(markup, /<fieldset[^>]*disabled/);
+}
 
 const PersonalField = (Sections as any).AgentMemberTokens;
 assert.equal(typeof PersonalField, 'function', 'Personal token editor must be available');

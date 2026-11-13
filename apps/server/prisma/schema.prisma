@@ -383,6 +383,10 @@ model DiscordAgentSettings {
   allowedChannelIds    String[] @default([])
   excludedChannelIds   String[] @default([])
   systemPrompt         String?
+  conversationStyle    String   @default("BALANCED")
+  responseLength       String   @default("ADAPTIVE")
+  activityVisibility   String   @default("BRIEF")
+  webResearchPolicy    String   @default("AUTO")
   messageRetentionDays Int      @default(30)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

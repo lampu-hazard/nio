@@ -6,9 +6,8 @@ import { AgentProfileRouterService } from './agent-profile-router.service';
 import { AgentAccessService } from './agent-access.service';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { parseImageCommand } from './images/image-command';
-import { planAgentAnswer } from '../discord/agent-answer-plan';
 import { deliverPlannedAnswer } from '../discord/agent-answer-delivery';
-import { agentReplyExtras } from '../discord/agent-reply';
+import { prepareAgentDelivery } from '../discord/agent-reply';
 import { deliveredConversationTurns } from './delivered-conversation';
 
 @Injectable()
@@ -95,6 +94,10 @@ export class AgentCommandService {
       perms?.has(PermissionsBitField.Flags.AttachFiles) &&
         (!channel?.isThread?.() || perms?.has(PermissionsBitField.Flags.SendMessagesInThreads)),
     );
+    const canEmbed = Boolean(
+      perms?.has(PermissionsBitField.Flags.EmbedLinks) &&
+        (!channel?.isThread?.() || perms?.has(PermissionsBitField.Flags.SendMessagesInThreads)),
+    );
     const guildMax =
       typeof (interaction.guild as any).maximumAttachmentSize === 'number' &&
       (interaction.guild as any).maximumAttachmentSize > 0
@@ -121,9 +124,18 @@ export class AgentCommandService {
       return;
     }
 
+    const { plan, extras } = prepareAgentDelivery({
+      content: reply.content ?? '',
+      profile: resolvedProfile,
+      canAttach,
+      attachmentLimit,
+      canEmbed,
+      responseExtras: reply,
+    });
+
     const receipt = await deliverPlannedAnswer({
-      plan: planAgentAnswer({ content: reply.content ?? '', canAttach, attachmentLimit }),
-      extras: agentReplyExtras(reply),
+      plan,
+      extras,
       first: async (payload) => {
         const edited: any = await interaction.editReply(payload);
         const id = edited?.id || (await interaction.fetchReply().then((m) => m?.id).catch(() => undefined));

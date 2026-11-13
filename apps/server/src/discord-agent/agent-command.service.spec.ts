@@ -194,4 +194,25 @@ describe('AgentCommandService', () => {
       turns,
     );
   });
+
+  it('delivers structured responses as embeds when EmbedLinks permission is present', async () => {
+    const structured = `Berikut adalah rangkuman dari artikel-artikel Tempo:
+---
+1. Jalur Cepat Memakzulkan Gibran Rakabuming Raka
+- Tautan: https://tempo.co/read/12345
+- Inti Pembahasan: Mengulas strategi anggota DPR dalam menindaklanjuti wacana pemakzulan.
+---
+2. Proses Pemakzulan di DPR Tetap Berjalan
+- Tautan: https://tempo.co/read/67890
+- Inti Pembahasan: Fraksi-fraksi di DPR mulai memetakan suara.`;
+
+    const interaction = makeInteraction();
+    const requests = { handle: async () => ({ content: structured }) };
+    await new AgentCommandService(requests as any).handle(interaction, 'PUBLIC');
+
+    const first = interaction.editReply.mock.calls[0][0];
+    expect(first.embeds).toBeDefined();
+    expect(first.embeds[0].title).toBe('NIO Intelligence');
+    expect(first.content).toBe('');
+  });
 });

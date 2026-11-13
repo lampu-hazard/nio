@@ -514,9 +514,11 @@ export class DiscordBotService implements OnModuleInit, OnModuleDestroy {
     const permissions = me && 'permissionsFor' in message.channel ? message.channel.permissionsFor(me) : null;
     const canAttach = Boolean(permissions?.has('AttachFiles') &&
       (!message.channel.isThread?.() || permissions.has('SendMessagesInThreads')));
+    const canEmbed = Boolean(permissions?.has('EmbedLinks') &&
+      (!message.channel.isThread?.() || permissions.has('SendMessagesInThreads')));
     const guildMax = (message.guild as any).maximumAttachmentSize;
     const attachmentLimit = Math.min(8388608, typeof guildMax === 'number' && guildMax > 0 ? guildMax : 8388608);
-    const receipt = await deliverAgentReply({ message, loadingMessage, response, canAttach, attachmentLimit });
+    const receipt = await deliverAgentReply({ message, loadingMessage, response, canAttach, attachmentLimit, canEmbed });
     const turns = deliveredConversationTurns(response.conversationTurns, receipt.deliveredContent);
     if (turns.length) {
       for (const id of receipt.messageIds) {

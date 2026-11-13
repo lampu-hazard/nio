@@ -243,6 +243,114 @@ describe('DiscordBotService deleted message logs', () => {
     } finally { jest.useRealTimers(); }
   });
 
+  it('delivers structured AI responses as embeds when channel permits EmbedLinks', async () => {
+    const { service } = makeService();
+    (service.client as any).user = { id: 'bot-1' };
+    const structured = `Berikut adalah rangkuman dari artikel-artikel Tempo:
+---
+1. Jalur Cepat Memakzulkan Gibran Rakabuming Raka
+- Tautan: https://tempo.co/read/12345
+- Inti Pembahasan: Mengulas strategi anggota DPR dalam menindaklanjuti wacana pemakzulan.
+---
+2. Proses Pemakzulan di DPR Tetap Berjalan
+- Tautan: https://tempo.co/read/67890
+- Inti Pembahasan: Fraksi-fraksi di DPR mulai memetakan suara.`;
+
+    let finalPayload: any = null;
+    const loading = {
+      id: 'loading-1',
+      edit: async (p: any) => {
+        finalPayload = p;
+        return { id: 'loading-1' };
+      },
+    };
+    (service as any).agent = {
+      getAccessDecision: async () => ({ allowed: true }),
+      handleMention: async () => ({ content: structured, profile: 'PUBLIC' }),
+    };
+    const permissionsFor = jest.fn(() => ({
+      has: (perm: string) => perm === 'EmbedLinks' || perm === 'SendMessages',
+    }));
+    const message: any = {
+      id: 'msg-embed',
+      guild: { id: 'guild-1', members: { me: {} } },
+      channel: {
+        id: 'channel-1',
+        isThread: () => false,
+        permissionsFor,
+        sendTyping: async () => {},
+      },
+      author: { id: 'user-1' },
+      content: '<@bot-1> rangkum tempo',
+      createdAt: new Date(),
+      attachments: new Map(),
+      embeds: [],
+      mentions: { has: () => true },
+      reference: null,
+      reply: async () => loading,
+    };
+
+    await (service as any).handleAgentMessage(message);
+    expect(finalPayload).not.toBeNull();
+    expect(finalPayload.embeds).toBeDefined();
+    expect(finalPayload.embeds[0].title).toBe('NIO Intelligence');
+    expect(finalPayload.content).toBe('');
+  });
+
+  it('falls back to plain text when channel does not permit EmbedLinks', async () => {
+    const { service } = makeService();
+    (service.client as any).user = { id: 'bot-1' };
+    const structured = `Berikut adalah rangkuman dari artikel-artikel Tempo:
+---
+1. Jalur Cepat Memakzulkan Gibran Rakabuming Raka
+- Tautan: https://tempo.co/read/12345
+- Inti Pembahasan: Mengulas strategi anggota DPR dalam menindaklanjuti wacana pemakzulan.
+---
+2. Proses Pemakzulan di DPR Tetap Berjalan
+- Tautan: https://tempo.co/read/67890
+- Inti Pembahasan: Fraksi-fraksi di DPR mulai memetakan suara.`;
+
+    let finalPayload: any = null;
+    const loading = {
+      id: 'loading-1',
+      edit: async (p: any) => {
+        finalPayload = p;
+        return { id: 'loading-1' };
+      },
+    };
+    (service as any).agent = {
+      getAccessDecision: async () => ({ allowed: true }),
+      handleMention: async () => ({ content: structured, profile: 'PUBLIC' }),
+    };
+    // No EmbedLinks permission
+    const permissionsFor = jest.fn(() => ({
+      has: (perm: string) => perm === 'SendMessages',
+    }));
+    const message: any = {
+      id: 'msg-no-embed',
+      guild: { id: 'guild-1', members: { me: {} } },
+      channel: {
+        id: 'channel-1',
+        isThread: () => false,
+        permissionsFor,
+        sendTyping: async () => {},
+      },
+      author: { id: 'user-1' },
+      content: '<@bot-1> rangkum tempo',
+      createdAt: new Date(),
+      attachments: new Map(),
+      embeds: [],
+      mentions: { has: () => true },
+      reference: null,
+      reply: async () => loading,
+    };
+
+    await (service as any).handleAgentMessage(message);
+    expect(finalPayload).not.toBeNull();
+    expect(finalPayload.embeds).toBeUndefined();
+    expect(finalPayload.content).toContain('Berikut adalah rangkuman');
+  });
+
   it('ignores unrouted channels and cross-profile bot replies when profileRouter is configured', async () => {
     const { service } = makeService();
     (service.client as any).user = { id: 'bot-1' };

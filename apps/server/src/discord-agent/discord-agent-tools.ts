@@ -3,7 +3,7 @@ import { AiToolDefinition } from './interfaces/ai-provider.interface';
 const RAW_AGENT_TOOLS = [
   {
     name: 'get_user_warnings',
-    description: 'Get active and expired warning history for a Discord user.',
+    description: 'Get active and expired official server moderation warnings for a Discord user. Only call for formal moderation inquiries, disciplinary checks, or infractions, never for informal jokes, banter, or roasts.',
     parameters: {
       type: 'object',
       properties: {
@@ -14,7 +14,7 @@ const RAW_AGENT_TOOLS = [
   },
   {
     name: 'get_member_info',
-    description: 'Get a moderation context summary for a guild member, including profile, roles, warnings, and recent messages.',
+    description: 'Get a moderation context summary for a guild member, including profile, roles, warnings, and recent messages. Use for official moderation investigation, not for casual chat or roasts.',
     parameters: {
       type: 'object',
       properties: {

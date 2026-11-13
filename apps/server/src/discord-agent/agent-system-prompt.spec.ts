@@ -45,4 +45,13 @@ describe('profile system instructions', () => {
     expect(prompt).toContain('Profile: ADMIN');
     expect(prompt).toContain('does not grant Discord permissions');
   });
+  it('guides playful community roasts and gamer banter as fictional satire without checking moderation warnings', () => {
+    const publicPrompt = buildAgentSystemPrompt('PUBLIC', null, '12345');
+    expect(publicPrompt).toContain('10 dosa besar');
+    expect(publicPrompt).toContain('gaming and Discord habits');
+
+    const adminPrompt = buildAgentSystemPrompt('ADMIN', null, '12345');
+    expect(adminPrompt).toContain('10 dosa besar');
+    expect(adminPrompt).toContain('do not inspect disciplinary records');
+  });
 });

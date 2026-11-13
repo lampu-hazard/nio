@@ -358,9 +358,9 @@ describe('voice activity', () => {
   });
 
   it.each([
-    [null, 'general', 'Member joined voice channel', '**Othinus** joined <#general>', 0x57f287],
-    ['general', null, 'Member left voice channel', '**Othinus** left <#general>', 0xed4245],
-    ['general', 'lounge', 'Member changed voice channel', '**Before:** <#general>\n**After:** <#lounge>', 0x3b82f6],
+    [null, 'general', 'Member joined voice channel', '**Othinus** joined General', 0x57f287],
+    ['general', null, 'Member left voice channel', '**Othinus** left General', 0xed4245],
+    ['general', 'lounge', 'Member changed voice channel', '**Before:** General\n**After:** Lounge', 0x3b82f6],
   ])('sends a member activity embed for %s → %s', async (from, to, title, description, color) => {
     const f = fixture(); f.settings.voiceXpEnabled = false; f.settings.voiceNotificationChannelId = 'logs';
     const next = f.state('a', to);
@@ -374,6 +374,38 @@ describe('voice activity', () => {
       footer: { text: 'ID: a' }, timestamp: '1970-01-01T00:00:00.000Z',
     }]);
     expect(payload.allowedMentions.parse).toEqual([]);
+    await f.service.onModuleDestroy();
+  });
+
+  it.each(['join', 'startup'])('keeps a known channel name after deletion following %s', async (source) => {
+    const f = fixture(); f.settings.voiceNotificationChannelId = 'logs';
+    if (source === 'join') await f.change(f.state('a', null), f.state('a', 'general'));
+    else {
+      f.guild.voiceStates.cache.set('a', f.state('a', 'general'));
+      await f.service.start();
+    }
+    f.send.mockClear();
+    f.guild.channels.cache.delete('general');
+    await f.change(f.state('a', 'general'), f.state('a', null));
+    expect(f.send.mock.calls[0][0].embeds[0].description).toBe('**Othinus** left General');
+    await f.service.onModuleDestroy();
+  });
+
+  it('uses an honest fallback when the channel name was never available', async () => {
+    const f = fixture(); f.settings.voiceNotificationChannelId = 'logs';
+    await f.change(f.state('a', 'missing'), f.state('a', null));
+    expect(f.send.mock.calls[0][0].embeds[0].description).toBe('**Othinus** left Channel tidak tersedia');
+    await f.service.onModuleDestroy();
+  });
+
+  it('escapes channel labels and uses the latest observed name', async () => {
+    const f = fixture(); f.settings.voiceNotificationChannelId = 'logs';
+    await f.change(f.state('a', null), f.state('a', 'general'));
+    f.guild.channels.cache.get('general').name = '*Renamed* <@123>\nroom';
+    await f.change(f.state('a', 'general'), f.state('a', null));
+    const payload = f.send.mock.calls[1][0];
+    expect(payload.embeds[0].description).toBe('**Othinus** left \\*Renamed\\* ‹@123› room');
+    expect(payload.allowedMentions).toEqual({ parse: [], users: [], roles: [], repliedUser: false });
     await f.service.onModuleDestroy();
   });
 

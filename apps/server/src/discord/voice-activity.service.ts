@@ -29,6 +29,8 @@ export class VoiceActivityService implements OnModuleDestroy {
   private connected = new Set<number>();
   private tracking = new Map<string, Tracking>();
   private pending = new Map<string, Pending>();
+  // Bounded snapshots keep historical labels independent of Discord mention resolution.
+  private channelNames = new Map<string, string>();
 
   constructor(private readonly prisma: PrismaService, private readonly logger: AppLogger) {}
 
@@ -47,6 +49,7 @@ export class VoiceActivityService implements OnModuleDestroy {
   private snapshot(guild: Guild): MemberState[] {
     return [...guild.voiceStates.cache.values()].flatMap((state) => {
       if (!state.channelId || !state.member) return [];
+      this.channelLabel(state);
       return [{
         member: state.member, channelId: state.channelId,
         eligible: state.channel?.type === ChannelType.GuildVoice && state.channelId !== guild.afkChannelId
@@ -180,6 +183,7 @@ export class VoiceActivityService implements OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     await this.disconnect();
+    this.channelNames.clear();
   }
 
   async withGuildSettingsUpdate<T>(guildId: string, update: () => Promise<T>): Promise<T> {
@@ -206,10 +210,12 @@ export class VoiceActivityService implements OnModuleDestroy {
     const name = this.plain(member?.displayName ?? 'Unknown');
     const from = oldState.channelId;
     const to = newState.channelId;
+    const fromLabel = this.channelLabel(oldState);
+    const toLabel = this.channelLabel(newState);
     const notification = from === to ? null : !from
-      ? { title: 'Member joined voice channel', description: `**${name}** joined <#${to}>`, color: 0x57f287 }
-      : !to ? { title: 'Member left voice channel', description: `**${name}** left <#${from}>`, color: 0xed4245 }
-        : { title: 'Member changed voice channel', description: `**Before:** <#${from}>\n**After:** <#${to}>`, color: 0x3b82f6 };
+      ? { title: 'Member joined voice channel', description: `**${name}** joined ${toLabel}`, color: 0x57f287 }
+      : !to ? { title: 'Member left voice channel', description: `**${name}** left ${fromLabel}`, color: 0xed4245 }
+        : { title: 'Member changed voice channel', description: `**Before:** ${fromLabel}\n**After:** ${toLabel}`, color: 0x3b82f6 };
     await this.serialize(async () => {
       let tracking = this.tracking.get(guild.id);
       if (tracking) {
@@ -237,6 +243,18 @@ export class VoiceActivityService implements OnModuleDestroy {
         allowedMentions: { parse: [], users: [], roles: [], repliedUser: false },
       });
     } catch (err) { this.log('Voice notification', err); }
+  }
+
+  private channelLabel(state: VoiceState): string {
+    if (!state.channelId) return 'Channel tidak tersedia';
+    const key = `${state.guild.id}:${state.channelId}`;
+    const name = state.channel?.name ?? state.guild.channels.cache.get(state.channelId)?.name;
+    if (name) {
+      this.channelNames.delete(key);
+      this.channelNames.set(key, name);
+      if (this.channelNames.size > 10000) this.channelNames.delete(this.channelNames.keys().next().value!);
+    }
+    return this.plain(name || this.channelNames.get(key) || 'Channel tidak tersedia');
   }
 
   private plain(value: string) {

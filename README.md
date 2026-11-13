@@ -1,256 +1,232 @@
-# nio — Discord Bot
+# NIO
 
-`nio` is a modern Discord server management ecosystem consisting of an administrative Next.js web dashboard, an orchestration NestJS bot controller, and high-performance Rust microservices communicating internally via low-latency gRPC APIs.
+Discord server management with a web dashboard, configurable automation, and separate member-facing and staff AI assistants.
 
----
+NIO brings guild settings, moderation, self-role panels, media, voice activity, and AI access controls into one application. The Next.js dashboard talks to a NestJS API, which owns the Discord bot connection and persists application data in PostgreSQL.
 
-## Architecture Overview
+## Features
 
-The monorepo structure segregates concerns into web/bot platforms (`apps`) and optimized analytical decision engines (`services`).
+- **Guild dashboard** — Discord OAuth sign-in, guild-scoped configuration, and an owner console with server-side authorization.
+- **Moderation and automation** — moderation workflows, audit tools, and a native Rust Sentinel module for content analysis.
+- **Panels and self-roles** — native Discord embeds and controls, plus a canvas editor for raster text, images, and shapes. Draft revisions protect against stale updates.
+- **Media and integrations** — keyword-triggered stickers, S3-compatible storage, donation integrations, and configurable plugins.
+- **Voice activity** — voice statistics, XP, cumulative level rewards, and independent activity and level-up notifications.
+- **AI assistants** — independent PUBLIC and ADMIN profiles, channel routing, role-based access, usage accounting, image quotas, and confirmation gates for mutating tools.
 
-```
-                            +-----------------------------------+
-                            |        Browser (Next.js)          |
-                            |          [apps/client]            |
-                            +-----------------+-----------------+
-                                              |
-                                              | REST API / HTTP
-                                              v
-+------------------+        +-----------------+-----------------+
-|   Discord API    |<======>|   NestJS Orchestrator (Bot)       |
-+------------------+        |          [apps/server]            |
-                            +--------+------------------+-------+
-                                     |                  |
-                       gRPC (50051)  |                  | gRPC (3003)
-                                     v                  v
-                            +--------+--------+   +-----+-----------+
-                            | Anomaly Engine  |   | Slowmode Engine |
-                            | [services/...]  |   | [services/...]  |
-                            +-----------------+   +-----------------+
-```
+## Architecture
 
-### Monorepo Structure
-
-- **`apps/client`**: A Next.js (React + Tailwind CSS) dashboard enabling server administrators to configure guild options, review audit logs, and build dynamic self-role reaction panels.
-- **`apps/server`**: The central NestJS (TypeScript) orchestration engine. It manages live Gateway connections via `discord.js`, processes database persistence via Prisma ORM, and acts as the gRPC client to downstream services.
-- **`services/slowmode-engine`**: A Rust HTTP service that maintains in-memory message rate histories to calculate dynamic channel slowmode levels (*Sepi*, *Sedang*, *Rame*).
-- **`services/anomaly-engine`**: A high-performance Rust gRPC microservice that performs real-time message heuristics to detect phishing links, content abuse, and baseline traffic anomalies.
-
----
-
-## Prerequisites & Installation
-
-To run this repository locally, you will need:
-
-- **Runtime**: [Bun](https://bun.sh/) (for JavaScript/TypeScript applications)
-- **Rust Toolchain**: [Rustup & Cargo](https://rustup.rs/) (latest stable release)
-- **Database**: PostgreSQL
-- **Proto Compilations**: `protoc` (Protocol Buffer Compiler) installed on your system path (required for Rust `tonic-build` compilation).
-
----
-
-## Getting Started
-
-### 1. Environment Configurations
-
-Create a `.env` configuration file in `apps/server/.env` and set the following parameters:
-
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/nio_db"
-DISCORD_BOT_TOKEN="your_discord_bot_token"
-DISCORD_CLIENT_ID="your_discord_client_id"
-DISCORD_CLIENT_SECRET="your_discord_client_secret"
-SLOWMODE_ENGINE_URL="http://127.0.0.1:3003"
-ANOMALY_ENGINE_URL="127.0.0.1:50051"
+```text
+Browser
+  │ same-origin /api requests
+  ▼
+Next.js dashboard ── HTTP ──► NestJS API / Discord bot ◄──► Discord
+                                      │
+                                      ├── PostgreSQL / Prisma
+                                      ├── Redis conversation cache
+                                      ├── Native Rust Sentinel module
+                                      ├── S3-compatible object storage
+                                      └── Optional AI, search, and MCP providers
 ```
 
-### 2. Database Migrations
-
-Generate your local client and run Prisma migrations.
-
-#### Fresh Database Setup
-For a new database, apply the baseline and all incremental migrations:
-```bash
-cd apps/server
-bun install
-bun run prisma:generate
-bun run prisma:deploy
-```
-
-#### Existing Database Rollout (from `db push` or pre-baseline state)
-If transitioning an existing production database created before the migration baseline:
-1. Back up your existing database (`pg_dump`).
-2. Verify the schema matches `prisma/schema.prisma`.
-3. Mark only the baseline migration as already applied:
-   ```bash
-   bunx prisma migrate resolve --applied 20260704000000_baseline
-   ```
-4. Deploy remaining incremental migrations:
-   ```bash
-   bun run prisma:deploy
-   ```
-*Never run `prisma migrate reset` or `db push` on production data.*
-
-### 3. Redis & AI Agent Configuration
-
-#### Redis Setup
-Redis is required for AI agent conversational memory caching and degrades gracefully if unreachable:
-```env
-REDIS_URL="redis://localhost:6379"
-```
-
-#### Autonomous Discord AI Agent & MCP Configuration
-The AI Agent operates on an autonomous multi-turn reasoning loop bounded by strict resource limits:
-- Max Turns: 5
-- Max Tool Calls Per Turn: 8
-- Max Total Tool Calls: 20
-- Max Wall-Clock Time: 60s
-- Max Result Size: 32KB
-- Repetition Detector: Terminates if the exact same tool call is repeated 3 times.
-
-**AI Providers Supported**:
-- `gemini`: Google Gemini (e.g. `gemini-2.5-flash`, `gemini-1.5-pro`) via `GEMINI_API_KEY`.
-- `openai` / `openai-compatible`: Standard OpenAI (`gpt-4o`, `gpt-4o-mini`), OpenRouter, Groq, Ollama, LocalAI, etc. via `OPENAI_API_KEY` and optional `OPENAI_BASE_URL` (default `https://api.openai.com/v1`).
-
-```env
-DISCORD_AGENT_ENABLED=true
-DISCORD_AGENT_PROVIDER=gemini        # 'gemini' | 'openai' | 'openai-compatible' | 'groq' | 'ollama'
-DISCORD_AGENT_MODEL=gemini-2.5-flash # or 'gpt-4o-mini', 'llama-3.3-70b-versatile', etc.
-GEMINI_API_KEY=
-OPENAI_API_KEY=
-OPENAI_BASE_URL=https://api.openai.com/v1
-SEARXNG_URL=                         # Optional SearXNG instance for web_search
-FIRECRAWL_URL=                       # Optional self-hosted Firecrawl instance for web_fetch (/v1/scrape) and web_search fallback (/v1/search)
-FIRECRAWL_API_KEY=                   # Optional Firecrawl bearer token
-```
-
-**Public (`PUBLIC`) and Admin (`ADMIN`) Profile Separation**:
-- NIO separates the guild AI agent into two fixed profiles inside the same bot:
-  - **`PUBLIC` (Agent Umum)**: Member-facing conversational assistant (`/ai` and explicitly assigned member channels). Speaks naturally, uses English tool schemas/queries while preserving exact identifiers/URLs, and is strictly limited to safe public read tools (`get_server_rules`, `search_public_faq`, `web_search`, `web_fetch`).
-  - **`ADMIN` (Agent Admin)**: Staff assistant for server administration and moderation (`/admin-ai`, ephemeral slash responses, and explicitly assigned staff channels).
-- There is **no cross-profile fallback**: `/ai` never falls back to `ADMIN`, `/admin-ai` never falls back to `PUBLIC`, and unassigned or overlapping channels fail closed.
-- **`ADMIN` Token Policy**: `ADMIN` uses `tokenQuotaMode = 'UNLIMITED'` (no NIO daily guild, role, personal, or per-run token caps) while continuing to track usage (`REPORTED`, `ESTIMATED`, `UNCERTAIN`) and enforcing finite `maxOutputTokens`, finite daily image quotas, concurrency leases, permissions, and human confirmation for mutations. Unlimited NIO token mode does not waive upstream AI provider billing.
-- See [`apps/server/README.md`](apps/server/README.md#public-and-admin-ai-agent-profiles) for the migration and rollout runbook (`20261104020000_public_admin_agent_profiles`).
-
-**Approval Semantics**:
-- Read-only tools (`get_*`, `search_*`, `check_*`, etc.) execute autonomously to gather evidence.
-- Mutating tools (moderation actions, roles, channel lockdowns, announcements, etc.) create interactive `AgentActionProposal` cards requiring moderator approval.
-- Model Context Protocol (MCP) external tools are configured in operator deployment environment (`MCP_SERVERS_JSON`). Write operations with external side-effects strictly require the bot owner's approval (`OWNER_DISCORD_ID`).
-
-### 4. Run Development Servers
-
-Run the local development environments concurrently using the root `Makefile` helper targets:
-
-```bash
-# Start Next.js Dashboard UI (Port 3000)
-make dev-client
-
-# Start NestJS API & Bot Controller (Port 3002)
-make dev-server
-
-# Start Rust Dynamic Slowmode Engine (Port 3003)
-make dev-slowmode
-
-# Start Rust gRPC Anomaly Engine (Port 50051)
-make dev-anomaly
-```
-
----
-
-## Service-to-Service gRPC Communications
-
-All performance-critical internal interactions are routed through **gRPC (HTTP/2)** to minimize overhead. 
-
-### Anomaly Engine gRPC Interface
-
-Defined in `services/anomaly-engine/proto/anomaly/v1/anomaly.proto`:
-
-```protobuf
-service AnomalyEngine {
-  rpc AnalyzeMessage(AnalyzeMessageRequest) returns (AnalyzeMessageResponse);
-}
-```
-
-The NestJS orchestrator invokes the `AnalyzeMessage` RPC on every incoming Gateway message. A strict **200ms connection timeout** is enforced; if the Rust engine is unavailable, the bot degrades gracefully, allowing the message through and logging the failure.
-
----
-
-## Monorepo Command Matrix (Makefile)
-
-A master `Makefile` at the repository root delegates actions to individual sub-projects:
-
-| Command | Action |
+| Path | Responsibility |
 | --- | --- |
-| `make dev-client` | Starts Next.js development server |
-| `make dev-server` | Starts NestJS bot & API development watch mode |
-| `make dev-slowmode` | Runs Rust slowmode engine locally |
-| `make dev-anomaly` | Runs Rust gRPC anomaly engine locally |
-| `make test` | Runs typechecks, unit tests (Jest), and Rust Cargo tests monorepo-wide |
-| `make test-anomaly` | Runs gRPC anomaly integration tests |
-| `make build-slowmode` | Compiles optimized release binary for the slowmode engine |
-| `make build-anomaly` | Compiles optimized release binary for the anomaly engine |
-| `make pull` | Pulls production images declared in `docker-compose.yml` |
-| `make up` | Starts the production compose stack in detached mode |
-| `make up-build` | Builds local images and starts the compose stack |
-| `make down` | Stops the compose stack |
-| `make restart` | Restarts the compose stack |
-| `make logs` | Streams compose logs |
-| `make ps` | Lists compose service status |
+| [`apps/client`](apps/client) | Next.js App Router dashboard |
+| [`apps/server`](apps/server) | NestJS API, Discord Gateway handling, and feature modules |
+| [`apps/server/prisma`](apps/server/prisma) | Database schema and versioned migrations |
+| [`services/sentinel`](services/sentinel) | Rust native module loaded by the backend |
+| [`services/searxng`](services/searxng) | Search service configuration |
+| [`scripts`](scripts) | Repository checks and shared-contract synchronization |
+| [`docker-compose.yml`](docker-compose.yml) | Container services, dependencies, networking, and volumes |
 
----
+The current Compose stack includes PostgreSQL, Redis, SearXNG, a one-shot migration service, the API, and the dashboard. It does not run the former standalone slowmode, anomaly, or analytics engines.
 
-## Production Deployment
+## Requirements
 
-Create a root `.env` file from `.env.example` and set your GitHub Container Registry namespace:
+- [Bun](https://bun.sh/) for application dependencies, scripts, and runtime.
+- PostgreSQL and Redis; the provided Compose configuration uses PostgreSQL 16 and Redis 7.
+- A Discord application and bot, with credentials and Gateway intents appropriate to the enabled features. Keyword-based message handling requires Message Content Intent.
+- Docker with Compose for container-based development or deployment.
+- Stable Rust/Cargo when modifying or rebuilding Sentinel.
+- Optional object storage and AI/search credentials for the features that use them.
 
-```bash
+A POSIX shell is used in the command examples. On Windows, use Git Bash, WSL, or equivalent PowerShell commands. GNU Make is optional; the app-level Bun scripts can be run directly.
+
+## Local development
+
+### 1. Configure the environment
+
+Copy the example files only if the destination files do not already exist:
+
+```sh
+cp apps/server/.env.example apps/server/.env
 cp .env.example .env
 ```
 
-Example:
+`apps/server/.env` is the backend environment file. The root `.env` supplies Compose interpolation, including image namespace and tag; it is not a replacement for the backend file.
 
-```env
-GHCR_NAMESPACE=ghcr.io/lampu-hazard
-IMAGE_TAG=latest
+At minimum, review:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection for the local API and Prisma commands |
+| `REDIS_URL` | Redis connection |
+| `PORT` | API listening port |
+| `FRONTEND_URL` | Dashboard origin used for CORS and redirects |
+| `BACKEND_URL` | API origin; also configures the dashboard proxy when set in the client process |
+| `SESSION_SECRET` | Private, randomly generated session secret |
+| `DISCORD_BOT_TOKEN` | Discord bot credential |
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth application credentials |
+| `DISCORD_REDIRECT_URI` | Callback registered in the Discord Developer Portal |
+| `OWNER_DISCORD_ID` | Discord identity authorized for owner-only APIs |
+
+For a consistent local setup, use API port `3002`, dashboard origin `http://localhost:3000`, and callback `http://localhost:3000/api/auth/discord/callback`. The backend example currently uses port `3001`; update its `PORT` and `BACKEND_URL` to `3002`, or explicitly set the dashboard process's `BACKEND_URL=http://localhost:3001` instead. The dashboard proxy defaults to port `3002`.
+
+Browser requests should continue through the dashboard's same-origin `/api` proxy so the session cookie follows the request. Do not replace it with direct cross-origin API calls.
+
+Keep real credentials in private environment files. Never commit bot tokens, OAuth secrets, database credentials, provider keys, or encryption keys.
+
+### 2. Start infrastructure
+
+```sh
+docker compose up -d db redis
 ```
 
-Then deploy the stack:
+The supplied development defaults expose PostgreSQL on host port `5435` and Redis on `6379`. Use the matching connection strings in the backend environment. Start SearXNG separately when needed:
 
-```bash
+```sh
+docker compose up -d searxng
+```
+
+SearXNG is reachable inside the Compose network at `http://searxng:8080`; it has no host port mapping by default. A host-run API needs a separately reachable instance or an intentional local port mapping.
+
+### 3. Install dependencies and prepare a fresh database
+
+Run each block from the repository root:
+
+```sh
+(cd apps/server && bun install && bun run prisma:generate && bun run prisma:deploy)
+(cd apps/client && bun install)
+```
+
+These migration commands are appropriate for a fresh database or a database with reconciled migration history. For an existing installation, read [Database changes](#database-changes) first.
+
+### 4. Start the applications
+
+Use separate terminals:
+
+```sh
+make dev-server
+make dev-client
+```
+
+Without Make, run `bun run dev` from the corresponding app directory. Open `http://localhost:3000` after both processes are ready.
+
+## Feature configuration
+
+### AI profiles
+
+AI is disabled by default. Configure the provider and model in the backend environment and review each guild profile in the dashboard before enabling it.
+
+- **PUBLIC** serves members through `/ai` and assigned channels, with a restricted public tool policy.
+- **ADMIN** serves staff through `/admin-ai` and assigned staff channels. Slash responses are ephemeral.
+- Profiles have independent credentials, channels, permissions, tools, usage, and conversation history. Unassigned or overlapping channel routing fails closed; there is no cross-profile fallback.
+- Mutating tools require confirmation. External MCP write operations require owner approval. A hidden UI route is not an authorization boundary.
+- Unlimited ADMIN token policy removes NIO token quotas, not provider charges, output limits, image quotas, permissions, or execution deadlines.
+
+The runtime supports Gemini and OpenAI-compatible providers. Search uses SearXNG, with Firecrawl Cloud fallback for supported failure/empty-result cases; page fetching uses Firecrawl. `FIRECRAWL_URL` defaults to `https://api.firecrawl.dev`. Set `FIRECRAWL_API_KEY` privately; provider credits and billing apply.
+
+See the [backend AI profile runbook](apps/server/README.md#public-and-admin-ai-agent-profiles) for access rules, accounting, migration behavior, and rollout requirements. Consult the backend implementation and runbook for execution limits rather than treating model prompts as enforcement.
+
+### Voice activity
+
+Enable Voice XP and configure rewards in guild settings. Eligible humans earn XP with another eligible human or a bot companion in a regular voice channel. Bots do not earn XP or rewards. Alone, AFK, stage, muted, and deafened human sessions do not qualify.
+
+Activity logs store escaped channel names as text, so new notifications remain readable after a channel is deleted. A bounded in-memory snapshot can recover recently observed names during a leave event. When no name is available, the log says `Channel tidak tersedia`. Existing Discord messages are not rewritten, and snapshots do not survive a bot restart.
+
+See [voice XP and notifications](apps/server/README.md#voice-xp-and-notifications) for migration, permissions, and single-gateway-owner requirements.
+
+### Panels and media
+
+The editor separates content, appearance, roles, and Discord preview. Simple mode uses native embeds. Canvas exports uploaded images, text, and shapes to PNG while leaving Discord buttons and other controls native. Save a draft before publishing.
+
+Configure the `R2_*` variables for storage-backed media. Canvas assets must use the current guild's upload namespace and pass the backend's format, size, and rendering checks. See [panel rendering limits](apps/server/README.md#panel-visual-preview) and the [canvas acceptance checklist](apps/client/scripts/panel-canvas-smoke.md).
+
+## Development commands
+
+| Command | Scope |
+| --- | --- |
+| `make dev-client` | Start the dashboard |
+| `make dev-server` | Start the API and bot in watch mode |
+| `make test` | Panel contract drift check, client typecheck, and server Jest suite |
+| `make build-server` | Generate Prisma Client and build the backend |
+| `bun scripts/check-client.ts` | Run the repository's client checks |
+| `bun scripts/sync-panel-visual.ts --check` | Verify the shared panel visual contract |
+| `make pull` | Pull configured Compose images |
+| `make up` / `make up-build` | Start pulled images / build and start local images |
+| `make logs` / `make ps` | Inspect Compose logs / service status |
+| `make down` | Stop the Compose stack without removing named volumes |
+
+App-level checks, from the repository root:
+
+```sh
+(cd apps/client && bun run typecheck && bun run lint && bun run build)
+(cd apps/server && bun run lint && bun run test -- --runInBand && bun run build)
+```
+
+Run a focused backend test:
+
+```sh
+(cd apps/server && bun run test -- --runInBand src/discord/voice-activity.service.spec.ts)
+```
+
+`lint` currently runs TypeScript checks in both apps; it is not a separate style linter. `make test` does not run production builds, Rust tests, browser acceptance, or live Discord/provider tests. For Sentinel changes, run `cargo test` from `services/sentinel`. Database integration tests require a dedicated disposable database; never point them at production.
+
+## Database changes
+
+Prisma migrations are versioned in `apps/server/prisma/migrations`. Before changing an existing database:
+
+1. Confirm the intended database and take a restorable backup.
+2. Inspect migration status and compare the actual schema with the migration history.
+3. For a pre-migration or schema-pushed installation, reconcile the baseline and any already-present incremental changes with an operator. Do not mark a migration applied merely because tables exist.
+4. Drain incompatible workers when the release's runbook requires it.
+5. Apply reviewed migrations through `bun run prisma:deploy` from `apps/server`, then start compatible workers.
+
+Never run `prisma migrate reset` or `prisma db push` against production data. A missing-column error usually means the deployed application and database schema are out of sync; resetting the database is not a repair strategy.
+
+The Compose `nio-migrate` service applies migrations before `nio-server` starts. Starting the full stack is therefore a database-changing operation, not just an application restart.
+
+## Production deployment
+
+The [deployment workflow](.github/workflows/deploy.yml) builds server and client images, publishes them to GHCR, and deploys the Compose stack over SSH on pushes to `main` or manual invocation. Treat a normal push to `main` as a deployment trigger.
+
+Configure the workflow's VPS connection secrets and project path, package access, private server environment, and root Compose environment before enabling deployment. Use a commit-SHA image tag for reproducible releases. Private GHCR packages require registry authentication on the deployment host.
+
+On an already prepared deployment host, after backup and migration review:
+
+```sh
 make pull
 make up
+make ps
+make logs
 ```
 
-The workflow pushes `nio-server` and `nio-client` to GHCR using `GITHUB_TOKEN` with `packages: write`. For private packages, authenticate Docker on the VPS with a token that has `read:packages` before pulling; no Docker Hub credentials are used.
+`make up-build` builds locally instead of pulling images. Database rollback requires a separate reviewed plan; switching an image tag does not reverse migrations or external actions.
 
-If you want to build images directly on the server instead of pulling GHCR images:
+### Production hardening
 
-```bash
-make up-build
-```
+The Compose file contains development database credentials and publishes database, cache, API, and dashboard ports. Before exposing a deployment:
 
----
+- Replace development credentials and align the database URL override with the database service configuration.
+- Restrict database/cache ports to trusted interfaces or remove host publishing; the default Redis service has no authentication.
+- Terminate HTTPS at a trusted reverse proxy and configure origins, OAuth callback, cookies, and proxy handling for that topology.
+- Keep PostgreSQL backups off-host and test restoration.
+- Grant only the Discord permissions needed by enabled features.
+- Review third-party providers and MCP servers as separate trust and billing boundaries.
 
-## Panel editor
+## Further documentation
 
-Open a panel from the dashboard's Panels list. The workspace separates **Edit**, **Roles** (self-role only), and **Discord preview**; Edit groups **Content**, **Appearance**, and **Settings**. Simple mode uses native embed text; Canvas renders uploaded images, text, and shapes into a PNG while keeping Discord text/buttons separate. Save the draft before publishing. Image/artboard width is configurable; Discord's native embed width is not.
-
-Apply the additive panel migration through the existing Prisma deploy script before serving the updated API. Missing `Panel.visualDocument` / `revision` columns prevent panel access; do not reset production or bypass revision checks. See [backend migration and rendering limits](apps/server/README.md#panel-visual-preview) and the [acceptance checklist](apps/client/scripts/panel-canvas-smoke.md).
-
-Run `bun scripts/check-client.ts` and `bun scripts/sync-panel-visual.ts --check` at the repository root for client checks and shared-contract drift.
-
-## Testing
-
-To run the complete verification suite across all services:
-
-```bash
-make test
-```
-
-This sequentially runs `tsc --noEmit` on the client, unit tests with Jest on the server, and `cargo test` for all Rust microservices.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+- [Backend modules, feature runbooks, and limits](apps/server/README.md)
+- [Client verification script](scripts/check-client.ts)
+- [Panel contract synchronization](scripts/sync-panel-visual.ts)
+- [Compose service configuration](docker-compose.yml)
+- [Build and deployment workflow](.github/workflows/deploy.yml)
